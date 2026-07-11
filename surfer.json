@@ -1,0 +1,24 @@
+{
+  "name": "Cthulhu",
+  "vendor": "Eventide",
+  "appId": "Cthulhu",
+  "binaryName": "Cthulhu",
+  "version": {
+    "product": "firefox-esr",
+    "version": "140.12.0esr"
+  },
+  "updateHostname": "localhost:7648",
+  "brands": {
+    "stable": {
+      "brandShorterName": "Cthulhu",
+      "brandShortName": "Cthulhu",
+      "brandFullName": "Cthulhu",
+      "release": {
+        "displayVersion": "1.0.0"
+      }
+    }
+  },
+  "buildOptions": {
+    "windowsUseSymbolicLinks": false
+  }
+}
