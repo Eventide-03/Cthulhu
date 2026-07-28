@@ -1,0 +1,18 @@
+diff --git a/browser/moz.build b/browser/moz.build
+index 81042c95e629aee4fd31cdfc114a7943eb1ba4b8..99047d16e1da0a8d3ceb39796cb912b4ea15c70c 100644
+--- a/browser/moz.build
++++ b/browser/moz.build
+@@ -56,6 +56,13 @@ if CONFIG["MOZ_ARTIFACT_BUILDS"]:
+ JS_PREFERENCE_PP_FILES += [
+     "app/profile/firefox.js",
+ ]
++
++# Cthulhu default prefs: a plain (non-preprocessed) pref file. It must NOT go
++# in JS_PREFERENCE_PP_FILES because it has no preprocessor directives -- the
++# preprocessor fails with "no preprocessor directives found".
++JS_PREFERENCE_FILES += [
++    "app/profile/cthulhu.js",
++]
+ FINAL_TARGET_FILES.defaults += ["app/permissions"]
+ 
+ with Files("**"):

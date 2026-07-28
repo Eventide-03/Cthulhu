@@ -6,6 +6,10 @@ ac_add_options --enable-release
 ac_add_options --enable-optimize
 ac_add_options --with-ccache=sccache
 ac_add_options --disable-debug
+# Slim the build: drop the crash-reporter component (its binary + symbol
+# handling). Kept per-OS because the Windows config intentionally enables it.
+ac_add_options --disable-crashreporter
+# Auto-updates: intentionally KEPT ENABLED (needed for auto-updates later).
 ac_add_options --enable-updater
 mk_add_options MOZ_MAKE_FLAGS="-j4"
 

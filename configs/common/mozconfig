@@ -28,5 +28,9 @@ if command -v rustup >/dev/null 2>&1; then
   export CARGO="$(rustup which cargo)"
 fi
 
+# NOTE: --disable-tests was tried here to slim the build, but it breaks the
+# WebIDL binding compile on Firefox 140 ESR (incomplete union type
+# OwningUnrestrictedDoubleOrString in accessible/base). Left out intentionally.
+
 # Bootstrap
 ac_add_options --enable-bootstrap
