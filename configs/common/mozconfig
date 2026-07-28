@@ -1,0 +1,32 @@
+ac_add_options --with-app-name=${binName}
+export MOZ_USER_DIR="${name}"
+# MOZ_APP_VENDOR is hard-implied to "Mozilla" by browser/moz.configure in Firefox 140 ESR,
+# so configure rejects setting it here ("accepted from: implied"). Vendor now comes from branding.
+export MOZ_APP_BASENAME=${binName}
+# MOZ_APP_PROFILE is a project_flag (origin "implied") in Firefox 140 ESR, and
+# MOZ_MACBUNDLE_ID is a confvar (origin "confvars") -- neither can be set from a
+# mozconfig, so configure rejects them. They are derived automatically; set custom
+# values via branding/confvars.sh if needed.
+export MOZ_DISTRIBUTION_ID=${appId}
+
+# Uncomment if builds are too resource hungry
+# mk_add_options MOZ_MAKE_FLAGS="-j4"
+# ac_add_options --enable-linker=gold
+
+# Misc
+export MOZ_STUB_INSTALLER=1
+export MOZ_INCLUDE_SOURCE_INFO=1
+# Change the below repository to your GitHub repository.
+export MOZ_SOURCE_REPO=https://github.com/Eventide-03/Cthulhu
+export MOZ_SOURCE_CHANGESET=${changeset}
+
+# Rust toolchain: Homebrew's rustup ships bash wrappers for rustc/cargo that break
+# mach's `rustup which` proxy detection (it relies on argv[0] dispatch). Resolve the
+# real toolchain binaries so configure uses them directly. Harmless with a standard rustup.
+if command -v rustup >/dev/null 2>&1; then
+  export RUSTC="$(rustup which rustc)"
+  export CARGO="$(rustup which cargo)"
+fi
+
+# Bootstrap
+ac_add_options --enable-bootstrap

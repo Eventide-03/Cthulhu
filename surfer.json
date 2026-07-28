@@ -5,9 +5,13 @@
   "binaryName": "Cthulhu",
   "version": {
     "product": "firefox-esr",
-    "version": "140.12.0esr"
+    "version": "140.12.0esr",
+    "candidate": "140.12.0esr"
   },
-  "updateHostname": "localhost:7648",
+  "buildOptions": {
+    "windowsUseSymbolicLinks": false
+  },
+  "addons": {},
   "brands": {
     "stable": {
       "brandShorterName": "Cthulhu",
@@ -18,7 +22,11 @@
       }
     }
   },
-  "buildOptions": {
-    "windowsUseSymbolicLinks": false
-  }
+  "license": {
+    "ignoredFiles": [
+      ".*\\.json"
+    ],
+    "licenseType": "MPL-2.0"
+  },
+  "updateHostname": "localhost:7648"
 }
