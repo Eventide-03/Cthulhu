@@ -43,3 +43,18 @@ pref("identity.fxaccounts.enabled", false);
 // -- Annoyances (off) --
 pref("browser.shell.checkDefaultBrowser", false);
 pref("browser.aboutConfig.showWarning", false);
+
+// -- First-run "import from another browser" onboarding (fresh-install opt-in) --
+// The unofficial branding sets startup.homepage_welcome_url to "" (see
+// browser/branding/unofficial/pref/firefox-branding.js), which suppresses
+// about:welcome on first run -> the onboarding import step never appears.
+// Point it at about:welcome so a brand-new profile gets the onboarding flow,
+// whose easy-setup screen offers "import your data" (the embedded migration
+// wizard, which auto-detects installed browsers incl. Chrome). This wins over
+// the branding value because defaults/preferences/*.js load in REVERSE
+// alphabetical order, so "cthulhu.js" loads after "firefox-branding.js".
+pref("startup.homepage_welcome_url", "about:welcome");
+// Required gates for the embedded import step (both are Firefox defaults; set
+// explicitly so the fork's first-run-import intent stays stable):
+pref("browser.aboutwelcome.enabled", true);
+pref("browser.migrate.content-modal.about-welcome-behavior", "embedded");
