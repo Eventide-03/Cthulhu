@@ -1,0 +1,40 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* =============================================================================
+ * Cursor theme. Registered by cursors.js as a global USER_SHEET
+ * (nsIStyleSheetService), so it applies to BOTH the browser chrome and web
+ * content. Cursor images are referenced through the CONTENT-ACCESSIBLE package
+ * chrome://cthulhu-cursors/ (see theme/jar.mn) — that is what lets web pages
+ * load them; a plain chrome:// URL would be blocked inside content.
+ *
+ * Each state is a separate SLOT: swap the PNG (and tune the hotspot) per art.
+ * Syntax:  cursor: url(<img>) <hotspot-x> <hotspot-y>, <keyword-fallback>;
+ * The trailing keyword is the fallback if the image can't load / isn't supported
+ * (platform-neutral; e.g. Windows may reject some sizes/formats — see README).
+ * Hotspots below match the 32x32 placeholders; re-tune for your real art.
+ * ============================================================================= */
+
+/* --- default slot: tabby cat (placeholder for now) --- */
+*,
+:root {
+  cursor: url("chrome://cthulhu-cursors/content/default.png") 1 1, auto;
+}
+
+/* --- pointer / hover slot: links, buttons, interactive controls --- */
+a[href],
+button,
+[role="button"],
+[role="link"],
+summary,
+select {
+  cursor: url("chrome://cthulhu-cursors/content/pointer.png") 16 4, pointer;
+}
+
+/* --- text slot: text fields and editable / selectable text --- */
+input:is([type="text"], [type="search"], [type="email"], [type="url"], [type="tel"], [type="password"], :not([type])),
+textarea,
+[contenteditable="true"] {
+  cursor: url("chrome://cthulhu-cursors/content/text.png") 16 16, text;
+}

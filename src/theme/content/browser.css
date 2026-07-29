@@ -1,0 +1,28 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* Pull in the single source of truth for the visual identity, then the shared
+ * sprite styles. @import rules MUST come first. Everything below consumes
+ * theme.css tokens only. */
+@import url("chrome://cthulhu/content/theme.css");
+@import url("chrome://cthulhu/content/sprite.css");
+
+/* =============================================================================
+ * Cthulhu chrome — consumes the theme variables (see theme.css).
+ * Retheme by editing theme.css values only; nothing here hardcodes colors.
+ * (!important so we win over Firefox's own toolbar rules.)
+ * ============================================================================= */
+
+/* The whole toolbar area sits on the app background... */
+#navigator-toolbox {
+  background-color: var(--bg) !important;
+}
+
+/* ...and the navigation bar is an elevated surface with an accent underline
+ * (visible proof the tokens are being consumed). */
+#nav-bar {
+  background-color: var(--bg-elevated) !important;
+  background-image: none !important;
+  border-bottom: 2px solid var(--accent) !important;
+}

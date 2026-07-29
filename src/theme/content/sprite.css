@@ -1,0 +1,23 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* Shared styles for the sprite helper (sprite.js). */
+
+/* Base class the helper adds to every sprite element. */
+.cthulhu-sprite {
+  display: inline-block;
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  image-rendering: pixelated;   /* keep scaled pixel art crisp */
+}
+
+/* Shared keyframe for CSS steps() playback. The helper sets the per-element end
+ * position via --cthulhu-sprite-end (= -(frames * frameWidth)px) and applies
+ *   animation: cthulhu-sprite-play <dur> steps(<frames>) infinite
+ * which steps background-position-x across the horizontal strip. One keyframe
+ * serves every sprite (no per-sprite rule injection). */
+@keyframes cthulhu-sprite-play {
+  from { background-position-x: 0; }
+  to   { background-position-x: var(--cthulhu-sprite-end, 0); }
+}

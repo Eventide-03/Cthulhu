@@ -1,0 +1,74 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* =============================================================================
+ * Ambient theme — rethemes the browser by SWAPPING the A2 theme tokens
+ * (theme.css) per variant. ambient-theme.js only sets attributes on :root; the
+ * palettes below re-assign the A2 variables. Colors live ONLY here, as variable
+ * VALUES — nothing hardcodes a color on an element, so the chrome (which reads
+ * var(--bg), var(--accent), …) simply follows. Tune these placeholders freely.
+ * ============================================================================= */
+
+/* ============ TIME OF DAY: swap the whole base palette ============ */
+:root[cthulhu-ambient-time="night"] {
+  --bg: #14151c;  --bg-elevated: #1d1f2a;  --surface: #191b24;  --surface-hover: #262a38;
+  --fg: #e6e8f0;  --fg-muted: #8b90a6;
+  --accent: #6c8cff;  --accent-hover: #90a8ff;  --fg-on-accent: #0a0a12;
+  --grid-line: rgba(150, 170, 255, 0.06);  --border: rgba(150, 170, 255, 0.14);
+}
+:root[cthulhu-ambient-time="dawn"] {
+  --bg: #241a24;  --bg-elevated: #2f2230;  --surface: #291d29;  --surface-hover: #3a2b3a;
+  --fg: #f3e7ea;  --fg-muted: #b5929c;
+  --accent: #e39a7a;  --accent-hover: #f2b094;  --fg-on-accent: #241014;
+  --grid-line: rgba(255, 180, 190, 0.06);  --border: rgba(255, 180, 190, 0.14);
+}
+:root[cthulhu-ambient-time="day"] {
+  --bg: #eceef2;  --bg-elevated: #ffffff;  --surface: #f4f6f9;  --surface-hover: #e4e8ef;
+  --fg: #1b1e26;  --fg-muted: #5a6172;
+  --accent: #2f8f76;  --accent-hover: #26765f;  --fg-on-accent: #ffffff;
+  --grid-line: rgba(0, 0, 0, 0.06);  --border: rgba(0, 0, 0, 0.12);
+}
+:root[cthulhu-ambient-time="dusk"] {
+  --bg: #241a16;  --bg-elevated: #30231c;  --surface: #291d18;  --surface-hover: #3a2b22;
+  --fg: #f3e9df;  --fg-muted: #b59d8a;
+  --accent: #e08a4a;  --accent-hover: #f0a05f;  --fg-on-accent: #1a0f08;
+  --grid-line: rgba(255, 180, 120, 0.06);  --border: rgba(255, 180, 120, 0.14);
+}
+
+/* ============ WEATHER: derive tweaks from the current A2 tokens (never a raw
+ * color) + let JS mount an animated overlay for rain/snow/storm. ============ */
+:root[cthulhu-ambient-weather="cloudy"] {
+  --accent: color-mix(in srgb, var(--accent) 65%, var(--fg-muted));
+}
+:root[cthulhu-ambient-weather="storm"] {
+  --bg: color-mix(in srgb, var(--bg) 82%, #000);
+  --accent: color-mix(in srgb, var(--accent) 70%, var(--fg-muted));
+}
+
+/* ============ celestial body (sun by day / moon-phase by night) ============ */
+#cthulhu-ambient-celestial {
+  position: fixed;
+  top: 8px;
+  inset-inline-end: 40px;
+  width: 32px;
+  height: 32px;
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  image-rendering: pixelated;
+  transform: scale(1.5);
+  transform-origin: top right;
+  z-index: 2147483646;
+  pointer-events: none;
+}
+
+/* ============ weather overlay host (rain/snow via the A4 sprite helper) ====== */
+#cthulhu-ambient-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483645;
+  pointer-events: none;
+  background-repeat: repeat;      /* the sprite helper animates it; tiled to cover */
+  image-rendering: pixelated;
+  opacity: 0.6;
+}

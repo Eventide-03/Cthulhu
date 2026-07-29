@@ -1,0 +1,7 @@
+{
+  "id": "example",
+  "enabled": true,
+  "mount": "browser-window",
+  "css": "example.css",
+  "js": "example.js"
+}

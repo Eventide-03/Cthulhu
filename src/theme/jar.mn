@@ -1,0 +1,50 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+cthulhu.jar:
+# Registers chrome://cthulhu/content/ -> the "content/" tree inside cthulhu.jar.
+# Assets live under content/assets/, i.e. chrome://cthulhu/content/assets/<file>,
+# so CSS/JS can reference bundled art. (Left as a chrome-only package: no
+# contentaccessible flag, so web content cannot load these.)
+% content cthulhu %content/
+# Content-accessible package exposing ONLY the cursor images to web content, so
+# the global cursor sheet's url()s load inside pages (a plain chrome://cthulhu/
+# URL is blocked in content). Maps chrome://cthulhu-cursors/content/ -> the
+# cursors module's assets/ dir. Nothing else is exposed to content.
+% content cthulhu-cursors %content/modules/cursors/assets/ contentaccessible=yes
+    content/theme.css                   (content/theme.css)
+    content/browser.css                 (content/browser.css)
+    content/browser.js                  (content/browser.js)
+    content/loader.js                   (content/loader.js)
+    content/sprite.js                   (content/sprite.js)
+    content/sprite.css                  (content/sprite.css)
+    content/assets/toolbar-badge.svg    (assets/toolbar-badge.svg)
+# Feature modules (see content/modules/README.md). jar.mn does not glob, so each
+# module file is listed explicitly:
+    content/modules/index.json                 (content/modules/index.json)
+    content/modules/example/manifest.json      (content/modules/example/manifest.json)
+    content/modules/example/example.js         (content/modules/example/example.js)
+    content/modules/example/example.css        (content/modules/example/example.css)
+    content/modules/example/assets/idle.png    (content/modules/example/assets/idle.png)
+    content/modules/example/assets/idle.json   (content/modules/example/assets/idle.json)
+    content/modules/example/assets/logo.png    (content/modules/example/assets/logo.png)
+# cursors module (images are also mapped content-accessible via cthulhu-cursors above):
+    content/modules/cursors/manifest.json      (content/modules/cursors/manifest.json)
+    content/modules/cursors/cursors.js         (content/modules/cursors/cursors.js)
+    content/modules/cursors/cursors.css        (content/modules/cursors/cursors.css)
+    content/modules/cursors/assets/default.png (content/modules/cursors/assets/default.png)
+    content/modules/cursors/assets/pointer.png (content/modules/cursors/assets/pointer.png)
+    content/modules/cursors/assets/text.png    (content/modules/cursors/assets/text.png)
+# ambient-theme module (time-of-day / weather / moon; art slots the user can replace):
+    content/modules/ambient-theme/manifest.json       (content/modules/ambient-theme/manifest.json)
+    content/modules/ambient-theme/ambient-theme.js    (content/modules/ambient-theme/ambient-theme.js)
+    content/modules/ambient-theme/ambient-theme.css   (content/modules/ambient-theme/ambient-theme.css)
+    content/modules/ambient-theme/assets/sun.png      (content/modules/ambient-theme/assets/sun.png)
+    content/modules/ambient-theme/assets/moon.png     (content/modules/ambient-theme/assets/moon.png)
+    content/modules/ambient-theme/assets/rain.png     (content/modules/ambient-theme/assets/rain.png)
+    content/modules/ambient-theme/assets/rain.json    (content/modules/ambient-theme/assets/rain.json)
+    content/modules/ambient-theme/assets/snow.png     (content/modules/ambient-theme/assets/snow.png)
+    content/modules/ambient-theme/assets/snow.json    (content/modules/ambient-theme/assets/snow.json)
+# Pixel-font slot: uncomment + drop the file once supplied (see theme.css @font-face).
+#   content/assets/fonts/pixel.woff2    (assets/fonts/pixel.woff2)

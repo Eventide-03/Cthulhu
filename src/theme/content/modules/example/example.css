@@ -1,0 +1,11 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* Cthulhu "example" feature module styles — empty scaffold.
+ * Consume the theme tokens (theme.css) so the module re-themes automatically;
+ * never hardcode colors here. */
+:root {
+  /* Marker proving the module CSS was injected (verifiable via getComputedStyle). */
+  --cthulhu-module-example: 1;
+}

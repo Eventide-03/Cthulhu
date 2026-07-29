@@ -1,0 +1,63 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* =============================================================================
+ * Cthulhu — VISUAL IDENTITY, single source of truth.
+ *
+ * All chrome/feature CSS consumes these tokens (var(--...)). To retheme the
+ * whole browser, edit ONLY the values in this file. Defined on :root so they
+ * cascade through the entire chrome document.
+ * ============================================================================= */
+
+:root {
+  /* --- Surfaces (dark palette) --- */
+  --bg:            #1a1a1a;   /* near-black app background */
+  --bg-elevated:   #242424;   /* raised surfaces: toolbars, panels, popups */
+  --surface:       #1f1f1f;   /* default surface between bg and elevated */
+  --surface-hover: #2e2e2e;   /* surface hover state */
+
+  /* --- Text --- */
+  --fg:            #e8e8e8;   /* primary foreground */
+  --fg-muted:      #9a9a9a;   /* secondary / muted text */
+
+  /* --- Accent (a single accent) --- */
+  --accent:        #5ad1b0;   /* the one accent color */
+  --accent-hover:  #6fe0c2;   /* accent hover */
+  --fg-on-accent:  #0a0a0a;   /* text/icons drawn on accent fills */
+
+  /* --- Lines --- */
+  --grid-line:     rgba(255, 255, 255, 0.06);  /* subtle light gridlines */
+  --border:        rgba(255, 255, 255, 0.12);  /* dividers / borders */
+
+  /* --- Typography --- */
+  /* Pixel-font token. Consumers use `font-family: var(--font-pixel)`. Until the
+   * real font file is dropped in (see @font-face below), text falls back through
+   * this stack, so nothing looks broken. */
+  --font-pixel: "Cthulhu Pixel", "Courier New", monospace;
+}
+
+/* -----------------------------------------------------------------------------
+ * Pixel-font slot (PLACEHOLDER).
+ * Supply the font file at assets/fonts/pixel.woff2 and add it to theme/jar.mn:
+ *     content/assets/fonts/pixel.woff2   (assets/fonts/pixel.woff2)
+ * Then it resolves at chrome://cthulhu/content/assets/fonts/pixel.woff2 and this
+ * @font-face binds the "Cthulhu Pixel" family used by --font-pixel. Until then
+ * the src simply fails to load (harmless) and the fallback stack is used.
+ * -------------------------------------------------------------------------- */
+@font-face {
+  font-family: "Cthulhu Pixel";
+  src: url("chrome://cthulhu/content/assets/fonts/pixel.woff2") format("woff2");
+  font-display: swap;
+}
+
+/* -----------------------------------------------------------------------------
+ * Crisp scaled pixel art. Auto-applies to <img> that load our bundled art, plus
+ * any element opted in with the .cthulhu-pixelated helper (CSS cannot match an
+ * element by its background-image URL, so background users add the class).
+ * Scoped to our art so it never pixelates Firefox's own vector/hi-res icons.
+ * -------------------------------------------------------------------------- */
+img[src*="chrome://cthulhu/"],
+.cthulhu-pixelated {
+  image-rendering: pixelated;
+}

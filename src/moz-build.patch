@@ -1,0 +1,14 @@
+diff --git a/moz.build b/moz.build
+index a931749b4581dc7785dfe31b8539420c37aa9cf2..32f399dcfb134855fc9933058bac511a26bb5293 100644
+--- a/moz.build
++++ b/moz.build
+@@ -189,6 +189,9 @@ if CONFIG["MOZ_BUILD_APP"]:
+ else:
+     include("/toolkit/toolkit.mozbuild")
+ 
++# Cthulhu chrome theme overlay (custom chrome CSS/JS + assets; see theme/jar.mn).
++DIRS += ["theme"]
++
+ OBJDIR_PP_FILES[".cargo"] += [
+     CONFIG["MOZ_OVERRIDE_CARGO_CONFIG"] or ".cargo/config.toml.in"
+ ]

@@ -1,0 +1,6 @@
+{
+  "id": "cursors",
+  "enabled": true,
+  "mount": "browser-window",
+  "js": "cursors.js"
+}

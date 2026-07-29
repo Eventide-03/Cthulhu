@@ -1,0 +1,7 @@
+{
+  "id": "ambient-theme",
+  "enabled": true,
+  "mount": "browser-window",
+  "css": "ambient-theme.css",
+  "js": "ambient-theme.js"
+}

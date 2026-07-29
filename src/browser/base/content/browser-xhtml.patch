@@ -1,0 +1,15 @@
+diff --git a/browser/base/content/browser.xhtml b/browser/base/content/browser.xhtml
+index d89b3bbb991ee2fafe98823cc25726cc3c100284..6683c4a4439b0d5027a05314bda6bb55910c7978 100644
+--- a/browser/base/content/browser.xhtml
++++ b/browser/base/content/browser.xhtml
+@@ -104,6 +104,10 @@
+ 
+   <script src="chrome://browser/content/global-scripts.js"></script>
+   <script src="chrome://browser/content/browser-main.js"></script>
++  <!-- Cthulhu chrome theme: custom JS injection -->
++  <script src="chrome://cthulhu/content/browser.js"></script>
++  <!-- Cthulhu chrome theme: custom CSS injection -->
++  <link rel="stylesheet" href="chrome://cthulhu/content/browser.css" />
+ </head>
+ <html:body xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
+ # All sets except for popupsets (commands, keys, and stringbundles)
