@@ -14,12 +14,19 @@
  * The trailing keyword is the fallback if the image can't load / isn't supported
  * (platform-neutral; e.g. Windows may reject some sizes/formats — see README).
  * Hotspots below match the 32x32 placeholders; re-tune for your real art.
+ *
+ * !important on every rule is REQUIRED: this is a user-origin sheet, and
+ * Firefox's built-in chrome styles are author-origin (which normally win). The
+ * new-tab button, the tab close "x", and many toolbar buttons set their own
+ * cursor in those author sheets — without !important they'd override ours and
+ * revert to the system cursor. A user-!important rule outranks author rules
+ * (even author-!important), so our cursors win everywhere.
  * ============================================================================= */
 
-/* --- default slot: tabby cat (placeholder for now) --- */
+/* --- default slot: tabby cat (64x64, clean 2x; hotspot on the pointer tip) --- */
 *,
 :root {
-  cursor: url("chrome://cthulhu-cursors/content/default.png") 1 1, auto;
+  cursor: url("chrome://cthulhu-cursors/content/default.png") 1 1, auto !important;
 }
 
 /* --- pointer / hover slot: links, buttons, interactive controls --- */
@@ -29,12 +36,12 @@ button,
 [role="link"],
 summary,
 select {
-  cursor: url("chrome://cthulhu-cursors/content/pointer.png") 16 4, pointer;
+  cursor: url("chrome://cthulhu-cursors/content/pointer.png") 14 1, pointer !important;
 }
 
 /* --- text slot: text fields and editable / selectable text --- */
 input:is([type="text"], [type="search"], [type="email"], [type="url"], [type="tel"], [type="password"], :not([type])),
 textarea,
 [contenteditable="true"] {
-  cursor: url("chrome://cthulhu-cursors/content/text.png") 16 16, text;
+  cursor: url("chrome://cthulhu-cursors/content/text.png") 2 6, text !important;
 }
