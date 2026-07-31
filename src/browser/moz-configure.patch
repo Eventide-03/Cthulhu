@@ -1,0 +1,19 @@
+diff --git a/browser/moz.configure b/browser/moz.configure
+index e8b401a7dfb21f07c7fd92c73d8eff61d2b9c2ff..ec047a7a4773dac672eb1629d6116d37d6a06f73 100644
+--- a/browser/moz.configure
++++ b/browser/moz.configure
+@@ -15,6 +15,14 @@ imply_option("MOZ_PROFILE_MIGRATOR", True)
+ 
+ imply_option("MOZ_APP_VENDOR", "Mozilla")
+ imply_option("MOZ_APP_ID", "{ec8030f7-c20a-464f-9b0e-13a3a9e97384}")
++# Cthulhu: pin the compiled User-Agent app token to "Firefox" regardless of
++# MOZ_APP_BASENAME/branding. Without this, nsHttpHandler.cpp's mAppName falls
++# back to appInfo->GetName() (the rebranded app name), which drops the
++# standard "Firefox/<ver>" UA token and replaces it with "<brand>/<ver>" --
++# breaking UA-sniffing sites. Same convention as Zen/LibreWolf. This only
++# affects the UA string; app name, window title, and About page are unaffected
++# (they come from MOZ_APP_BASENAME / branding, not MOZ_APP_UA_NAME).
++imply_option("MOZ_APP_UA_NAME", "Firefox")
+ # Include the DevTools client, not just the server (which is the default)
+ imply_option("MOZ_DEVTOOLS", "all")
+ imply_option("BROWSER_CHROME_URL", "chrome://browser/content/browser.xhtml")
