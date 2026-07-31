@@ -1,0 +1,1 @@
+gridstack 13.0.2 — license: MIT

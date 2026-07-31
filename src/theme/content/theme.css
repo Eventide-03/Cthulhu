@@ -27,7 +27,7 @@
   --fg-on-accent:  #0a0a0a;   /* text/icons drawn on accent fills */
 
   /* --- Lines --- */
-  --grid-line:     rgba(255, 255, 255, 0.06);  /* subtle light gridlines */
+  --grid-line:     rgba(255, 255, 255, 0.22);  /* light gridlines (home-page grid) */
   --border:        rgba(255, 255, 255, 0.12);  /* dividers / borders */
 
   /* --- Typography --- */

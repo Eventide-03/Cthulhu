@@ -58,3 +58,17 @@ pref("startup.homepage_welcome_url", "about:welcome");
 // explicitly so the fork's first-run-import intent stays stable):
 pref("browser.aboutwelcome.enabled", true);
 pref("browser.migrate.content-modal.about-welcome-behavior", "embedded");
+
+// -- Home page / startup: the New Tab grid --
+// about:cthulhu is registered as a privileged built-in page at chrome startup
+// (see theme/content/newtab/AboutCthulhu.sys.mjs), which also overrides the New
+// Tab URL. Startup + new windows open the New Tab grid (about:cthulhu), so the
+// home grid is NOT auto-opened as its own tab; it's reached on demand via the
+// home button (which loads about:cthulhu#home in the current tab). The two grids
+// keep separate saved layouts. Default (not locked) so it stays overridable.
+pref("browser.startup.homepage", "about:cthulhu");
+
+// -- Caret browsing OFF -- prevents the stray blinking text caret from appearing
+// in non-editable page content, and disables the F7 shortcut that toggles it.
+pref("accessibility.browsewithcaret", false);
+pref("accessibility.browsewithcaret_shortcut.enabled", false);

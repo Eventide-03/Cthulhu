@@ -1,0 +1,420 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* =============================================================================
+ * Cthulhu home / new-tab page + GridStack theming.
+ *
+ * Consumes the A2 tokens from theme.css. Loaded AFTER gridstack.css so every
+ * GridStack default is overridden with A2 variables — no hardcoded colors.
+ * Widget-surface rules are scoped to #grid so the palette (whose items are also
+ * .grid-stack-item elements, for drag-in) is not styled like a live widget.
+ * ============================================================================= */
+
+:root {
+  --drawer-w: 280px;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-pixel);
+  overflow: hidden; /* the grid is capped to the viewport (maxRow) — never scroll */
+}
+
+/* --- the grid field ------------------------------------------------------- */
+/* height is !important because GridStack sets an inline height to fit content;
+ * we want the gridded field to always fill the viewport (and accept drops
+ * anywhere), while maxRow keeps widgets from overflowing it. */
+#grid.grid-stack {
+  height: 100vh !important;
+  overflow: hidden;
+  background-color: var(--bg);
+  background-image:
+    linear-gradient(to right,  var(--grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+  background-size: var(--cthulhu-cell, 156px) var(--cthulhu-cell-h, 156px);
+  background-position: 0 0;
+}
+/* When the palette drawer is open, shrink the grid to its left so widgets never
+ * sit behind the drawer (newtab.js recomputes the columns on toggle). */
+body.cthulhu-drawer-open #grid.grid-stack {
+  margin-inline-end: var(--drawer-w);
+}
+
+/* --- widget surface (scoped to the grid) ---------------------------------- */
+#grid .grid-stack-item-content {
+  box-sizing: border-box;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--fg);
+  font-family: var(--font-pixel);
+  transition: border-color 0.15s ease;
+}
+/* No `position` override here: GridStack sets the content to position:absolute so
+ * it fills the whole item — keep that so the visible widget matches its hitbox.
+ * (The absolute content is itself a positioned ancestor for the tools/config.) */
+#grid .grid-stack-item-content.cthulhu-widget {
+  overflow: hidden;
+}
+#grid .grid-stack-item-content:hover {
+  border-color: var(--accent);
+}
+.cthulhu-widget-body {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+}
+
+/* --- per-widget hover tools + config popover ------------------------------ */
+.cthulhu-widget-tools {
+  position: absolute;
+  top: 5px;
+  inset-inline-end: 5px;
+  display: flex;
+  gap: 3px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  z-index: 3;
+}
+#grid .grid-stack-item-content.cthulhu-widget:hover .cthulhu-widget-tools {
+  opacity: 1;
+}
+.cthulhu-widget-btn {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  background: var(--bg-elevated);
+  color: var(--fg-muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.cthulhu-widget-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.cthulhu-config-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 350;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+}
+.cthulhu-widget-config {
+  width: 320px;
+  max-width: calc(100vw - 40px);
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+.cthulhu-config-title {
+  margin: 0;
+  font-size: 15px;
+  color: var(--fg);
+}
+.cthulhu-widget-config label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg);
+  font-size: 12px;
+}
+.cthulhu-widget-config input[type="text"],
+.cthulhu-widget-config input[type="url"],
+.cthulhu-widget-config textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 7px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--fg);
+  font-family: var(--font-pixel);
+  font-size: 12px;
+  outline: none;
+}
+.cthulhu-widget-config textarea:focus,
+.cthulhu-widget-config input:focus {
+  border-color: var(--accent);
+}
+.cw-cfg-save {
+  align-self: flex-start;
+  padding: 5px 12px;
+  background: var(--accent);
+  color: var(--fg-on-accent);
+  border: none;
+  border-radius: 4px;
+  font-family: var(--font-pixel);
+  cursor: pointer;
+}
+
+/* --- drag placeholder + resize handles + drag feedback (themed) ----------- */
+.grid-stack-placeholder > .placeholder-content {
+  background-color: color-mix(in srgb, var(--accent) 16%, transparent);
+  border: 1px dashed var(--accent);
+  border-radius: 8px;
+}
+.grid-stack-item > .ui-resizable-se,
+.grid-stack-item > .ui-resizable-sw,
+.grid-stack-item > .ui-resizable-ne,
+.grid-stack-item > .ui-resizable-nw {
+  background-image: none;
+}
+/* Bottom-right resize grip: three diagonal lines, sat INSIDE the widget corner
+ * (offset past the item margin) so it never clips off the edge. */
+.grid-stack-item > .ui-resizable-se {
+  width: 14px;
+  height: 14px;
+  right: calc(var(--gs-item-margin-right, 0px) + 4px);
+  bottom: calc(var(--gs-item-margin-bottom, 0px) + 4px);
+  border: none;
+  border-radius: 0;
+  background-image: linear-gradient(-45deg,
+    transparent 0 26%, var(--fg-muted) 26% 36%,
+    transparent 36% 55%, var(--fg-muted) 55% 65%,
+    transparent 65% 84%, var(--fg-muted) 84% 94%, transparent 94%);
+}
+.grid-stack-item:hover > .ui-resizable-se {
+  background-image: linear-gradient(-45deg,
+    transparent 0 26%, var(--accent) 26% 36%,
+    transparent 36% 55%, var(--accent) 55% 65%,
+    transparent 65% 84%, var(--accent) 84% 94%, transparent 94%);
+}
+.ui-draggable-dragging .grid-stack-item-content,
+.ui-resizable-resizing .grid-stack-item-content {
+  border-color: var(--accent);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+
+/* ===========================================================================
+ * Settings button (bottom-right) — toggles the palette drawer.
+ * ART SLOT: assets/settings-icon.png.
+ * ======================================================================== */
+#cthulhu-settings {
+  position: fixed;
+  bottom: 16px;
+  inset-inline-end: 16px;
+  width: 40px;
+  height: 40px;
+  z-index: 210;
+  padding: 0;
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background-image: url("chrome://cthulhu/content/newtab/assets/settings-icon.png");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 20px;
+  image-rendering: pixelated;
+  cursor: pointer;
+}
+#cthulhu-settings:hover {
+  border-color: var(--accent);
+}
+
+/* ===========================================================================
+ * Right-side drawer + widget palette
+ * ======================================================================== */
+#cthulhu-drawer {
+  --drawer-w: 280px;
+  position: fixed;
+  top: 0;
+  inset-inline-end: 0;
+  height: 100vh;
+  z-index: 200;
+  display: flex;
+  transform: translateX(var(--drawer-w)); /* off-screen to the right when closed */
+  transition: transform 0.25s ease;
+}
+#cthulhu-drawer.open {
+  transform: translateX(0);
+}
+#cthulhu-palette {
+  width: var(--drawer-w);
+  height: 100%;
+  box-sizing: border-box;
+  padding: 18px 16px 76px; /* bottom clearance so Reset clears the settings gear */
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elevated);
+  border-inline-start: 1px solid var(--border);
+  overflow-y: auto;
+}
+.cthulhu-palette-title {
+  margin: 0 0 6px;
+  color: var(--fg);
+  font-size: 16px;
+  font-family: var(--font-pixel);
+}
+#cthulhu-palette-list {
+  flex: 1;
+}
+.cthulhu-palette-category h2 {
+  margin: 16px 0 8px;
+  color: var(--fg-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.cthulhu-palette-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--fg);
+  font-family: var(--font-pixel);
+  font-size: 14px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none; /* let the custom pointer-drag own the gesture */
+}
+.cthulhu-palette-item:hover {
+  border-color: var(--accent);
+}
+.cthulhu-palette-item:active {
+  cursor: grabbing;
+}
+/* ghost that follows the cursor while dragging a palette item onto the grid */
+.cthulhu-drag-ghost {
+  position: fixed;
+  z-index: 300;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  color: var(--fg);
+  font-family: var(--font-pixel);
+  font-size: 13px;
+  opacity: 0.92;
+}
+.cthulhu-palette-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.cthulhu-palette-footer {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.cthulhu-reset {
+  width: 100%;
+  padding: 8px;
+  background: transparent;
+  color: var(--fg-muted);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: var(--font-pixel);
+  cursor: pointer;
+}
+.cthulhu-reset:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ===========================================================================
+ * Image picker modal (recent files + clipboard paste)
+ * ======================================================================== */
+.cthulhu-image-picker {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+}
+.cthulhu-image-picker-panel {
+  width: 360px;
+  max-width: calc(100vw - 40px);
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--fg);
+  font-family: var(--font-pixel);
+}
+.cthulhu-image-picker-panel h3 {
+  margin: 0;
+  font-size: 15px;
+}
+.cthulhu-ip-label {
+  color: var(--fg-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.cthulhu-ip-recent {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.cthulhu-ip-thumb {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+.cthulhu-ip-thumb:hover {
+  border-color: var(--accent);
+}
+.cthulhu-ip-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cthulhu-ip-btn {
+  padding: 9px 12px;
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: var(--font-pixel);
+  font-size: 13px;
+  cursor: pointer;
+}
+.cthulhu-ip-btn:hover {
+  border-color: var(--accent);
+}
+.cthulhu-ip-cancel {
+  color: var(--fg-muted);
+}

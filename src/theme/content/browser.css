@@ -19,10 +19,8 @@
   background-color: var(--bg) !important;
 }
 
-/* ...and the navigation bar is an elevated surface with an accent underline
- * (visible proof the tokens are being consumed). */
+/* ...and the navigation bar is an elevated surface. */
 #nav-bar {
   background-color: var(--bg-elevated) !important;
   background-image: none !important;
-  border-bottom: 2px solid var(--accent) !important;
 }

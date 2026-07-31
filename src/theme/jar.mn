@@ -20,6 +20,35 @@ cthulhu.jar:
     content/sprite.js                   (content/sprite.js)
     content/sprite.css                  (content/sprite.css)
     content/assets/toolbar-badge.svg    (assets/toolbar-badge.svg)
+# Home / new-tab page (about:cthulhu; registered by AboutCthulhu.sys.mjs):
+    content/newtab/index.html               (content/newtab/index.html)
+    content/newtab/newtab.css               (content/newtab/newtab.css)
+    content/newtab/newtab.js                (content/newtab/newtab.js)
+    content/newtab/AboutCthulhu.sys.mjs     (content/newtab/AboutCthulhu.sys.mjs)
+# Browser-wide file picker (Opera-GX-style): a JSWindowActor (registration +
+# parent/child) that intercepts <input type=file> clicks in web content.
+    content/newtab/FilePicker.sys.mjs                (content/newtab/FilePicker.sys.mjs)
+    content/newtab/CthulhuFilePickerParent.sys.mjs   (content/newtab/CthulhuFilePickerParent.sys.mjs)
+    content/newtab/CthulhuFilePickerChild.sys.mjs    (content/newtab/CthulhuFilePickerChild.sys.mjs)
+# Vendored GridStack 13 (MIT; grid engine for the dashboard). Structural css +
+# UMD bundle; see vendor/gridstack/VERSION.txt and the bundled LICENSE.
+    content/newtab/vendor/gridstack/gridstack-all.js  (content/newtab/vendor/gridstack/gridstack-all.js)
+    content/newtab/vendor/gridstack/gridstack.css     (content/newtab/vendor/gridstack/gridstack.css)
+# Widget system core + shared art (settings icon, moon strip):
+    content/newtab/widgets.js                         (content/newtab/widgets.js)
+    content/newtab/assets/settings-icon.png           (content/newtab/assets/settings-icon.png)
+    content/newtab/assets/moon.png                    (content/newtab/assets/moon.png)
+    content/newtab/widgets/index.json                 (content/newtab/widgets/index.json)
+# Starter widgets (each self-contained; palette auto-populates from these):
+    content/newtab/widgets/clock/clock.js             (content/newtab/widgets/clock/clock.js)
+    content/newtab/widgets/quick-links/quick-links.js (content/newtab/widgets/quick-links/quick-links.js)
+    content/newtab/widgets/notes/notes.js             (content/newtab/widgets/notes/notes.js)
+    content/newtab/widgets/search/search.js           (content/newtab/widgets/search/search.js)
+    content/newtab/widgets/moon/moon.js               (content/newtab/widgets/moon/moon.js)
+    content/newtab/widgets/gradient/gradient.js       (content/newtab/widgets/gradient/gradient.js)
+    content/newtab/widgets/orb/orb.js                 (content/newtab/widgets/orb/orb.js)
+    content/newtab/widgets/orb/assets/orb.png         (content/newtab/widgets/orb/assets/orb.png)
+    content/newtab/widgets/orb/assets/orb.json        (content/newtab/widgets/orb/assets/orb.json)
 # Feature modules (see content/modules/README.md). jar.mn does not glob, so each
 # module file is listed explicitly:
     content/modules/index.json                 (content/modules/index.json)
@@ -46,5 +75,10 @@ cthulhu.jar:
     content/modules/ambient-theme/assets/rain.json    (content/modules/ambient-theme/assets/rain.json)
     content/modules/ambient-theme/assets/snow.png     (content/modules/ambient-theme/assets/snow.png)
     content/modules/ambient-theme/assets/snow.json    (content/modules/ambient-theme/assets/snow.json)
+# home-button module (repurposes the Firefox View button as a Home button):
+    content/modules/home-button/manifest.json         (content/modules/home-button/manifest.json)
+    content/modules/home-button/home-button.js        (content/modules/home-button/home-button.js)
+    content/modules/home-button/home-button.css       (content/modules/home-button/home-button.css)
+    content/modules/home-button/assets/home.png       (content/modules/home-button/assets/home.png)
 # Pixel-font slot: uncomment + drop the file once supplied (see theme.css @font-face).
 #   content/assets/fonts/pixel.woff2    (assets/fonts/pixel.woff2)

@@ -132,22 +132,9 @@
     }
   }
 
-  // --- DOM: celestial body + weather overlay --------------------------------
-  function celestial() {
-    let el = doc.getElementById("cthulhu-ambient-celestial");
-    if (!el) { el = doc.createElement("div"); el.id = "cthulhu-ambient-celestial"; doc.documentElement.appendChild(el); }
-    return el;
-  }
-  function updateCelestial(band, frame) {
-    const el = celestial();
-    if (band === "day" || band === "dawn") {
-      el.style.backgroundImage = 'url("' + ASSET + 'sun.png")';
-      el.style.backgroundPositionX = "0px";
-    } else {
-      el.style.backgroundImage = 'url("' + ASSET + 'moon.png")';
-      el.style.backgroundPositionX = -frame * MOON_SIZE + "px";
-    }
-  }
+  // --- DOM: weather overlay -------------------------------------------------
+  // (The sun/moon celestial element was removed — the moon is now a home-page
+  // widget instead. Time-of-day still drives the palette + weather overlays.)
   function updateOverlay(group) {
     const want = group === "rain" || group === "snow" || group === "storm";
     let el = doc.getElementById("cthulhu-ambient-overlay");
@@ -170,7 +157,6 @@
     const now = new Date();
     const band = timeBand(now, sunTimes(loc.lat, loc.lng, now));
     doc.documentElement.setAttribute("cthulhu-ambient-time", band);
-    updateCelestial(band, moonFrame(now));
     return band;
   }
   async function applyWeather() {

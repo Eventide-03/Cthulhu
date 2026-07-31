@@ -1,0 +1,19 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* Swap the Firefox View button's icon for a home icon.
+ * ART SLOT: replace assets/home.png with your own (16x16 CSS px; supply a 32x32
+ * source for HiDPI/2x displays). The toolbar renders it into the 16x16 icon box. */
+#firefox-view-button {
+  list-style-image: url("chrome://cthulhu/content/modules/home-button/assets/home.png") !important;
+}
+#firefox-view-button {
+  /* reduce the button's inner padding so the icon can render larger */
+  --toolbarbutton-inner-padding: 3px !important;
+}
+#firefox-view-button > .toolbarbutton-icon {
+  width: 32px !important;    /* larger than the ~16-24px default toolbar icon */
+  height: 32px !important;
+  image-rendering: pixelated; /* crisp for pixel-art icons; harmless for others */
+}

@@ -13,6 +13,34 @@
     document.documentElement.setAttribute("cthulhu-chrome-js", "loaded");
   } catch (e) {}
 
+  // Register about:cthulhu (home / new-tab page) once per process. ES modules
+  // are singletons, so importing here from every window still registers a
+  // single time; the module also guards on its component CID.
+  try {
+    ChromeUtils.importESModule(
+      "chrome://cthulhu/content/newtab/AboutCthulhu.sys.mjs"
+    );
+  } catch (e) {
+    console.error("[Cthulhu] about:cthulhu registration failed:", e);
+  }
+
+  // Force caret browsing OFF (overrides a profile value that a stray F7 may have
+  // set — a default pref alone can't undo an existing user value).
+  try {
+    Services.prefs.setBoolPref("accessibility.browsewithcaret", false);
+  } catch (e) {}
+
+  // Opera-GX-style file picker: intercept <input type=file> clicks browser-wide
+  // (recent files + clipboard paste + native picker). Parent-side setup runs
+  // once per process (ES module singleton) and loads the content frame script.
+  try {
+    ChromeUtils.importESModule(
+      "chrome://cthulhu/content/newtab/FilePicker.sys.mjs"
+    );
+  } catch (e) {
+    console.error("[Cthulhu] file picker init failed:", e);
+  }
+
   // Load the shared sprite helper (defines window.CthulhuSprite) so modules can
   // use it, then bootstrap the feature-module loader and run it. The loader
   // discovers modules from modules/index.json and injects the enabled ones.

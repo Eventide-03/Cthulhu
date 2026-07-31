@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="color-scheme" content="dark" />
+    <title>New Tab</title>
+    <link rel="stylesheet" href="chrome://cthulhu/content/theme.css" />
+    <link rel="stylesheet" href="chrome://cthulhu/content/newtab/vendor/gridstack/gridstack.css" />
+    <link rel="stylesheet" href="chrome://cthulhu/content/sprite.css" />
+    <link rel="stylesheet" href="chrome://cthulhu/content/newtab/newtab.css" />
+  </head>
+  <body>
+    <!-- Dashboard grid. GridStack + the widget system take over on load. -->
+    <main class="grid-stack" id="grid" aria-label="Cthulhu home grid"></main>
+
+    <!-- Settings button (bottom-right). Toggles the widget palette drawer.
+         ART SLOT: assets/settings-icon.png. -->
+    <button id="cthulhu-settings" type="button" aria-label="Widget settings"></button>
+
+    <!-- Right-side drawer / widget palette (auto-populated from the registry). -->
+    <aside id="cthulhu-drawer" aria-label="Widget palette">
+      <div id="cthulhu-palette">
+        <h1 class="cthulhu-palette-title">Widgets</h1>
+        <div id="cthulhu-palette-list"><!-- auto-populated by widgets.js --></div>
+        <div class="cthulhu-palette-footer">
+          <button id="cthulhu-reset" type="button" class="cthulhu-reset">Reset layout</button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- engine, A4 sprite helper, widget system, then page bootstrap -->
+    <script src="chrome://cthulhu/content/newtab/vendor/gridstack/gridstack-all.js"></script>
+    <script src="chrome://cthulhu/content/sprite.js"></script>
+    <script src="chrome://cthulhu/content/newtab/widgets.js"></script>
+    <script src="chrome://cthulhu/content/newtab/newtab.js"></script>
+  </body>
+</html>

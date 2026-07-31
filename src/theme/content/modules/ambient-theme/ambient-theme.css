@@ -46,22 +46,6 @@
   --accent: color-mix(in srgb, var(--accent) 70%, var(--fg-muted));
 }
 
-/* ============ celestial body (sun by day / moon-phase by night) ============ */
-#cthulhu-ambient-celestial {
-  position: fixed;
-  top: 8px;
-  inset-inline-end: 40px;
-  width: 32px;
-  height: 32px;
-  background-repeat: no-repeat;
-  background-position: 0 0;
-  image-rendering: pixelated;
-  transform: scale(1.5);
-  transform-origin: top right;
-  z-index: 2147483646;
-  pointer-events: none;
-}
-
 /* ============ weather overlay host (rain/snow via the A4 sprite helper) ====== */
 #cthulhu-ambient-overlay {
   position: fixed;
