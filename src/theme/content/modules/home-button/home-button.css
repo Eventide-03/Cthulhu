@@ -17,3 +17,19 @@
   height: 32px !important;
   image-rendering: pixelated; /* crisp for pixel-art icons; harmless for others */
 }
+
+/* The Home button IS the tab (home-button.js pins a real about:cthulhu#home
+ * tab behind it) -- don't also render that tab's own icon in the strip, or
+ * you get two home-looking icons sitting side by side. Still a fully real,
+ * selectable tab underneath; only its strip rendering is suppressed. */
+tab[cthulhu-home-tab] {
+  display: none !important;
+}
+
+/* Reflect selection onto the button, since it stands in for the tab: looks
+ * "pressed"/active while that tab is the one you're on, same idea as a
+ * selected tab looking different from the rest of the strip. */
+#firefox-view-button[cthulhu-home-active] {
+  background-color: var(--toolbarbutton-hover-background, rgba(128, 128, 128, 0.25));
+  border-radius: var(--toolbarbutton-border-radius, 4px);
+}

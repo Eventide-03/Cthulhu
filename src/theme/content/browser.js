@@ -30,6 +30,17 @@
     Services.prefs.setBoolPref("accessibility.browsewithcaret", false);
   } catch (e) {}
 
+  // macOS: quit the app when the last browser window closes (any tab,
+  // including the home page), instead of the platform default of lingering
+  // in the dock with no windows. No-op on other platforms. Once per process.
+  try {
+    ChromeUtils.importESModule(
+      "chrome://cthulhu/content/QuitOnLastWindowClose.sys.mjs"
+    );
+  } catch (e) {
+    console.error("[Cthulhu] quit-on-last-window-close init failed:", e);
+  }
+
   // Opera-GX-style file picker: intercept <input type=file> clicks browser-wide
   // (recent files + clipboard paste + native picker). Parent-side setup runs
   // once per process (ES module singleton) and loads the content frame script.

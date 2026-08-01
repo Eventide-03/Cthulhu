@@ -40,6 +40,14 @@ CthulhuWidgets.register({
     panel.querySelector("input").addEventListener("change", e =>
       ctx.saveConfig({ ...ctx.config, foo: +e.target.value }, { refresh: true }));
   },
+
+  onClick(ctx) {                // OPTIONAL — fires on a genuine click on the
+    // widget body (GridStack is drag-enabled on the whole tile, so it starts
+    // a real drag on the first pointer movement and swallows the native
+    // `click`; the core detects "dragged then dropped in the same cell" and
+    // calls this instead — don't rely on your own click/mouseup listeners
+    // for whole-tile-clickable content, e.g. a link tile like quick-links).
+  },
 });
 ```
 

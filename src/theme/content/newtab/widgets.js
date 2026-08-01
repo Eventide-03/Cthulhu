@@ -449,10 +449,37 @@ window.CthulhuHome = (function () {
     });
   }
 
+  /* GridStack starts a real (placeholder-swapping) drag on the very first
+   * pointer movement -- even a 1-2px click jitter -- which swallows the
+   * native click/mouseup on whatever was under the cursor (confirmed live:
+   * the event's final target becomes GridStack's drag placeholder, not the
+   * original element). So a widget with clickable content (e.g. quick-links'
+   * link tile) can never rely on a plain `click` listener once it's grabbable.
+   * Work around it generically here: track each drag's start cell, and if a
+   * drag ends in the SAME cell it started in (no actual reposition), treat it
+   * as a click and notify the widget via its optional onClick(ctx) hook. */
+  function setupClickThroughDrag() {
+    let start = null;
+    grid.on("dragstart", (event, el) => {
+      const n = el.gridstackNode;
+      start = n ? { el, x: n.x, y: n.y } : null;
+    });
+    grid.on("dragstop", (event, el) => {
+      const n = el.gridstackNode;
+      const inst = el._cthulhu;
+      if (start && start.el === el && n && n.x === start.x && n.y === start.y &&
+          inst && inst.def.onClick) {
+        try { inst.def.onClick(makeCtx(inst), event); } catch (e) { console.error("[Cthulhu] onClick", inst.id, e); }
+      }
+      start = null;
+    });
+  }
+
   async function init(g) {
     grid = g;
     mode = location.hash === "#home" ? "home" : "newtab";
     ["change", "added", "removed"].forEach((ev) => grid.on(ev, () => scheduleSave()));
+    setupClickThroughDrag();
     await loadWidgetScripts();
     buildPalette();
     wireChrome();

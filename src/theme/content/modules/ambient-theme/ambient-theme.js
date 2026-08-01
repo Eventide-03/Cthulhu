@@ -30,6 +30,11 @@
   const WEATHER_REFRESH_MS = 30 * 60 * 1000; // refresh weather
   const DEFAULT_LOC = { lat: 40.7128, lng: -74.006 }; // placeholder (set the prefs!)
 
+  // Pinned to "night" (theme.css night palette) until real hex codes are
+  // given for the theme -- flip to false to restore the dynamic time-of-day
+  // + weather system below exactly as it was; nothing else needs to change.
+  const LOCKED_NIGHT = true;
+
   // --- prefs ----------------------------------------------------------------
   const P = Services.prefs;
   const getStr = (n, d) => { try { return P.getStringPref(n, d); } catch (e) { return d; } };
@@ -168,16 +173,21 @@
   }
 
   // --- init -----------------------------------------------------------------
-  (async () => {
-    try {
-      loc = await getLocation();
-      applyTime();
-      await applyWeather();
-      win.setInterval(applyTime, TIME_REFRESH_MS);
-      win.setInterval(applyWeather, WEATHER_REFRESH_MS);
-      console.log("[Cthulhu:" + ID + "] active @", loc.lat.toFixed(2), loc.lng.toFixed(2));
-    } catch (e) {
-      console.error("[Cthulhu:" + ID + "] init failed:", e);
-    }
-  })();
+  if (LOCKED_NIGHT) {
+    doc.documentElement.setAttribute("cthulhu-ambient-time", "night");
+    console.log("[Cthulhu:" + ID + "] locked to night (time-of-day/weather disabled)");
+  } else {
+    (async () => {
+      try {
+        loc = await getLocation();
+        applyTime();
+        await applyWeather();
+        win.setInterval(applyTime, TIME_REFRESH_MS);
+        win.setInterval(applyWeather, WEATHER_REFRESH_MS);
+        console.log("[Cthulhu:" + ID + "] active @", loc.lat.toFixed(2), loc.lng.toFixed(2));
+      } catch (e) {
+        console.error("[Cthulhu:" + ID + "] init failed:", e);
+      }
+    })();
+  }
 })();

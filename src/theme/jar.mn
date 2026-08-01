@@ -16,6 +16,7 @@ cthulhu.jar:
     content/theme.css                   (content/theme.css)
     content/browser.css                 (content/browser.css)
     content/browser.js                  (content/browser.js)
+    content/QuitOnLastWindowClose.sys.mjs (content/QuitOnLastWindowClose.sys.mjs)
     content/loader.js                   (content/loader.js)
     content/sprite.js                   (content/sprite.js)
     content/sprite.css                  (content/sprite.css)
