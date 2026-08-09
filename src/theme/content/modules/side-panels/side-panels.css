@@ -1,0 +1,350 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* While a side panel is open, hide the search bar rather than try to render
+ * above it: its native toolbarbuttons (bookmark star, identity/permission
+ * icons) paint above the sidebar's own very-high z-index regardless (a Gecko
+ * chrome-widget-compositing quirk, not a CSS stacking bug we can win by
+ * going higher -- confirmed live). The sidebar should overlap/cover the
+ * search bar, not visually clash with it -- this delivers that outright. */
+:root[cthulhu-sidepanel-open] #urlbar-container {
+  visibility: hidden !important;
+}
+
+/* ===========================================================================
+ * "Now Playing" toolbar squircle (~100x25px, left of the extensions button --
+ * CustomizableUI.AREA_NAVBAR places it as the last navbar widget, which lands
+ * directly before #unified-extensions-button). A2 theme variables only.
+ * ======================================================================== */
+.cthulhu-nowplaying-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-inline: 2px;
+}
+/* Service toggles now live in this same toolbar item, left of the squircle
+ * (and so left of the extensions button too) -- not inside the sidebar,
+ * which only exists once something is actually open. */
+.cthulhu-sp-toggles {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.cthulhu-sp-toggle {
+  position: relative; /* anchors the unread badge dot */
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background-color: var(--bg-elevated);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 16px 16px;
+  image-rendering: pixelated;
+  cursor: pointer;
+}
+.cthulhu-sp-toggle:hover {
+  border-color: var(--border);
+}
+.cthulhu-sp-toggle.active {
+  border-color: var(--accent);
+  background-color: color-mix(in srgb, var(--accent) 14%, var(--bg-elevated));
+}
+/* Unread indicator: shown when a powered-on, non-visible panel's tab title
+ * picks up a leading "(N) ..." unread count (Discord/Instagram convention).
+ * Cleared as soon as that panel is shown. No [hidden] override needed here --
+ * unlike #cthulhu-sidepanels, this rule never sets `display` itself, so the
+ * UA stylesheet's [hidden]{display:none} applies with nothing to out-specify. */
+.cthulhu-sp-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--notify);
+  border: 1px solid var(--bg-elevated);
+  pointer-events: none;
+}
+.cthulhu-np-squircle {
+  width: 135px; /* 1.35x the original 100px */
+  height: 25px;
+  box-sizing: border-box;
+  padding: 3px 8px 4px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px; /* squircle-ish on a 25px-tall bar */
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 0.15s ease;
+}
+.cthulhu-np-squircle:hover {
+  border-color: var(--accent);
+}
+.cthulhu-np-squircle.playing {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+.cthulhu-np-info {
+  min-width: 0; /* let text-overflow ellipsis actually apply inside a flex column */
+}
+.cthulhu-np-title,
+.cthulhu-np-artist {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-pixel);
+  line-height: 1.1;
+}
+.cthulhu-np-title {
+  font-size: 9px;
+  color: var(--fg);
+}
+.cthulhu-np-artist {
+  font-size: 8px;
+  color: var(--fg-muted);
+}
+.cthulhu-np-track {
+  height: 2px;
+  border-radius: 1px;
+  background: var(--border);
+  overflow: hidden;
+  flex: none;
+}
+.cthulhu-np-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--fg-muted);
+  transition: width 0.2s linear;
+}
+.cthulhu-np-squircle.playing .cthulhu-np-fill {
+  background: var(--accent);
+}
+
+/* ===========================================================================
+ * Side panels sidebar: docked to the right edge, above any tab content.
+ * ======================================================================== */
+#cthulhu-sidepanels {
+  position: fixed;
+  top: 0;
+  inset-inline-end: 0;
+  /* width is set inline by JS from the saved/dragged size (see side-panels.js
+   * getSavedWidth()) -- this is only the fallback before that runs. */
+  width: 380px;
+  height: 100vh;
+  z-index: 2147483640;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elevated);
+  border-inline-start: 1px solid var(--border);
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.35);
+}
+/* [hidden] is set/cleared to actually show/hide the sidebar (see
+ * side-panels.js's closeAll/showService) -- the plain #cthulhu-sidepanels
+ * rule above is an ID selector, which otherwise beats the UA stylesheet's
+ * plain-attribute `[hidden] { display: none }` rule and leaves the (empty)
+ * panel visibly docked at all times regardless of the hidden property. This
+ * needs to win that specificity fight. */
+#cthulhu-sidepanels[hidden] {
+  display: none;
+}
+/* Drag handle along the sidebar's left edge -- it's docked right, so the left
+ * edge is the one that moves as you resize. `position: fixed` on the
+ * container above still establishes a valid containing block for this
+ * absolutely-positioned child (any position other than static does). */
+.cthulhu-sp-resize {
+  position: absolute;
+  left: -3px;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: ew-resize;
+  z-index: 1;
+  touch-action: none; /* don't let the platform hijack the drag as a scroll/pan gesture */
+}
+.cthulhu-sp-resize:hover,
+.cthulhu-sp-resize.dragging {
+  background: var(--accent);
+  opacity: 0.5;
+}
+.cthulhu-sp-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 6px 0;
+}
+.cthulhu-sp-power,
+.cthulhu-sp-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg-muted);
+  font-family: var(--font-pixel);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.cthulhu-sp-power:hover {
+  color: var(--notify);
+  border-color: var(--notify);
+}
+.cthulhu-sp-close:hover {
+  color: var(--fg);
+  border-color: var(--accent);
+}
+.cthulhu-sp-content {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+.cthulhu-sp-browser {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* ===========================================================================
+ * "Now Playing" dropdown player: a real XUL <panel type="arrow"> opened by
+ * clicking the squircle -- NOT the sidebar (side-panels.js's
+ * createPlayerDropdown()). Real popups render in the OS-level popup layer,
+ * so unlike the sidebar this needs no urlbar-hiding workaround for the
+ * chrome-widget-compositing quirk noted above #cthulhu-sidepanels.
+ * ======================================================================== */
+.cthulhu-player-card {
+  width: 260px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--bg-elevated);
+  font-family: var(--font-pixel);
+  color: var(--fg);
+}
+.cthulhu-player-art {
+  align-self: center;
+  width: 96px;
+  height: 96px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.cthulhu-player-art-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.cthulhu-player-title {
+  text-align: center;
+  font-size: 12px;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cthulhu-player-artist {
+  text-align: center;
+  font-size: 10px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cthulhu-player-progress {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+  cursor: pointer;
+  touch-action: none;
+}
+.cthulhu-player-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  transition: width 0.2s linear;
+}
+.cthulhu-player-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+.cthulhu-player-ctrl,
+.cthulhu-player-play {
+  border: none;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  padding: 0;
+}
+.cthulhu-player-ctrl {
+  font-size: 16px;
+}
+.cthulhu-player-play {
+  font-size: 22px;
+}
+.cthulhu-player-ctrl:disabled,
+.cthulhu-player-play:disabled {
+  color: var(--fg-muted);
+  cursor: default;
+  opacity: 0.4;
+}
+.cthulhu-player-ctrl.muted {
+  color: var(--accent);
+}
+.cthulhu-player-section-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+}
+.cthulhu-player-recommend-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.cthulhu-player-rec-tile {
+  flex: 1 1 calc(50% - 6px);
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  cursor: pointer;
+  text-align: center;
+}
+.cthulhu-player-rec-tile:hover {
+  border-color: var(--accent);
+}
+.cthulhu-player-search input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+  font-family: var(--font-pixel);
+  font-size: 11px;
+}
+.cthulhu-player-search input:focus {
+  outline: none;
+  border-color: var(--accent);
+}

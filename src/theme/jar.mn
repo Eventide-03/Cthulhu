@@ -43,6 +43,7 @@ cthulhu.jar:
 # Starter widgets (each self-contained; palette auto-populates from these):
     content/newtab/widgets/clock/clock.js             (content/newtab/widgets/clock/clock.js)
     content/newtab/widgets/quick-links/quick-links.js (content/newtab/widgets/quick-links/quick-links.js)
+    content/newtab/widgets/folder/folder.js           (content/newtab/widgets/folder/folder.js)
     content/newtab/widgets/notes/notes.js             (content/newtab/widgets/notes/notes.js)
     content/newtab/widgets/search/search.js           (content/newtab/widgets/search/search.js)
     content/newtab/widgets/moon/moon.js               (content/newtab/widgets/moon/moon.js)
@@ -81,5 +82,15 @@ cthulhu.jar:
     content/modules/home-button/home-button.js        (content/modules/home-button/home-button.js)
     content/modules/home-button/home-button.css       (content/modules/home-button/home-button.css)
     content/modules/home-button/assets/home.png       (content/modules/home-button/assets/home.png)
+# side-panels module (Now Playing squircle + Discord/Instagram/Apple Music sidebar):
+    content/modules/side-panels/manifest.json               (content/modules/side-panels/manifest.json)
+    content/modules/side-panels/side-panels.js              (content/modules/side-panels/side-panels.js)
+    content/modules/side-panels/SidePanelsWidget.sys.mjs     (content/modules/side-panels/SidePanelsWidget.sys.mjs)
+    content/modules/side-panels/CthulhuDiscordSimplifyChild.sys.mjs (content/modules/side-panels/CthulhuDiscordSimplifyChild.sys.mjs)
+    content/modules/side-panels/side-panels.css             (content/modules/side-panels/side-panels.css)
+    content/modules/side-panels/assets/discord-icon.png      (content/modules/side-panels/assets/discord-icon.png)
+    content/modules/side-panels/assets/instagram-icon.png    (content/modules/side-panels/assets/instagram-icon.png)
+    content/modules/side-panels/assets/apple-music-icon.png  (content/modules/side-panels/assets/apple-music-icon.png)
+    content/modules/side-panels/assets/note-idle.png         (content/modules/side-panels/assets/note-idle.png)
 # Pixel-font slot: uncomment + drop the file once supplied (see theme.css @font-face).
 #   content/assets/fonts/pixel.woff2    (assets/fonts/pixel.woff2)

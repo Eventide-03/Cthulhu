@@ -63,6 +63,8 @@ CthulhuWidgets.register({
 | `ctx.moon` | moon helpers: `ctx.moon.moonPhase(date)` → `{frac,frame,name}`; `ctx.moon.moonEl(date,size)` → a pixel moon element |
 | `ctx.assetUrl(path)` | resolves `widgets/<id>/assets/<path>` to a chrome URL |
 | `ctx.esc(str)` | HTML-escape a string |
+| `ctx.isHome` | `true` on the home page (`about:cthulhu#home`, the single pinned tab the Home button toggles to) |
+| `ctx.openLink(url)` | navigate the user to `url` — a new tab on the home page (so the pinned tab is never navigated away and lost), in place on an ordinary new tab. Use this instead of `location.href = url` for anything a widget sends the user to. |
 
 **Theme with A2 variables only** (`var(--bg)`, `var(--surface)`, `var(--accent)`,
 `var(--fg)`, `var(--grid-line)`, `var(--font-pixel)`, …) — never hardcode a color.

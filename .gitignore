@@ -5,3 +5,4 @@ dist/
 engine/
 firefox-*/
 node_modules/
+.idea/

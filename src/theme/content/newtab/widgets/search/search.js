@@ -30,7 +30,7 @@ CthulhuWidgets.register({
     form.addEventListener("submit", (e) => {
       e.preventDefault();
       const q = input.value.trim();
-      if (q) location.href = (ctx.config.engine || "https://duckduckgo.com/?q=") + encodeURIComponent(q);
+      if (q) ctx.openLink((ctx.config.engine || "https://duckduckgo.com/?q=") + encodeURIComponent(q));
     });
   },
 });

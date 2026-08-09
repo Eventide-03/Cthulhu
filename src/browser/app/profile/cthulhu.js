@@ -72,3 +72,10 @@ pref("browser.startup.homepage", "about:cthulhu");
 // in non-editable page content, and disables the F7 shortcut that toggles it.
 pref("accessibility.browsewithcaret", false);
 pref("accessibility.browsewithcaret_shortcut.enabled", false);
+
+// -- Extensions button: hidden by default (Cthulhu ships no extensions, so it's
+// dead toolbar space) instead of always shown. Firefox default is true; this
+// is the same pref its own toolbar right-click menu's "Always Show in Toolbar"
+// checkbox controls, so re-checking that box (or installing an extension that
+// needs attention) brings it back -- nothing else to configure.
+pref("extensions.unifiedExtensions.button.always_visible", false);

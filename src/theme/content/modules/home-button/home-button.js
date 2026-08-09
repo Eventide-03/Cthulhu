@@ -18,19 +18,24 @@
  * (TabSelect below) so it visually acts like the tab itself: "active" while
  * you're on it, same as a selected tab looks different from an unselected one.
  *
- * FirefoxViewHandler opens the view on MOUSEDOWN, and its listener is attached
- * at startup (before this module). So we intercept at the WINDOW in the capture
- * phase — which runs ahead of the button's own listeners — for mousedown, click
- * and command, and cancel them. Navigation happens once per activation. */
+ * Firefox View is fully suppressed: rather than intercepting DOM events on
+ * the button (fragile -- that approach silently broke across a Firefox
+ * version bump when the button's own event wiring changed upstream), this
+ * patches FirefoxViewHandler's own two entry-point methods directly. Every
+ * built-in way to open Firefox View -- the toolbar button, the menu bar item,
+ * keyboard shortcuts/commands, the Library "Firefox View" command, and a
+ * couple of internal tabbrowser call sites -- all funnel through
+ * FirefoxViewHandler.openTab()/openToolbarMouseEvent() (confirmed by
+ * searching every call site of those two methods in the engine tree), so
+ * patching them covers all of those uniformly and is resilient to future
+ * event-wiring changes upstream. A tabs progress-listener safety net below
+ * also catches about:firefoxview being reached any OTHER way (typed in the
+ * URL bar, a bookmark, session restore) and redirects it to Home too. */
 (function () {
   "use strict";
   const ID = "home-button";
   const HOME = "about:cthulhu#home";
-
-  const isViewButton = (t) => {
-    try { return t && t.closest && t.closest("#firefox-view-button"); }
-    catch (e) { return false; }
-  };
+  const FXVIEW = "about:firefoxview";
 
   // Per-window state: the pinned Home tab (once created) and the tab to
   // return to when toggling Home off. Re-checked live against gBrowser.tabs
@@ -45,6 +50,33 @@
   function isLive(tab) {
     return !!tab && !tab.closing && window.gBrowser.tabs.includes(tab);
   }
+
+  // Pinned tabs persist across restarts independent of the startup pref (a
+  // Firefox behavior, not something we opted into) -- so on the very next
+  // launch after this module ever creates the Home tab, SessionStore
+  // restores it on its own, via its own tab-creation path, before this
+  // module gets a chance to run goHome() again. That restored tab never
+  // gets the [cthulhu-home-tab] marker (SessionStore doesn't know about our
+  // custom attribute), so home-button.css's hiding rule doesn't match it and
+  // it briefly (or persistently) shows up as a plain visible pinned tab --
+  // confirmed live: after a real quit+relaunch with a pinned home tab, the
+  // restored tab had `hasAttribute("cthulhu-home-tab") === false` and
+  // `display: flex`. Adopt any pre-existing about:cthulhu#home tab up front,
+  // before anything else runs, so it's never visible even momentarily.
+  function adoptExistingHomeTab() {
+    const gBrowser = window.gBrowser;
+    for (const tab of gBrowser.tabs) {
+      const uri = tab.linkedBrowser?.currentURI;
+      if (uri && uri.spec === HOME) {
+        homeTab = tab;
+        tab.setAttribute("cthulhu-home-tab", "1");
+        if (!tab.pinned) gBrowser.pinTab(tab); // defensive: should already be pinned, but enforce the invariant
+        return;
+      }
+    }
+  }
+  adoptExistingHomeTab();
+  updateActiveState(); // in case the adopted tab is already the selected one at startup (function declaration, hoisted -- fine to call ahead of its definition below)
   // Reflect selection onto the button. Also called directly right after this
   // module changes gBrowser.selectedTab itself (rather than relying solely on
   // the TabSelect listener below): addTab()'s own internal tab-select fires
@@ -96,19 +128,49 @@
     updateActiveState();
   }
 
-  function intercept(navigate) {
-    return (e) => {
-      if (!isViewButton(e.target)) return;
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      if (navigate) goHome();
+  // Patch the shared handler's two entry points directly -- see the header
+  // comment for why this covers every built-in trigger uniformly. Firefox's
+  // own browser.js defines FirefoxViewHandler at the top level of a
+  // synchronously-loaded script (global-scripts.js's loadSubScript), which
+  // runs before this file (see browser.xhtml's script order), so it's always
+  // defined by the time this runs.
+  if (window.FirefoxViewHandler) {
+    window.FirefoxViewHandler.openTab = function () {
+      goHome();
     };
+    window.FirefoxViewHandler.openToolbarMouseEvent = function (event) {
+      if (event?.type === "mousedown" && event?.button !== 0) return;
+      goHome();
+    };
+  } else {
+    console.error("[Cthulhu:" + ID + "] FirefoxViewHandler not found -- Firefox View suppression disabled");
   }
-  // mousedown: only suppress (this is what opens Firefox View). click/command:
-  // suppress AND navigate (covers mouse and keyboard activation).
-  window.addEventListener("mousedown", intercept(false), true);
-  window.addEventListener("click", intercept(true), true);
-  window.addEventListener("command", intercept(true), true);
+
+  // Safety net: about:firefoxview reached any OTHER way (typed in the URL
+  // bar, a bookmark, an extension, session restore) bypasses
+  // FirefoxViewHandler entirely, so redirect it at the navigation level too
+  // -- whatever tab tries to load it loads Home instead, in place. Not
+  // wired into the singleton pinned-tab bookkeeping above: a stray tab
+  // loading this URL shouldn't suddenly become "the" managed Home tab.
+  const fxviewGuard = {
+    onLocationChange(aBrowser, aWebProgress, aRequest, aLocationURI) {
+      if (!aWebProgress.isTopLevel || !aLocationURI) return;
+      const spec = aLocationURI.spec;
+      if (spec !== FXVIEW && !spec.startsWith(FXVIEW + "#")) return;
+      try {
+        const sp = Services.scriptSecurityManager.getSystemPrincipal();
+        aBrowser.fixupAndLoadURIString(HOME, { triggeringPrincipal: sp });
+      } catch (err) {
+        console.error("[Cthulhu:" + ID + "] fxview redirect failed:", err);
+      }
+    },
+  };
+  window.gBrowser.addTabsProgressListener(fxviewGuard);
+  window.addEventListener(
+    "unload",
+    () => window.gBrowser.removeTabsProgressListener(fxviewGuard),
+    { once: true }
+  );
 
   // cosmetic: relabel the button as Home, and keep its active state in sync
   // when the user switches tabs directly (not via this button) -- e.g.

@@ -30,6 +30,9 @@
   --grid-line:     rgba(255, 255, 255, 0.22);  /* light gridlines (home-page grid) */
   --border:        rgba(255, 255, 255, 0.12);  /* dividers / borders */
 
+  /* --- Status --- */
+  --notify:        #ef4444;   /* unread/attention badges -- fixed regardless of ambient theme */
+
   /* --- Typography --- */
   /* Pixel-font token. Consumers use `font-family: var(--font-pixel)`. Until the
    * real font file is dropped in (see @font-face below), text falls back through

@@ -24,3 +24,16 @@
   background-color: var(--bg-elevated) !important;
   background-image: none !important;
 }
+
+/* Stock Firefox draws a thin separator (border-inline-start) plus reserved
+ * padding on #tabbrowser-tabs whenever a toolbarbutton precedes it -- meant
+ * to set the tab strip off from a real pinned tab sitting right there. Our
+ * Home button's pinned tab is deliberately hidden (home-button.css), so with
+ * nothing to separate from, that just reads as a stray thin bar next to the
+ * button. Home button always sits directly before the tab strip here, so
+ * this is safe to drop unconditionally. */
+#tabbrowser-tabs {
+  border-inline-start: none !important;
+  padding-inline-start: 0 !important;
+  margin-inline-start: 0 !important;
+}

@@ -218,6 +218,17 @@ window.CthulhuHome = (function () {
       pickImage: pickImage, // opens the recent-files/clipboard image picker -> data URL
       openConfig: () => openConfig(instance.el), // let a widget open its own config
       closeConfig: () => { const m = document.querySelector(".cthulhu-config-modal"); if (m) m.remove(); },
+      isHome: mode === "home",
+      // The home page lives in a single pinned tab the Home button toggles to
+      // (see home-button.js) -- navigating it away in place would silently
+      // destroy that tab (nothing left to toggle back to). Widgets that send
+      // the user somewhere else (quick-links, search, ...) should call this
+      // instead of setting location.href directly: it opens a new tab on the
+      // home page, and navigates in place as before on an ordinary new tab.
+      openLink(url) {
+        if (this.isHome) window.open(url, "_blank");
+        else location.href = url;
+      },
     };
   }
   function runRender(instance) {

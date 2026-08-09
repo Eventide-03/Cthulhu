@@ -1,0 +1,7 @@
+{
+  "id": "side-panels",
+  "enabled": true,
+  "mount": "browser-window",
+  "css": "side-panels.css",
+  "js": "side-panels.js"
+}

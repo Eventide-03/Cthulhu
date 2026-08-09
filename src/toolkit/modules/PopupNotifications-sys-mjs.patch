@@ -1,0 +1,24 @@
+diff --git a/toolkit/modules/PopupNotifications.sys.mjs b/toolkit/modules/PopupNotifications.sys.mjs
+index 88d134485cbd20e440fbdbe9a2a67c24ff1677a0..2fe3d09948be1df47d821a8c338878e7e2d2d91f 100644
+--- a/toolkit/modules/PopupNotifications.sys.mjs
++++ b/toolkit/modules/PopupNotifications.sys.mjs
+@@ -1574,7 +1574,18 @@ PopupNotifications.prototype = {
+     // actually being within the selected tab. We workaround this by
+     // comparing frameLoader instead, which is proxied from the outer
+     // <xul:browser> to the inner mozbrowser <iframe>.
+-    return this.tabbrowser.selectedBrowser.frameLoader == browser.frameLoader;
++    if (this.tabbrowser.selectedBrowser.frameLoader == browser.frameLoader) {
++      return true;
++    }
++    // Cthulhu: a browser hosted outside gBrowser entirely (e.g. a side-panel
++    // web app in a docked sidebar, not a tab) can still be the thing the user
++    // is actually looking at. Recognize it as active via a marker attribute
++    // the host sets on exactly the currently-visible one, rather than
++    // silently dropping its permission prompts (e.g. Web Notifications).
++    if (browser.getAttribute?.("cthulhu-sidepanel-active") === "true") {
++      return true;
++    }
++    return false;
+   },
+ 
+   _onIconBoxCommand: function PopupNotifications_onIconBoxCommand(event) {

@@ -5,8 +5,8 @@
   "binaryName": "Cthulhu",
   "version": {
     "product": "firefox-esr",
-    "version": "140.12.0esr",
-    "candidate": "140.12.0esr"
+    "version": "153.0esr",
+    "candidate": "153.0esr"
   },
   "buildOptions": {
     "windowsUseSymbolicLinks": false

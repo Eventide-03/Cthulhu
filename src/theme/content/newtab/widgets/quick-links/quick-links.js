@@ -79,7 +79,7 @@ CthulhuWidgets.register({
   onClick(ctx) {
     const url = _cthNormalizeUrl(ctx.config.url);
     if (!url) { ctx.openConfig(); return; }
-    location.href = url;
+    ctx.openLink(url);
   },
   render(el, ctx) {
     const url = _cthNormalizeUrl(ctx.config.url);
@@ -90,6 +90,22 @@ CthulhuWidgets.register({
     a.className = "cw-ql";
     a.href = url || "#";
     a.draggable = false; // don't native-drag the link; let GridStack move the widget
+    // Keyboard Enter/Space activates the native href directly (bypasses
+    // onClick above, which only fires for pointer-driven clicks) -- target
+    // it at a new tab too on the home page, for the same reason ctx.openLink
+    // does: the pinned home tab must never navigate away in place.
+    if (ctx.isHome) a.target = "_blank";
+    if (!url) {
+      // A precise, zero-movement click never engages GridStack's drag
+      // machinery at all (confirmed live: no dragstart/dragstop pair fires
+      // for it), so onClick above never runs -- only the native click does,
+      // same as keyboard Enter/Space. Without this, that path falls through
+      // to the plain href="#" and just appends a fragment instead of opening
+      // config. (A jittery click, GridStack's normal case, never reaches
+      // here: GridStack swallows that native click entirely, so there's no
+      // double-open risk between this and onClick.)
+      a.addEventListener("click", (e) => { e.preventDefault(); ctx.openConfig(); });
+    }
 
     const logo = document.createElement("img");
     logo.className = "cw-ql-logo";
