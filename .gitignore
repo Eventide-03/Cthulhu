@@ -6,3 +6,4 @@ engine/
 firefox-*/
 node_modules/
 .idea/
+.DS_Store

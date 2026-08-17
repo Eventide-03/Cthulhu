@@ -69,6 +69,22 @@ CthulhuWidgets.register({
 **Theme with A2 variables only** (`var(--bg)`, `var(--surface)`, `var(--accent)`,
 `var(--fg)`, `var(--grid-line)`, `var(--font-pixel)`, …) — never hardcode a color.
 
+## ⚠️ Build controls with `createElement`, not `innerHTML`
+
+`about:cthulhu` runs with the **system principal**, so assigning `innerHTML`
+goes through Gecko's chrome-fragment sanitizer, which **silently drops
+interactive elements** — `<button>`, `<input>` and `<select>` all disappear
+from the resulting tree with no error thrown:
+
+```js
+d.innerHTML = "<span>keep</span><button>gone</button><input><select></select>";
+// -> "<span>keep</span>"   (only inert nodes survive; <textarea> does too)
+```
+
+Use `innerHTML` for inert structure (divs, spans, text) if you like, but every
+control must be `document.createElement("button")` etc. This is easy to miss
+because it fails *quietly* — the widget renders, just without its buttons.
+
 ## Add a widget in 3 steps
 
 1. Create `widgets/<id>/<id>.js` (+ `assets/`) with a `CthulhuWidgets.register({...})` call.

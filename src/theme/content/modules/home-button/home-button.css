@@ -13,8 +13,8 @@
   --toolbarbutton-inner-padding: 3px !important;
 }
 #firefox-view-button > .toolbarbutton-icon {
-  width: 32px !important;    /* larger than the ~16-24px default toolbar icon */
-  height: 32px !important;
+  width: 48px !important;    /* 1.5x the original 32px */
+  height: 48px !important;
   image-rendering: pixelated; /* crisp for pixel-art icons; harmless for others */
 }
 

@@ -1,0 +1,13 @@
+diff --git a/browser/app/distribution/distribution.ini b/browser/app/distribution/distribution.ini
+index 5c16c3bab161eadcd2c46335ae542d253937a7a2..709030e1995f58d7e9a218d08ce28b2747550da8 100644
+--- a/browser/app/distribution/distribution.ini
++++ b/browser/app/distribution/distribution.ini
+@@ -1,4 +1,4 @@
+ [Global]
+-id=mozilla-official
++id=cthulhu
+ version=1.0
+-about=Mozilla Firefox Official Build
+\ No newline at end of file
++about=Cthulhu Browser
+\ No newline at end of file

@@ -23,25 +23,40 @@
  * (even author-!important), so our cursors win everywhere.
  * ============================================================================= */
 
+/* --- fullscreen bow-out: excluded from every slot below via `:not()` on
+ * each selector, so let the page's own cursor (including a plain
+ * `cursor: none`) win inside a fullscreened element -- e.g. a video
+ * player's own inactivity-based auto-hide, the same mechanism every other
+ * browser lets run.
+ *
+ * This can't be done as a separate override rule instead (a `:fullscreen
+ * { cursor: revert !important }` block placed after these): `revert` only
+ * un-applies the ONE declaration that used it, not sibling rules -- so a
+ * separate rule reverting itself away just lets the (still perfectly
+ * intact, still-matching) rules below win anyway, since a page's
+ * `cursor: none` can never outrank a user-origin declaration regardless of
+ * what it targets. It has to be that these rules simply don't match at all
+ * inside `:fullscreen` -- confirmed live before shipping this. */
+
 /* --- default slot: tabby cat (64x64, clean 2x; hotspot on the pointer tip) --- */
-*,
-:root {
+*:not(:is(:fullscreen, :fullscreen *)),
+:root:not(:is(:fullscreen, :fullscreen *)) {
   cursor: url("chrome://cthulhu-cursors/content/default.png") 1 1, auto !important;
 }
 
 /* --- pointer / hover slot: links, buttons, interactive controls --- */
-a[href],
-button,
-[role="button"],
-[role="link"],
-summary,
-select {
+a[href]:not(:is(:fullscreen, :fullscreen *)),
+button:not(:is(:fullscreen, :fullscreen *)),
+[role="button"]:not(:is(:fullscreen, :fullscreen *)),
+[role="link"]:not(:is(:fullscreen, :fullscreen *)),
+summary:not(:is(:fullscreen, :fullscreen *)),
+select:not(:is(:fullscreen, :fullscreen *)) {
   cursor: url("chrome://cthulhu-cursors/content/pointer.png") 14 1, pointer !important;
 }
 
 /* --- text slot: text fields and editable / selectable text --- */
-input:is([type="text"], [type="search"], [type="email"], [type="url"], [type="tel"], [type="password"], :not([type])),
-textarea,
-[contenteditable="true"] {
+input:is([type="text"], [type="search"], [type="email"], [type="url"], [type="tel"], [type="password"], :not([type])):not(:is(:fullscreen, :fullscreen *)),
+textarea:not(:is(:fullscreen, :fullscreen *)),
+[contenteditable="true"]:not(:is(:fullscreen, :fullscreen *)) {
   cursor: url("chrome://cthulhu-cursors/content/text.png") 2 6, text !important;
 }

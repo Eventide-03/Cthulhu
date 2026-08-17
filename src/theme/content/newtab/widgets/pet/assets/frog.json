@@ -1,0 +1,49 @@
+{
+  "frames": {
+    "frog 0.aseprite": {
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 220
+    },
+    "frog 1.aseprite": {
+      "frame": {
+        "x": 32,
+        "y": 0,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 220
+    },
+    "frog 2.aseprite": {
+      "frame": {
+        "x": 64,
+        "y": 0,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 220
+    },
+    "frog 3.aseprite": {
+      "frame": {
+        "x": 96,
+        "y": 0,
+        "w": 32,
+        "h": 32
+      },
+      "duration": 220
+    }
+  },
+  "meta": {
+    "image": "frog.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 128,
+      "h": 32
+    },
+    "scale": "1"
+  }
+}

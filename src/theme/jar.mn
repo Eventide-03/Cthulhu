@@ -44,6 +44,21 @@ cthulhu.jar:
     content/newtab/widgets/clock/clock.js             (content/newtab/widgets/clock/clock.js)
     content/newtab/widgets/quick-links/quick-links.js (content/newtab/widgets/quick-links/quick-links.js)
     content/newtab/widgets/folder/folder.js           (content/newtab/widgets/folder/folder.js)
+# calendar widget (gcal.js is pulled in by calendar.js; the loader only
+# auto-loads <id>/<id>.js, see the widget's README):
+    content/newtab/widgets/calendar/calendar.js       (content/newtab/widgets/calendar/calendar.js)
+    content/newtab/widgets/calendar/gcal.js           (content/newtab/widgets/calendar/gcal.js)
+# pet widget (art slots: assets/<id>.png + <id>.json, listed in assets/pets.json):
+    content/newtab/widgets/pet/pet.js                 (content/newtab/widgets/pet/pet.js)
+    content/newtab/widgets/pet/assets/pets.json       (content/newtab/widgets/pet/assets/pets.json)
+    content/newtab/widgets/pet/assets/cat.png         (content/newtab/widgets/pet/assets/cat.png)
+    content/newtab/widgets/pet/assets/cat.json        (content/newtab/widgets/pet/assets/cat.json)
+    content/newtab/widgets/pet/assets/dog.png         (content/newtab/widgets/pet/assets/dog.png)
+    content/newtab/widgets/pet/assets/dog.json        (content/newtab/widgets/pet/assets/dog.json)
+    content/newtab/widgets/pet/assets/frog.png        (content/newtab/widgets/pet/assets/frog.png)
+    content/newtab/widgets/pet/assets/frog.json       (content/newtab/widgets/pet/assets/frog.json)
+    content/newtab/widgets/pet/assets/ghost.png       (content/newtab/widgets/pet/assets/ghost.png)
+    content/newtab/widgets/pet/assets/ghost.json      (content/newtab/widgets/pet/assets/ghost.json)
     content/newtab/widgets/notes/notes.js             (content/newtab/widgets/notes/notes.js)
     content/newtab/widgets/search/search.js           (content/newtab/widgets/search/search.js)
     content/newtab/widgets/moon/moon.js               (content/newtab/widgets/moon/moon.js)
