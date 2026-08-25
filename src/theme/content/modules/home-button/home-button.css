@@ -26,23 +26,17 @@ tab[cthulhu-home-tab] {
   display: none !important;
 }
 
-/* Firefox adds a 12px margin-inline-start to the first non-pinned tab
- * whenever ANY pinned tab exists (browser/themes/shared/tabbrowser/tabs.css:
- * "#tabbrowser-tabs[haspinnedtabs] ... :nth-child(1 of :not([pinned],
- * [hidden]))") -- separator breathing room between a visible pinned-tabs
- * group and the regular tabs. Our home tab is still genuinely pinned (just
- * hidden via our own CSS above, not Firefox's native [hidden] attribute,
- * which is what that selector actually checks), so [haspinnedtabs] is still
- * true and this margin still applies -- as dead empty space next to the Home
- * button, confirmed live, with nothing visible for it to separate from.
- * Zero it out, but ONLY when Home is the sole pinned tab (:has() checks for
- * any OTHER, real/visible pinned tab): if the user pins an actual tab too,
- * that real pinned-tabs group should still get its normal separator. */
-#tabbrowser-tabs:not(:has(> #tabbrowser-arrowscrollbox > .tabbrowser-tab[pinned]:not([cthulhu-home-tab])))
-  > #tabbrowser-arrowscrollbox
-  > .tabbrowser-tab:nth-child(1 of :not([pinned], [hidden])) {
-  margin-inline-start: 0 !important;
-}
+/* Firefox 153 moved pinned tabs out of #tabbrowser-arrowscrollbox into their
+ * own #pinned-tabs-container, and stopped setting [haspinnedtabs] on
+ * #tabbrowser-tabs -- so the 12px first-unpinned-tab margin this used to have
+ * to cancel out no longer exists (verified live: haspinnedtabs is absent and
+ * the first unpinned tab already computes to margin-inline-start: 0). The old
+ * :has() override targeted a structure that no longer matches anything, so it
+ * is gone rather than left as dead weight.
+ *
+ * That container is display:flex and sizes to its children, so with the Home
+ * tab hidden it collapses to zero width on its own -- no extra rule needed to
+ * stop it reserving a gap next to the button. */
 
 /* Reflect selection onto the button, since it stands in for the tab: looks
  * "pressed"/active while that tab is the one you're on, same idea as a

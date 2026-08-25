@@ -63,19 +63,43 @@
   // restored tab had `hasAttribute("cthulhu-home-tab") === false` and
   // `display: flex`. Adopt any pre-existing about:cthulhu#home tab up front,
   // before anything else runs, so it's never visible even momentarily.
-  function adoptExistingHomeTab() {
-    const gBrowser = window.gBrowser;
-    for (const tab of gBrowser.tabs) {
+  function findHomeUrlTab() {
+    for (const tab of window.gBrowser.tabs) {
       const uri = tab.linkedBrowser?.currentURI;
-      if (uri && uri.spec === HOME) {
-        homeTab = tab;
-        tab.setAttribute("cthulhu-home-tab", "1");
-        if (!tab.pinned) gBrowser.pinTab(tab); // defensive: should already be pinned, but enforce the invariant
-        return;
-      }
+      if (uri && uri.spec === HOME) return tab;
     }
+    return null;
   }
+  /** Claim a pre-existing Home tab as THE Home tab. Idempotent + cheap, so it
+   *  is safe to call repeatedly from the restore hooks below. */
+  function adoptExistingHomeTab() {
+    if (isLive(homeTab)) return true;
+    const tab = findHomeUrlTab();
+    if (!tab) return false;
+    homeTab = tab;
+    tab.setAttribute("cthulhu-home-tab", "1");
+    if (!tab.pinned) window.gBrowser.pinTab(tab); // defensive: enforce the invariant
+    updateActiveState();
+    return true;
+  }
+
+  // A single scan at load is NOT enough (it was on Firefox 140, it is not on
+  // 153): SessionStore restores the pinned Home tab asynchronously, AFTER this
+  // module runs, so the scan finds nothing, `homeTab` stays null, and the
+  // restored tab keeps sitting in the strip unmarked and therefore visible --
+  // then the next Home click creates a SECOND one, which is the "home tab
+  // shows up as a pinned tab next to its own button" symptom. Confirmed live
+  // via a real quit+relaunch: the same scan that matched nothing at load
+  // matched fine moments later. So also adopt whenever a tab shows up.
   adoptExistingHomeTab();
+  const tabContainer = window.gBrowser.tabContainer;
+  const adoptOnRestore = () => adoptExistingHomeTab();
+  tabContainer.addEventListener("SSTabRestored", adoptOnRestore);
+  tabContainer.addEventListener("TabOpen", adoptOnRestore);
+  window.addEventListener("unload", () => {
+    tabContainer.removeEventListener("SSTabRestored", adoptOnRestore);
+    tabContainer.removeEventListener("TabOpen", adoptOnRestore);
+  }, { once: true });
   updateActiveState(); // in case the adopted tab is already the selected one at startup (function declaration, hoisted -- fine to call ahead of its definition below)
   // Reflect selection onto the button. Also called directly right after this
   // module changes gBrowser.selectedTab itself (rather than relying solely on
@@ -111,6 +135,11 @@
           previousTab = gBrowser.selectedTab;
           gBrowser.selectedTab = homeTab;
         }
+      } else if (adoptExistingHomeTab() && isLive(homeTab)) {
+        // A restored Home tab landed after this module loaded -- take it over
+        // rather than creating a second one alongside it.
+        previousTab = gBrowser.selectedTab;
+        gBrowser.selectedTab = homeTab;
       } else {
         // Doesn't exist yet (or was closed/unpinned away) -- create it pinned.
         const sp = Services.scriptSecurityManager.getSystemPrincipal();
@@ -171,6 +200,38 @@
     () => window.gBrowser.removeTabsProgressListener(fxviewGuard),
     { once: true }
   );
+
+  /* Keep the Home tab from being navigated away in place. Searching or typing
+   * a URL while Home is the selected tab would otherwise load that page INTO
+   * the pinned Home tab -- which silently destroys it: the button then has
+   * nothing to toggle to, and the dashboard is gone until a new one is made.
+   * That is the "home tab isn't its own entity any more" complaint.
+   *
+   * The urlbar reaches the current tab through window.openTrustedLinkIn (see
+   * UrlbarInput.mjs), which -- like openWebLinkIn/openLinkIn -- is a plain
+   * window-global wrapper around URILoadingHelper. Wrapping the three of them
+   * catches the address bar, the search bar, bookmarks and history uniformly,
+   * instead of chasing each entry point separately: an in-place load that
+   * would clobber Home becomes a new tab instead. Everything else is passed
+   * through untouched, including navigation WITHIN about:cthulhu (the
+   * dashboard switching between its own new-tab and #home layouts). */
+  function whereForHome(where, url) {
+    if (where !== "current") return where;
+    if (!isLive(homeTab) || window.gBrowser.selectedTab !== homeTab) return where;
+    const target = String(url && url.spec ? url.spec : url || "");
+    if (target.startsWith("about:cthulhu")) return where;
+    return "tab";
+  }
+  for (const name of ["openTrustedLinkIn", "openWebLinkIn", "openLinkIn"]) {
+    const original = window[name];
+    if (typeof original !== "function") {
+      console.warn("[Cthulhu:" + ID + "] " + name + " missing -- Home tab not protected on that path");
+      continue;
+    }
+    window[name] = function (url, where, params) {
+      return original.call(this, url, whereForHome(where, url), params);
+    };
+  }
 
   // cosmetic: relabel the button as Home, and keep its active state in sync
   // when the user switches tabs directly (not via this button) -- e.g.
