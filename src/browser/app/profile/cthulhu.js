@@ -79,3 +79,36 @@ pref("accessibility.browsewithcaret_shortcut.enabled", false);
 // checkbox controls, so re-checking that box (or installing an extension that
 // needs attention) brings it back -- nothing else to configure.
 pref("extensions.unifiedExtensions.button.always_visible", false);
+
+// -- Ambient theming: weather kill switch (privacy) --
+// The ambient theme derives its palette from time of day (computed locally from
+// a solar formula -- no network) and, optionally, current weather from
+// Open-Meteo. The weather lookup is the ONLY outbound request this browser makes
+// beyond normal browsing that involves location, so it gets an explicit switch.
+//
+// Set to false and no coordinates ever leave the machine: the Open-Meteo request
+// is skipped entirely and theming falls back to time-of-day only. Documented in
+// PRIVACY.md.
+//
+// Default true = feature works as designed. Flip this one value to false if you
+// would rather ship weather theming as opt-in.
+pref("cthulhu.ambient.weather.enabled", true);
+
+// -- Override Surfer's hardcoded Zen Browser URLs --
+// Surfer (the Zen Browser build tool) generates the branding pref file
+// browser/branding/<brand>/pref/firefox-branding.js with zen-browser.app URLs
+// baked in -- see configureProfileBranding() in its branding-patch. Left alone,
+// a branded build would point users at Zen Browser from the About dialog's
+// release-notes link, from the post-update "what's new" page, and from the
+// update-failure fallback pages.
+//
+// These win by load order: defaults/preferences/*.js are read in REVERSE
+// alphabetical order, and "cthulhu.js" sorts before "firefox-branding.js", so
+// this file is applied last (same mechanism documented at the top of this file).
+pref("startup.homepage_override_url", "https://github.com/Eventide-03/Cthulhu/releases");
+pref("startup.homepage_welcome_url.additional", "");
+pref("app.update.url.manual", "https://github.com/Eventide-03/Cthulhu/releases");
+pref("app.update.url.details", "https://github.com/Eventide-03/Cthulhu/releases");
+pref("app.releaseNotesURL", "https://github.com/Eventide-03/Cthulhu/releases");
+pref("app.releaseNotesURL.aboutDialog", "https://github.com/Eventide-03/Cthulhu/releases");
+pref("app.releaseNotesURL.prompt", "https://github.com/Eventide-03/Cthulhu/releases");

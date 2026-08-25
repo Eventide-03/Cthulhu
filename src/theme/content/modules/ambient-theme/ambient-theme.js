@@ -14,6 +14,12 @@
  *
  * Location: user pref (cthulhu.ambient.latitude / .longitude) first; optional
  * geolocation (cthulhu.ambient.geolocation=true) as a fallback.
+ *
+ * PRIVACY: weather is the only part of this module that touches the network.
+ * Setting cthulhu.ambient.weather.enabled=false skips the Open-Meteo request
+ * entirely, so no coordinates ever leave the machine; time-of-day theming keeps
+ * working because sunrise/sunset is computed locally from a solar formula, with
+ * no API call. See PRIVACY.md.
  * Runs in the browser-window scope; uses the A4 sprite helper (window.CthulhuSprite).
  * ============================================================================= */
 (function () {
@@ -108,6 +114,11 @@
   }
 
   // --- 2. weather (Open-Meteo, cached in a pref, graceful offline) -----------
+  // Read through a function rather than caching the value, so flipping the pref
+  // in about:config takes effect on the next refresh tick without a restart.
+  const WEATHER_PREF = "cthulhu.ambient.weather.enabled";
+  const weatherEnabled = () => getBool(WEATHER_PREF, true);
+
   function weatherGroup(code) {
     if (code === 0 || code === 1) return "clear";
     if (code === 2 || code === 3 || code === 45 || code === 48) return "cloudy";
@@ -165,6 +176,13 @@
     return band;
   }
   async function applyWeather() {
+    if (!weatherEnabled()) {
+      // No request, no coordinates transmitted. Drop any stale weather styling
+      // so the UI falls back cleanly to time-of-day only.
+      doc.documentElement.removeAttribute("cthulhu-ambient-weather");
+      updateOverlay(null);
+      return null;
+    }
     const group = await weather(loc.lat, loc.lng);
     if (group) { doc.documentElement.setAttribute("cthulhu-ambient-weather", group); }
     else { doc.documentElement.removeAttribute("cthulhu-ambient-weather"); }
@@ -184,7 +202,8 @@
         await applyWeather();
         win.setInterval(applyTime, TIME_REFRESH_MS);
         win.setInterval(applyWeather, WEATHER_REFRESH_MS);
-        console.log("[Cthulhu:" + ID + "] active @", loc.lat.toFixed(2), loc.lng.toFixed(2));
+        console.log("[Cthulhu:" + ID + "] active @", loc.lat.toFixed(2), loc.lng.toFixed(2),
+          weatherEnabled() ? "(weather on)" : "(weather off -- time-of-day only, no network)");
       } catch (e) {
         console.error("[Cthulhu:" + ID + "] init failed:", e);
       }
