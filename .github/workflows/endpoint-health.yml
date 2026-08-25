@@ -1,0 +1,230 @@
+# Watchdog for the two endpoints whose silent failure is invisible to users:
+#   * the update manifest  -- if it breaks, browsers simply stop being offered
+#     updates. There is no error surfaced anywhere; installs just quietly rot.
+#   * the relay endpoint   -- if it breaks, requests that depend on it fail.
+#
+# Both fail *silently* by nature, which is exactly why they need an active
+# prober rather than waiting on a bug report.
+#
+# SECURITY NOTES (this workflow is deliberately safe to run on a public repo):
+#   * Triggers are `schedule` + `workflow_dispatch` only. Neither can be
+#     initiated by a fork, so fork PRs can never reach this job.
+#   * It consumes NO repository secrets. The only credential in scope is the
+#     automatic GITHUB_TOKEN, scoped below to the minimum needed to file/close
+#     an issue.
+#   * Every external input is passed through `env:` instead of being
+#     interpolated into a shell line with ${{ }}, so a malicious value cannot
+#     break out of the string and execute as script.
+#   * Response bodies are never echoed raw -- they are truncated and passed
+#     through a redaction filter, so a relay that reflects a token in an error
+#     payload cannot leak it into public build logs.
+
+name: Endpoint health
+
+on:
+  schedule:
+    # Every 6 hours, at :17 past (off the top of the hour, where GitHub's
+    # scheduler is most congested and most likely to delay or drop runs).
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      update_manifest_url:
+        description: "Override UPDATE_MANIFEST_URL for a one-off test"
+        required: false
+      relay_url:
+        description: "Override RELAY_URL for a one-off test"
+        required: false
+
+# Least privilege: read the repo, write issues. Nothing else.
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: endpoint-health
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe endpoints
+        id: probe
+        env:
+          # Configured as repository *variables* (Settings -> Secrets and
+          # variables -> Actions -> Variables). These are public URLs, not
+          # secrets -- keeping them as vars means they stay readable in logs,
+          # which is what you want when diagnosing an outage.
+          UPDATE_MANIFEST_URL: ${{ inputs.update_manifest_url || vars.UPDATE_MANIFEST_URL }}
+          RELAY_URL: ${{ inputs.relay_url || vars.RELAY_URL }}
+          # Optional: comma-separated list of acceptable relay statuses.
+          # Defaults to 200. Set e.g. "200,204" if the relay answers 204.
+          RELAY_EXPECT_STATUS: ${{ vars.RELAY_EXPECT_STATUS }}
+        run: |
+          set -uo pipefail
+
+          ATTEMPTS=3          # transient blips shouldn't open an issue
+          BACKOFF=5
+          CONNECT_TIMEOUT=10
+          MAX_TIME=30
+
+          : > failures.txt
+          : > report.md
+
+          # Truncate and mask anything token-shaped before it can reach a
+          # public log. Belt-and-braces: these endpoints shouldn't return
+          # credentials, but a misconfigured error page might.
+          redact() {
+            head -c 300 \
+              | tr -d '\000' \
+              | sed -E \
+                  -e 's/(GOCSPX-|gh[pousr]_|xox[baprs]-|AIza|sk_live_|npm_)[A-Za-z0-9_-]+/\1***REDACTED***/g' \
+                  -e 's/[A-Za-z0-9_-]{24}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{20,}/***REDACTED-JWT***/g' \
+                  -e 's/("(access_token|refresh_token|client_secret|password|token)"[[:space:]]*:[[:space:]]*")[^"]*/\1***REDACTED***/g'
+          }
+
+          # fetch <url> -> writes body.tmp, echoes "<http_code> <seconds>".
+          # The trailing \n in -w is REQUIRED: without it `read` hits EOF with no
+          # delimiter and returns non-zero *after* correctly reading the values,
+          # which would trip the caller's error fallback on every single request.
+          fetch() {
+            curl -sS -L --no-progress-meter \
+              --connect-timeout "$CONNECT_TIMEOUT" --max-time "$MAX_TIME" \
+              -A "Cthulhu-endpoint-health/1 (+https://github.com/${GITHUB_REPOSITORY})" \
+              -o body.tmp -w '%{http_code} %{time_total}\n' "$1" 2>curlerr.tmp
+          }
+
+          fail() { # fail <name> <reason>
+            printf '%s\t%s\n' "$1" "$2" >> failures.txt
+            printf -- '- **%s** — %s\n' "$1" "$2" >> report.md
+          }
+          pass() {
+            printf -- '- **%s** — OK (%s)\n' "$1" "$2" >> report.md
+          }
+
+          # ---- probe one endpoint, with retries -----------------------------
+          # probe <name> <url> <validator-fn>
+          probe() {
+            local name="$1" url="$2" validate="$3"
+            local n=1 code secs last=""
+
+            if [ -z "$url" ]; then
+              fail "$name" "not configured — set the repository variable and re-run. An unconfigured monitor is the same silent failure it exists to catch."
+              return
+            fi
+
+            while [ "$n" -le "$ATTEMPTS" ]; do
+              read -r code secs < <(fetch "$url") || { code=000; secs=0; }
+              if [ "$code" = "000" ]; then
+                last="connection failed: $(redact < curlerr.tmp | tr '\n' ' ')"
+              elif last="$("$validate" "$code")"; then
+                pass "$name" "HTTP $code in ${secs}s"
+                return
+              fi
+              [ "$n" -lt "$ATTEMPTS" ] && sleep $(( BACKOFF * n ))
+              n=$(( n + 1 ))
+            done
+            fail "$name" "$last (after $ATTEMPTS attempts) — \`$url\`"
+          }
+
+          # ---- validators ---------------------------------------------------
+          # An update manifest that 200s with an HTML error page is still
+          # broken, so check the XML actually parses and is an <updates>
+          # document. An empty <updates></updates> is VALID -- that is how
+          # Balrog/AUS says "no update available".
+          validate_manifest() {
+            local code="$1"
+            if [ "$code" != "200" ]; then echo "expected HTTP 200, got $code"; return 1; fi
+            python3 - >parse.tmp 2>&1 <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          try:
+              root = ET.parse("body.tmp").getroot()
+          except Exception as e:
+              print(f"body is not well-formed XML: {type(e).__name__}: {e}"); sys.exit(1)
+          if root.tag != "updates":
+              print(f"root element is <{root.tag}>, expected <updates>"); sys.exit(1)
+          PY
+            if [ $? -ne 0 ]; then echo "HTTP 200 but $(redact < parse.tmp | tr '\n' ' ')"; return 1; fi
+            return 0
+          }
+
+          validate_relay() {
+            local code="$1"
+            local expect="${RELAY_EXPECT_STATUS:-200}"
+            if printf '%s' ",$expect," | grep -q ",$code,"; then return 0; fi
+            echo "expected HTTP [$expect], got $code — body: $(redact < body.tmp | tr '\n' ' ')"
+            return 1
+          }
+
+          probe "Update manifest" "${UPDATE_MANIFEST_URL:-}" validate_manifest
+          probe "Relay endpoint"  "${RELAY_URL:-}"          validate_relay
+
+          if [ -s failures.txt ]; then
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            # Stable signature of WHAT is broken (not timings), so a persistent
+            # outage doesn't re-comment on the issue every 6 hours.
+            sig=$(cut -f1,2 failures.txt | sed -E 's/after [0-9]+ attempts//' | sort | sha256sum | cut -c1-12)
+            echo "sig=$sig" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+            echo "sig=healthy" >> "$GITHUB_OUTPUT"
+          fi
+
+          { echo "## Endpoint health"; echo; cat report.md; } > summary.md
+          cat summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open / update / close tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OK: ${{ steps.probe.outputs.ok }}
+          SIG: ${{ steps.probe.outputs.sig }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          LABEL="endpoint-health"
+
+          # Idempotent; the label may already exist.
+          gh label create "$LABEL" --color B60205 \
+            --description "Automated update-manifest / relay availability alerts" 2>/dev/null || true
+
+          existing=$(gh issue list --state open --label "$LABEL" \
+                       --json number,body --limit 1 --jq '.[0].number // empty')
+
+          if [ "$OK" = "true" ]; then
+            if [ -n "$existing" ]; then
+              gh issue comment "$existing" --body \
+                "✅ Recovered — all monitored endpoints are responding correctly again. [Run]($RUN_URL)"
+              gh issue close "$existing" --reason completed
+              echo "Closed #$existing (recovered)."
+            else
+              echo "Healthy; nothing to do."
+            fi
+            exit 0
+          fi
+
+          body=$(printf '%s\n\n---\n\n%s\n\n<!-- sig=%s -->\n' \
+            "$(cat summary.md)" \
+            "One or more endpoints are failing. Until this is fixed, affected clients get **no updates / failed requests, with no user-visible error.** [Failing run]($RUN_URL)" \
+            "$SIG")
+
+          if [ -z "$existing" ]; then
+            gh issue create --title "🚨 Endpoint health check failing" \
+              --label "$LABEL" --body "$body" >/dev/null
+            echo "Opened a new tracking issue."
+          else
+            prev=$(gh issue view "$existing" --json body,comments \
+                     --jq '[.body] + [.comments[].body] | join("\n")' \
+                     | grep -o 'sig=[a-f0-9]*' | tail -1 || true)
+            if [ "$prev" = "sig=$SIG" ]; then
+              echo "#$existing already tracks this exact failure — not commenting again."
+            else
+              gh issue comment "$existing" --body "$body"
+              echo "Commented on #$existing (failure signature changed)."
+            fi
+          fi
+
+      - name: Fail the run if unhealthy
+        if: steps.probe.outputs.ok != 'true'
+        run: |
+          echo "::error::One or more monitored endpoints are failing — see the tracking issue."
+          exit 1
