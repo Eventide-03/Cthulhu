@@ -1,6 +1,10 @@
 
 .dotbuild/
-.surfer/
+.surfer/*
+# ...but DO track the brand key: it selects the branding directory, the update
+# channel and the MAR channel id. Without it a fresh clone silently falls back to
+# surfer's 'unofficial' default and rebuilds with Firefox branding.
+!.surfer/dynamicConfig.brand.json
 dist/
 engine/
 firefox-*/

@@ -1,10 +1,17 @@
 diff --git a/browser/moz.configure b/browser/moz.configure
-index e8b401a7dfb21f07c7fd92c73d8eff61d2b9c2ff..ec047a7a4773dac672eb1629d6116d37d6a06f73 100644
+index 3ea3d88b93604f09067acbc4d26be5e8d4fda91b..3977a33afc59568d0b8e0b95d8c86d0c2f2a9666 100644
 --- a/browser/moz.configure
 +++ b/browser/moz.configure
-@@ -15,6 +15,14 @@ imply_option("MOZ_PROFILE_MIGRATOR", True)
+@@ -11,8 +11,20 @@ imply_option("MOZ_NORMANDY", True)
+ imply_option("MOZ_PROFILE_MIGRATOR", True)
  
- imply_option("MOZ_APP_VENDOR", "Mozilla")
+ 
+-imply_option("MOZ_APP_VENDOR", "Mozilla")
++# Cthulhu: upstream hard-implies the vendor as "Mozilla", and because it is an
++# implied option configure REJECTS setting it from a mozconfig ("accepted from:
++# implied"). Patching it here is the only route. This is what lands in
++# application.ini [App] Vendor= and in the About dialog / about:support.
++imply_option("MOZ_APP_VENDOR", "Eventide")
  imply_option("MOZ_APP_ID", "{ec8030f7-c20a-464f-9b0e-13a3a9e97384}")
 +# Cthulhu: pin the compiled User-Agent app token to "Firefox" regardless of
 +# MOZ_APP_BASENAME/branding. Without this, nsHttpHandler.cpp's mAppName falls

@@ -7,7 +7,19 @@ export MOZ_APP_BASENAME=${binName}
 # MOZ_MACBUNDLE_ID is a confvar (origin "confvars") -- neither can be set from a
 # mozconfig, so configure rejects them. They are derived automatically; set custom
 # values via branding/confvars.sh if needed.
-export MOZ_DISTRIBUTION_ID=${appId}
+# Trademark: the macOS bundle identifier is built as
+# "<--with-distribution-id>.<MOZ_MACBUNDLE_ID>" (toolkit/moz.configure), and
+# --with-distribution-id defaults to "org.mozilla" -- which is how an unbranded
+# build ends up as org.mozilla.<something>. Set our own reverse-DNS prefix so no
+# Mozilla-owned domain appears in the bundle id or in the child-process bundle id
+# (org.<us>.plugincontainer).
+#
+# NOTE: this is the CONFIGURE option, not the MOZ_DISTRIBUTION_ID env var -- an
+# `export MOZ_DISTRIBUTION_ID=...` here is silently ignored by configure, which is
+# why the bundle id stayed org.mozilla.* despite one being set previously.
+# It does NOT affect the update URL: %DISTRIBUTION% there is substituted from the
+# `distribution.id` pref (set by distribution.ini), not from this option.
+ac_add_options --with-distribution-id=org.eventide
 
 # Uncomment if builds are too resource hungry
 # mk_add_options MOZ_MAKE_FLAGS="-j4"

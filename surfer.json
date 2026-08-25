@@ -20,6 +20,15 @@
       "release": {
         "displayVersion": "1.0.0"
       }
+    },
+    "nightly": {
+      "brandShorterName": "Cthulhu",
+      "brandShortName": "Cthulhu",
+      "brandFullName": "Cthulhu",
+      "backgroundColor": "#1a1025",
+      "release": {
+        "displayVersion": "1.0.0"
+      }
     }
   },
   "license": {
