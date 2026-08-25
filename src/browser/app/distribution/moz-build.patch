@@ -1,22 +1,20 @@
 diff --git a/browser/app/distribution/moz.build b/browser/app/distribution/moz.build
-index b174449a09895020bfda84645b85deebe42c7be8..7473ed919807316f2c6e7bb0374dd139e63fbd03 100644
+index b174449a09895020bfda84645b85deebe42c7be8..957268bc0d4845b07659a17bebae9c8f78e11293 100644
 --- a/browser/app/distribution/moz.build
 +++ b/browser/app/distribution/moz.build
-@@ -8,3 +8,17 @@ if CONFIG["BUILT_BY_MOZILLA"]:
+@@ -8,3 +8,15 @@ if CONFIG["BUILT_BY_MOZILLA"]:
      FINAL_TARGET_FILES.distribution += [
          "distribution.ini",
      ]
 +
-+# Cthulhu: bundle uBlock Origin as a normal, per-profile distribution addon
-+# (installed on first run via XPIProvider.installDistributionAddons(), NOT
-+# the builtin/features mechanism) -- this is a real, AMO-signed XPI, so it
-+# gets normal signature verification, is enabled by default like any fresh
-+# install, AND -- unlike a builtin addon -- remains eligible for AMO's normal
-+# per-extension auto-update checks (PERM_CAN_UPGRADE is only withheld from
-+# addons in system/builtin locations; see XPIDatabase.sys.mjs).
++# Cthulhu: ship distribution.ini unconditionally (upstream only does so for
++# Mozilla-official builds) so the build carries a distribution id, which is
++# visible in about:support and read by distribution-aware code paths.
++#
++# uBlock Origin was previously bundled here as a distribution addon. It is no
++# longer shipped: vendoring the XPI redistributes a GPLv3 binary, which carries
++# its own attribution obligations in a public repo, and an AMO install stays
++# current on its own without us re-vendoring the file on every release.
 +FINAL_TARGET_FILES.distribution += [
 +    "distribution.ini",
-+]
-+FINAL_TARGET_FILES.distribution.extensions += [
-+    "extensions/uBlock0@raymondhill.net.xpi",
 +]
