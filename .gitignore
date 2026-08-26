@@ -15,3 +15,25 @@ node_modules/
 
 # Surfer's per-build local override slot (CI writes this per architecture)
 /mozconfig
+
+# MAR update-signing PRIVATE key material. The real key lives OUTSIDE this repo
+# (~/.cthulhu-mar-signing) precisely so it can never be committed -- these
+# entries are belt-and-braces in case a copy is ever dropped in here.
+# The PUBLIC certificate (src/toolkit/.../release_*.der) IS committed, on purpose.
+*.p12
+*.pfx
+*.key
+key4.db
+key3.db
+cert9.db
+cert8.db
+secmod.db
+pkcs11.txt
+mar-signing/
+*.mar-key.b64
+MAR_SIGNING_DB_B64*
+*.der.b64
+
+# Cloudflare Worker local secrets -- never commit
+relay/.dev.vars
+.wrangler/

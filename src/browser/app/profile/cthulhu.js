@@ -105,10 +105,34 @@ pref("cthulhu.ambient.weather.enabled", true);
 // These win by load order: defaults/preferences/*.js are read in REVERSE
 // alphabetical order, and "cthulhu.js" sorts before "firefox-branding.js", so
 // this file is applied last (same mechanism documented at the top of this file).
-pref("startup.homepage_override_url", "https://github.com/Eventide-03/Cthulhu/releases");
+// Post-update "what's new" page. Opened ONCE after an update changes the
+// milestone (BrowserContentHandler's OVERRIDE_NEW_MSTONE path), resolved
+// through Services.urlFormatter, which substitutes %VERSION%. CI publishes
+// the matching page under docs/whatsnew/<version>/ at release time.
+pref("startup.homepage_override_url", "https://eventide-03.github.io/Cthulhu/whatsnew/%VERSION%/");
 pref("startup.homepage_welcome_url.additional", "");
 pref("app.update.url.manual", "https://github.com/Eventide-03/Cthulhu/releases");
 pref("app.update.url.details", "https://github.com/Eventide-03/Cthulhu/releases");
 pref("app.releaseNotesURL", "https://github.com/Eventide-03/Cthulhu/releases");
 pref("app.releaseNotesURL.aboutDialog", "https://github.com/Eventide-03/Cthulhu/releases");
 pref("app.releaseNotesURL.prompt", "https://github.com/Eventide-03/Cthulhu/releases");
+
+// -- Automatic updates (on by default) --
+// app.update.auto is a real pref on macOS/Linux; on Windows the value lives in
+// a per-installation config file and this pref supplies the initial default.
+pref("app.update.auto", true);
+// The background update agent checks for and stages updates while the browser
+// is closed, so an update is ready on next launch rather than downloading then.
+pref("app.update.background.enabled", true);
+pref("app.update.background.scheduling.enabled", true);
+
+// -- Feature-request relay --
+// The PUBLIC URL of the Cloudflare Worker that forwards feature requests to
+// Discord. This is not a secret -- it is a public endpoint, and deliberately so:
+// the Discord webhook itself lives only in the Worker's environment, because a
+// webhook baked into the browser would be extractable from the binary.
+//
+// Empty by default. Set it to your deployed Worker URL (see relay/README.md);
+// until then the feature-request button and widget say so instead of failing
+// silently.
+pref("cthulhu.relay.url", "");

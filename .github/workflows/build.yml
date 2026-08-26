@@ -250,12 +250,73 @@ jobs:
           xcrun stapler validate "$DMG_PATH"
           spctl --assess --type open --context context:primary-signature -vv "$DMG_PATH"
 
+      # =======================================================================
+      # COMPLETE MAR -- the artifact the updater actually consumes.
+      #
+      # Complete (not partial/diff) on purpose: a complete MAR updates from ANY
+      # previous version, so one file serves every client. Partials are a
+      # bandwidth optimisation that needs one MAR per from->to pair.
+      #
+      # Built from the SIGNED, STAPLED .app so the updated installation keeps a
+      # valid signature -- building the MAR before signing would ship unsigned
+      # binaries to everyone who updates.
+      # =======================================================================
+      - name: Build, sign and verify the complete MAR
+        env:
+          MAR_SIGNING_DB_B64: ${{ secrets.MAR_SIGNING_DB_B64 }}
+        run: |
+          set -euo pipefail
+          OBJ="$GITHUB_WORKSPACE/engine/obj-x86_64"   # the unified tree
+          export DYLD_LIBRARY_PATH="$OBJ/dist/bin"
+          SIGNMAR="$OBJ/dist/bin/signmar"
+          DER="$GITHUB_WORKSPACE/src/toolkit/mozapps/update/updater/release_primary.der"
+
+          BUILDID=$(sed -n 's/^BuildID=//p' "$UNIVERSAL_APP/Contents/Resources/application.ini" | head -1)
+          [ -n "$BUILDID" ] || { echo "::error::could not read BuildID"; exit 1; }
+          echo "MAC_BUILDID=$BUILDID" >> "$GITHUB_ENV"
+
+          OUT="$GITHUB_WORKSPACE/${APP_NAME}-${VERSION}-macos-universal.complete.mar"
+          (cd "$GITHUB_WORKSPACE/engine" && \
+            MAR="$OBJ/dist/host/bin/mar" \
+            MOZ_PRODUCT_VERSION="$VERSION" \
+            MAR_CHANNEL_ID="release" \
+            tools/update-packaging/make_full_update.sh "$OUT.unsigned" "$UNIVERSAL_APP")
+
+          if [ -z "${MAR_SIGNING_DB_B64:-}" ]; then
+            echo "::error::MAR_SIGNING_DB_B64 is not set. Refusing to publish an unsigned MAR -- the browser would reject it, so shipping one would silently break updates."
+            exit 1
+          fi
+          KEYDIR="$RUNNER_TEMP/markeys"; rm -rf "$KEYDIR"; mkdir -p "$KEYDIR"
+          echo "$MAR_SIGNING_DB_B64" | base64 --decode | tar xz -C "$KEYDIR"
+          "$SIGNMAR" -d "$KEYDIR" -n cthulhu-mar -s "$OUT.unsigned" "$OUT"
+
+          # Verify BEFORE publishing. An unverifiable MAR is worse than no
+          # update at all: clients download it, reject it, and retry forever.
+          "$SIGNMAR" -D "$DER" -v "$OUT" \
+            || { echo "::error::MAR signature verification FAILED -- not publishing"; exit 1; }
+          echo "MAR signature verified against the baked-in certificate."
+
+          rm -rf "$KEYDIR" "$OUT.unsigned"
+          echo "MAC_MAR=$OUT" >> "$GITHUB_ENV"
+          ls -lh "$OUT"
+
       - uses: actions/upload-artifact@v4
         with:
           name: macos-dmg
-          path: ${{ env.DMG_PATH }}
+          path: |
+            ${{ env.DMG_PATH }}
+            ${{ env.MAC_MAR }}
           if-no-files-found: error
           retention-days: 14
+
+      - name: Export macOS buildid for the release job
+        run: echo "${MAC_BUILDID}" > macos-buildid.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-buildid
+          path: macos-buildid.txt
+          if-no-files-found: error
 
   # ===========================================================================
   # Windows x64 -- NSIS installer, DELIBERATELY UNSIGNED
@@ -407,12 +468,63 @@ jobs:
           echo "EXE_PATH=$OUT" >> "$GITHUB_ENV"
           ls -lh "$OUT"
 
+      # Complete MAR -- see the macOS job for why complete rather than partial.
+      # The MAR is built from the packaged staging directory (the one containing
+      # `precomplete`), NOT from the installer.
+      - name: Build, sign and verify the complete MAR
+        env:
+          MAR_SIGNING_DB_B64: ${{ secrets.MAR_SIGNING_DB_B64 }}
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/engine"
+          OBJ=$(ls -d obj-* | head -1)
+          PRE=$(find "$OBJ/dist" -maxdepth 3 -name precomplete | head -1)
+          [ -n "$PRE" ] || { echo "::error::no precomplete found -- cannot locate the packaged tree"; exit 1; }
+          APPDIR=$(dirname "$PRE")
+          echo "Packaged tree: $APPDIR"
+
+          BUILDID=$(sed -n 's/^BuildID=//p' "$APPDIR/application.ini" | head -1)
+          [ -n "$BUILDID" ] || { echo "::error::could not read BuildID"; exit 1; }
+          echo "WIN_BUILDID=$BUILDID" >> "$GITHUB_ENV"
+
+          OUT="$GITHUB_WORKSPACE/${APP_NAME}-${VERSION}-windows-x64.complete.mar"
+          MAR="$PWD/$OBJ/dist/host/bin/mar" \
+          MOZ_PRODUCT_VERSION="$VERSION" \
+          MAR_CHANNEL_ID="release" \
+            tools/update-packaging/make_full_update.sh "$OUT.unsigned" "$APPDIR"
+
+          if [ -z "${MAR_SIGNING_DB_B64:-}" ]; then
+            echo "::error::MAR_SIGNING_DB_B64 is not set. Refusing to publish an unsigned MAR."
+            exit 1
+          fi
+          KEYDIR="$RUNNER_TEMP/markeys"; rm -rf "$KEYDIR"; mkdir -p "$KEYDIR"
+          echo "$MAR_SIGNING_DB_B64" | base64 --decode | tar xz -C "$KEYDIR"
+          "$PWD/$OBJ/dist/bin/signmar" -d "$KEYDIR" -n cthulhu-mar -s "$OUT.unsigned" "$OUT"
+          "$PWD/$OBJ/dist/bin/signmar" \
+            -D "$GITHUB_WORKSPACE/src/toolkit/mozapps/update/updater/release_primary.der" -v "$OUT" \
+            || { echo "::error::MAR signature verification FAILED -- not publishing"; exit 1; }
+          echo "MAR signature verified."
+          rm -rf "$KEYDIR" "$OUT.unsigned"
+          echo "WIN_MAR=$OUT" >> "$GITHUB_ENV"
+          ls -lh "$OUT"
+
       - uses: actions/upload-artifact@v4
         with:
           name: windows-installer
-          path: ${{ env.EXE_PATH }}
+          path: |
+            ${{ env.EXE_PATH }}
+            ${{ env.WIN_MAR }}
           if-no-files-found: error
           retention-days: 14
+
+      - name: Export Windows buildid for the release job
+        run: echo "${WIN_BUILDID}" > windows-buildid.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-buildid
+          path: windows-buildid.txt
+          if-no-files-found: error
 
   # ===========================================================================
   # Release -- tags only
@@ -479,7 +591,20 @@ jobs:
           } > notes.md
           cat notes.md
 
-      - name: Create release
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos-buildid
+          path: buildids
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: windows-buildid
+          path: buildids
+
+      # STEP 1 of 2 -- publish the MARs. This MUST happen before the manifests
+      # that reference them are committed, or a client could fetch a manifest
+      # pointing at a release asset that does not exist yet and fail its update.
+      - name: Create release (publishes the MARs)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -489,3 +614,67 @@ jobs:
             --notes-file notes.md \
             --latest \
             assets/*
+          echo "Release published with assets:"
+          ls -1 assets | sed 's/^/  /'
+
+      # STEP 2 of 2 -- now that the MARs are downloadable, point the manifests
+      # at them and publish the what's-new page for this version.
+      - name: Generate update manifests and what's-new page
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
+          MAC_BUILDID=$(cat buildids/macos-buildid.txt 2>/dev/null || echo "")
+          WIN_BUILDID=$(cat buildids/windows-buildid.txt 2>/dev/null || echo "$MAC_BUILDID")
+
+          ARGS=(--out docs/updates --channel release
+                --version "$VERSION" --build-id "$MAC_BUILDID"
+                --platform-version "$(node -p "require('./surfer.json').version.version.replace('esr','')")")
+
+          MAC_MAR=$(ls assets/*macos-universal.complete.mar 2>/dev/null | head -1 || true)
+          if [ -n "$MAC_MAR" ]; then
+            ARGS+=(--macos-mar "$MAC_MAR" --macos-url "$BASE/$(basename "$MAC_MAR")"
+                   --macos-buildid "$MAC_BUILDID")
+          fi
+          WIN_MAR=$(ls assets/*windows-x64.complete.mar 2>/dev/null | head -1 || true)
+          if [ -n "$WIN_MAR" ]; then
+            ARGS+=(--windows-mar "$WIN_MAR" --windows-url "$BASE/$(basename "$WIN_MAR")"
+                   --windows-buildid "$WIN_BUILDID")
+          else
+            echo "::warning::No Windows MAR -- Windows manifests left untouched, so Windows clients keep whatever was previously advertised."
+          fi
+
+          python3 tools/update-manifests/generate.py "${ARGS[@]}"
+
+          # What's-new page: template + this release's notes, at the versioned
+          # path the post-update pref resolves to (startup.homepage_override_url
+          # -> /whatsnew/%VERSION%/).
+          OUTDIR="docs/whatsnew/$VERSION"
+          mkdir -p "$OUTDIR"
+          python3 - "$VERSION" <<'PY'
+          import html, pathlib, re, sys
+          version = sys.argv[1]
+          tpl = pathlib.Path("docs/whatsnew/template.html").read_text()
+          notes = pathlib.Path("notes.md").read_text()
+          items = [l[2:].strip() for l in notes.splitlines() if l.startswith("- ")]
+          body = ("<ul>" + "".join(f"<li>{html.escape(i)}</li>" for i in items) + "</ul>"
+                  if items else "<p>Maintenance and internal improvements.</p>")
+          out = tpl.replace("__VERSION__", html.escape(version)).replace("__NOTES__", body)
+          pathlib.Path(f"docs/whatsnew/{version}/index.html").write_text(out)
+          print(f"  wrote docs/whatsnew/{version}/index.html ({len(items)} items)")
+          PY
+
+      - name: Commit manifests to Pages
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/updates docs/whatsnew
+          if git diff --cached --quiet; then
+            echo "No manifest changes to commit."
+            exit 0
+          fi
+          git commit -m "Publish update manifests for ${GITHUB_REF_NAME}"
+          # The tag build may be behind main; push explicitly to the branch.
+          git push origin HEAD:${{ github.event.repository.default_branch }}
+          echo "Manifests published to Pages."

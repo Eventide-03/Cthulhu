@@ -21,7 +21,7 @@
         "displayVersion": "1.0.0"
       }
     },
-    "nightly": {
+    "release": {
       "brandShorterName": "Cthulhu",
       "brandShortName": "Cthulhu",
       "brandFullName": "Cthulhu",
@@ -37,5 +37,5 @@
     ],
     "licenseType": "MPL-2.0"
   },
-  "updateHostname": "localhost:7648"
+  "updateHostname": "eventide-03.github.io/Cthulhu"
 }

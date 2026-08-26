@@ -1,11 +1,11 @@
-# Branding: `nightly` channel
+# Branding: `release` channel
 
-Surfer reads this directory when the active brand key is `nightly` and generates
-`engine/browser/branding/nightly/` from it (icons, `brand.ftl`, `brand.properties`,
+Surfer reads this directory when the active brand key is `release` and generates
+`engine/browser/branding/release/` from it (icons, `brand.ftl`, `brand.properties`,
 `brand.dtd`, `configure.sh`).
 
 **The directory name is the channel identifier, not the display name.** The
-user-visible name comes from `brands.nightly.brandShortName` in `surfer.json`
+user-visible name comes from `brands.release.brandShortName` in `surfer.json`
 (currently "Cthulhu"). See PRIVACY.md / the repo README for why they differ.
 
 ## ART SLOTS — replace these placeholders
