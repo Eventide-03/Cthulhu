@@ -12,3 +12,6 @@ node_modules/
 .idea/
 .DS_Store
 .claude/
+
+# Surfer's per-build local override slot (CI writes this per architecture)
+/mozconfig

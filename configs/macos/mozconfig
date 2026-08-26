@@ -1,16 +1,35 @@
-# Optimise builds
+# =============================================================================
+# macOS build config.
+#
+# Produces a NATIVE build for the host architecture. The universal (arm64 +
+# x86_64) artifact is made by building twice and merging, NOT by a flag here --
+# see .github/workflows/build.yml. Deliberately contains no --target and no
+# MOZ_OBJDIR so a plain local `surfer build` keeps using the default host objdir;
+# CI injects both via the root ./mozconfig override slot for each pass.
+# =============================================================================
+
 ac_add_options --enable-application=browser
 ac_add_options --enable-hardening
 ac_add_options --enable-rust-simd
 ac_add_options --enable-release
 ac_add_options --enable-optimize
-ac_add_options --with-ccache=sccache
 ac_add_options --disable-debug
+
 # Slim the build: drop the crash-reporter component (its binary + symbol
 # handling). Kept per-OS because the Windows config intentionally enables it.
 ac_add_options --disable-crashreporter
+
 # Auto-updates: intentionally KEPT ENABLED (needed for auto-updates later).
 ac_add_options --enable-updater
+
+# Compiler cache. GUARDED: configure hard-fails if the named ccache binary is
+# absent, so an unguarded --with-ccache makes the build unreproducible on any
+# machine without sccache installed (including a fresh CI runner before its
+# install step). Guarding costs nothing when sccache IS present.
+if command -v sccache >/dev/null 2>&1; then
+  ac_add_options --with-ccache=sccache
+fi
+
 mk_add_options MOZ_MAKE_FLAGS="-j4"
 
 # Disable telemetry and tracking

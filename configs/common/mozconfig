@@ -34,11 +34,20 @@ export MOZ_SOURCE_CHANGESET=${changeset}
 
 # Rust toolchain: Homebrew's rustup ships bash wrappers for rustc/cargo that break
 # mach's `rustup which` proxy detection (it relies on argv[0] dispatch). Resolve the
-# real toolchain binaries so configure uses them directly. Harmless with a standard rustup.
-if command -v rustup >/dev/null 2>&1; then
-  export RUSTC="$(rustup which rustc)"
-  export CARGO="$(rustup which cargo)"
-fi
+# real toolchain binaries so configure uses them directly.
+#
+# PORTABILITY: this is a Homebrew-on-macOS workaround and is now gated to Darwin.
+# On Windows (MozillaBuild bash) `rustup which rustc` returns a native path with
+# backslashes, and exporting that as RUSTC risks confusing configure for no gain --
+# the wrapper problem this works around simply does not exist there.
+case "$(uname -s 2>/dev/null)" in
+  Darwin)
+    if command -v rustup >/dev/null 2>&1; then
+      export RUSTC="$(rustup which rustc)"
+      export CARGO="$(rustup which cargo)"
+    fi
+    ;;
+esac
 
 # NOTE: --disable-tests was tried here to slim the build, but it breaks the
 # WebIDL binding compile on Firefox 140 ESR (incomplete union type

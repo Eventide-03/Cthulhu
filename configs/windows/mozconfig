@@ -1,7 +1,48 @@
-ac_add_options --target=x86_64-pc-mingw32 
-ac_add_options --enable-js-shell 
-ac_add_options --enable-rust-simd 
-ac_add_options --enable-crashreporter 
+# =============================================================================
+# Windows x64 build config.
+#
+# ⚠️  NOT YET VALIDATED ON A REAL WINDOWS BUILD. Believed correct, but untested
+#     until the post-Phase-8 Windows shakedown. The CI job for Windows is
+#     deliberately continue-on-error so problems here cannot block Mac releases.
+# =============================================================================
+
+ac_add_options --enable-application=browser
+
+# TARGET: intentionally NOT set.
+#
+# The previous value here was `--target=x86_64-pc-mingw32`, which does not just
+# misbuild -- it makes configure abort outright. build/moz.configure/
+# init.configure's check_mingw_triplet() calls die() on any *-mingw32 or
+# *-mingw64 triplet: "no longer supported, try ...-windows-gnu or
+# ...-windows-msvc instead".
+#
+# A native x64 build on a Windows host needs no --target at all: the host triple
+# is already x86_64-pc-windows-msvc. Leaving it implicit also keeps this file
+# correct if an arm64 Windows target is added later. If an explicit triple is
+# ever wanted, it is `x86_64-pc-windows-msvc` (NOT mingw32).
+
+ac_add_options --enable-hardening
+ac_add_options --enable-rust-simd
+ac_add_options --enable-release
+ac_add_options --enable-optimize
+ac_add_options --disable-debug
+
+# Auto-updates: kept enabled, matching macOS.
+ac_add_options --enable-updater
+
+# Crash reporter: kept ON here while macOS drops it -- an untested platform is
+# exactly where crash data is most useful. Note this is the ONLY intentional
+# behavioural difference between the two platform configs.
+ac_add_options --enable-crashreporter
+
+# Standalone JS shell. Not needed to ship a browser and it lengthens the build;
+# retained because it was in the original config. Comment out to cut build time.
+ac_add_options --enable-js-shell
+
+# Compiler cache -- same guard as macOS, see that file for the rationale.
+if command -v sccache >/dev/null 2>&1; then
+  ac_add_options --with-ccache=sccache
+fi
 
 # Disable telemetry and tracking
 mk_add_options MOZ_TELEMETRY_REPORTING=
