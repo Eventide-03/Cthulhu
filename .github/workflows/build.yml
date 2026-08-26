@@ -1,0 +1,491 @@
+# Builds Cthulhu for macOS (universal: arm64 + x86_64) and Windows x64, then
+# publishes a GitHub Release on a version tag.
+#
+# Artifacts are named predictably so the download page and update manifests can
+# hardcode them:
+#   Cthulhu-<version>-macos-universal.dmg
+#   Cthulhu-<version>-windows-x64.exe
+#
+# STATUS: the Windows job is `continue-on-error` on purpose -- Windows has not
+# been validated yet (post-Phase-8 shakedown), and a Windows failure must not
+# block a Mac release. Remove that line once Windows is known good.
+
+name: Build
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      windows:
+        description: "Also run the Windows job"
+        type: boolean
+        default: true
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  SURFER_VERSION: "1.14.6"
+  SCCACHE_CACHE_SIZE: "2G"
+  APP_NAME: "Cthulhu"
+
+jobs:
+  # ===========================================================================
+  # macOS -- UNIVERSAL, signed + notarized + stapled, shipped as a .dmg
+  #
+  # Surfer has no universal-build support: `surfer build` just runs `./mach
+  # build` for the host arch. So we build twice and merge with Firefox's own
+  # unifier (toolkit/mozapps/installer/unify.py), which is what Mozilla does in
+  # taskcluster/scripts/misc/unify.sh.
+  #
+  # Per-arch target and objdir are injected through Surfer's root ./mozconfig
+  # override slot, which it appends AFTER configs/macos/mozconfig. That file
+  # deliberately carries neither, so a plain local `surfer build` is unaffected.
+  #
+  # MOZ_OBJDIR is mandatory: Firefox's default objdir derives from the HOST
+  # triple, not the target, so both passes would otherwise collide.
+  # ===========================================================================
+  macos:
+    name: macOS (universal)
+    runs-on: macos-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            V="${GITHUB_REF_NAME#v}"
+          else
+            V="$(node -p "require('./surfer.json').brands.nightly.release.displayVersion")-dev.$(git rev-parse --short HEAD)"
+          fi
+          echo "VERSION=$V" >> "$GITHUB_ENV"
+          echo "Version: $V"
+
+      - name: Free disk space
+        run: |
+          set -x
+          sudo rm -rf /Library/Developer/CoreSimulator/Profiles/Runtimes || true
+          sudo rm -rf ~/Library/Developer/Xcode/iOS\ DeviceSupport || true
+          df -h /
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Surfer
+        run: npm install -g "@zen-browser/surfer@${SURFER_VERSION}"
+
+      - name: Install sccache
+        run: brew install sccache
+
+      # ---- CACHE BUDGET -----------------------------------------------------
+      # GitHub caps the Actions cache at 10 GB per repo, evicting LRU. The
+      # extracted Firefox source is ~4 GB and an objdir is 10-20 GB, so caching
+      # either would blow the budget and evict the one thing that actually saves
+      # wall-clock: the compiler object cache.
+      #
+      # Spend: macOS sccache 2 GB + Windows sccache 2 GB + source tarball
+      #        ~0.7 GB ~= 4.7 GB, leaving headroom.
+      # Skipped: engine/ (re-downloadable, huge), obj-* (far too big),
+      #        ~/.mozbuild toolchains (3-5 GB/platform -- would eat the whole
+      #        budget alone; --enable-bootstrap refetches them).
+      # -----------------------------------------------------------------------
+      - name: Cache sccache objects
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/Mozilla.sccache
+          key: sccache-macos-${{ github.sha }}
+          restore-keys: |
+            sccache-macos-
+
+      - name: Cache Firefox source tarball
+        uses: actions/cache@v4
+        with:
+          path: .surfer/engine
+          key: ff-src-${{ hashFiles('surfer.json') }}
+
+      - name: Download Firefox source
+        run: surfer download
+
+      - name: Apply patches
+        run: surfer import
+
+      # Each arch is packaged in the SAME step that builds it, while its own
+      # ./mozconfig is active -- mach reads target and objdir from that file, so
+      # packaging both later (with only the last mozconfig present) would
+      # package the wrong tree. `mach package` is required because unify.py
+      # expects packaged (omni.ja) apps; that is how Mozilla drives it.
+      - name: Build + package arm64
+        run: |
+          cat > mozconfig <<'EOF'
+          ac_add_options --target=aarch64-apple-darwin
+          mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-arm64
+          EOF
+          surfer build --skip-patch-check
+          (cd engine && ./mach package)
+
+      - name: Build + package x86_64
+        run: |
+          cat > mozconfig <<'EOF'
+          ac_add_options --target=x86_64-apple-darwin
+          mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-x86_64
+          EOF
+          surfer build --skip-patch-check
+          (cd engine && ./mach package)
+
+      # unify.py merges app2 INTO app1 in place, so the x86_64 tree becomes the
+      # universal one.
+      - name: Unify into a universal app
+        run: |
+          cd engine
+          ARM=$(ls -d obj-arm64/dist/*.app | head -1)
+          X64=$(ls -d obj-x86_64/dist/*.app | head -1)
+          [ -d "$ARM" ] && [ -d "$X64" ] || { echo "::error::could not locate both .app bundles"; exit 1; }
+          LIPO=lipo ./mach python toolkit/mozapps/installer/unify.py "$X64" "$ARM"
+          echo "UNIVERSAL_APP=$PWD/$X64" >> "$GITHUB_ENV"
+
+      - name: Verify universal binary
+        run: |
+          BIN="$UNIVERSAL_APP/Contents/MacOS/$APP_NAME"
+          [ -f "$BIN" ] || BIN=$(find "$UNIVERSAL_APP/Contents/MacOS" -maxdepth 1 -type f -perm +111 | head -1)
+          lipo -archs "$BIN"
+          lipo -archs "$BIN" | grep -q arm64  || { echo "::error::arm64 slice missing";  exit 1; }
+          lipo -archs "$BIN" | grep -q x86_64 || { echo "::error::x86_64 slice missing"; exit 1; }
+
+      # =======================================================================
+      # macOS SIGNING + NOTARIZATION
+      #
+      # Runs only when the signing secrets are present. Without them the job
+      # still completes and produces an UNSIGNED .dmg, with a loud warning --
+      # useful for testing the pipeline before an Apple Developer account
+      # exists. Notarization REQUIRES a paid Apple Developer Program
+      # membership; there is no free tier.
+      #
+      # Secrets: MACOS_CERT_P12 (base64 .p12), MACOS_CERT_PASSWORD,
+      #          MACOS_SIGN_IDENTITY ("Developer ID Application: ..."),
+      #          APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD (app-specific).
+      # Put these in a protected Environment so fork PRs can never reach them.
+      #
+      # ⚠️ LEAST-VERIFIED STEP. Firefox ships PER-BINARY entitlements
+      # (security/mac/hardenedruntime/production/*.xml) -- a blanket
+      # `codesign --deep` applies the browser entitlements to sandboxed helpers
+      # and breaks them. We sign inside-out with the per-binary entitlements
+      # below, but that mapping should be checked against Mozilla's own signing
+      # config before the first real release.
+      # =======================================================================
+      - name: Sign the app
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MACOS_CERT_P12:-}" ]; then
+            echo "::warning::No macOS signing secrets set -- producing an UNSIGNED, UN-NOTARIZED .dmg. Gatekeeper will refuse to open it on other machines."
+            echo "SIGNED=0" >> "$GITHUB_ENV"; exit 0
+          fi
+          KEYCHAIN="$RUNNER_TEMP/build.keychain"
+          KCPASS="$(openssl rand -base64 24)"
+          security create-keychain -p "$KCPASS" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KCPASS" "$KEYCHAIN"
+          echo "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$MACOS_CERT_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KCPASS" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+          ENT=engine/security/mac/hardenedruntime/production
+          sign() { codesign --force --timestamp --options runtime --sign "$MACOS_SIGN_IDENTITY" "$@"; }
+
+          # Inside-out: nested helpers first, each with its own entitlements,
+          # then everything else, then the outer bundle last.
+          find "$UNIVERSAL_APP/Contents/MacOS" -name 'plugin-container.app' -maxdepth 2 -print0 |
+            while IFS= read -r -d '' p; do sign --entitlements "$ENT/plugin-container.xml" "$p"; done
+          find "$UNIVERSAL_APP" \( -name '*.dylib' -o -name '*.so' \) -print0 |
+            while IFS= read -r -d '' f; do sign "$f"; done
+          find "$UNIVERSAL_APP/Contents/MacOS" -maxdepth 1 -type f -perm +111 -print0 |
+            while IFS= read -r -d '' f; do sign "$f"; done
+          sign --entitlements "$ENT/firefox.browser.xml" "$UNIVERSAL_APP"
+
+          codesign --verify --deep --strict --verbose=2 "$UNIVERSAL_APP"
+          echo "SIGNED=1" >> "$GITHUB_ENV"
+
+      - name: Build the .dmg
+        run: |
+          set -euo pipefail
+          STAGE="$RUNNER_TEMP/dmg-stage"
+          rm -rf "$STAGE" && mkdir -p "$STAGE"
+          cp -R "$UNIVERSAL_APP" "$STAGE/"
+          DMG="$PWD/${APP_NAME}-${VERSION}-macos-universal.dmg"
+          # create_dmg() adds the /Applications drag target itself (a symlink
+          # named " " so it needs no localisation) -- see mozpack/dmg.py.
+          # On macOS it drives hdiutil natively; the dmg/hfsplus toolchains are
+          # only needed when building a DMG on Linux.
+          (cd engine && ./mach python -m mozbuild.action.make_dmg \
+            --volume-name "$APP_NAME" "$STAGE" "$DMG")
+          echo "DMG_PATH=$DMG" >> "$GITHUB_ENV"
+          ls -lh "$DMG"
+
+      - name: Sign, notarize and staple the .dmg
+        if: env.SIGNED == '1'
+        env:
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          codesign --force --timestamp --sign "$MACOS_SIGN_IDENTITY" "$DMG_PATH"
+          xcrun notarytool submit "$DMG_PATH" --wait \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
+          xcrun stapler staple "$DMG_PATH"
+          xcrun stapler validate "$DMG_PATH"
+          spctl --assess --type open --context context:primary-signature -vv "$DMG_PATH"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: ${{ env.DMG_PATH }}
+          if-no-files-found: error
+          retention-days: 14
+
+  # ===========================================================================
+  # Windows x64 -- NSIS installer, DELIBERATELY UNSIGNED
+  # ===========================================================================
+  windows:
+    name: Windows x64
+    runs-on: windows-latest
+    timeout-minutes: 360
+    continue-on-error: true
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.windows }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            V="${GITHUB_REF_NAME#v}"
+          else
+            V="$(node -p "require('./surfer.json').brands.nightly.release.displayVersion")-dev.$(git rev-parse --short HEAD)"
+          fi
+          echo "VERSION=$V" >> "$GITHUB_ENV"
+
+      - name: Free disk space
+        run: |
+          set -x
+          rm -rf "/c/Program Files/dotnet" || true
+          rm -rf "/c/Program Files (x86)/Android" || true
+          rm -rf "/c/hostedtoolcache/windows/Java_Temurin-Hotspot_jdk" || true
+          df -h /c
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Surfer runs the build as `./mach` with no shell. On Windows that only
+      # works because execa -> cross-spawn reads mach's `#!/usr/bin/env python3`
+      # shebang and re-spawns it as `python3 ./mach`. So the interpreter must be
+      # reachable as literally `python3` -- Windows Python ships `python.exe`
+      # and may have no `python3.exe`, in which case the build dies at spawn
+      # with ENOENT. Shim it if absent.
+      - name: Ensure python3 is on PATH
+        shell: pwsh
+        run: |
+          if (-not (Get-Command python3 -ErrorAction SilentlyContinue)) {
+            $dir = Join-Path $env:RUNNER_TEMP "py3shim"
+            New-Item -ItemType Directory -Force -Path $dir | Out-Null
+            Set-Content -Path (Join-Path $dir "python3.cmd") -Value "@echo off`r`npython %*"
+            Add-Content -Path $env:GITHUB_PATH -Value $dir
+            Write-Host "Added python3 shim at $dir"
+          } else {
+            Write-Host "python3 already present: $((Get-Command python3).Source)"
+          }
+
+      - name: Install Surfer
+        run: npm install -g "@zen-browser/surfer@${SURFER_VERSION}"
+
+      # Non-fatal: configs/windows/mozconfig guards --with-ccache behind a
+      # `command -v sccache` check, so a failed install means a slow build
+      # rather than a broken one.
+      - name: Install sccache
+        continue-on-error: true
+        run: choco install sccache -y --no-progress
+
+      # NSIS is what turns the packaged build into setup.exe (makensis.mk's
+      # `installer::` target needs MAKENSISU). --enable-bootstrap normally
+      # fetches an NSIS toolchain; this is a belt-and-braces fallback.
+      - name: Install NSIS
+        continue-on-error: true
+        run: choco install nsis -y --no-progress
+
+      - name: Cache sccache objects
+        uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/Mozilla/sccache
+          key: sccache-windows-${{ github.sha }}
+          restore-keys: |
+            sccache-windows-
+
+      - name: Cache Firefox source tarball
+        uses: actions/cache@v4
+        with:
+          path: .surfer/engine
+          key: ff-src-${{ hashFiles('surfer.json') }}
+
+      - name: Download Firefox source
+        run: surfer download
+
+      - name: Apply patches
+        run: surfer import
+
+      # UNCERTAIN: Firefox on Windows expects the MozillaBuild environment
+      # (MSYS bash, GNU make). windows-latest ships VS 2022 and Python but NOT
+      # MozillaBuild. `mach bootstrap` is the supported way in; if it cannot
+      # provision the environment this is the step that fails first.
+      - name: Bootstrap build environment
+        run: |
+          cd engine
+          ./mach --no-interactive bootstrap --application-choice browser
+
+      - name: Build
+        run: surfer build --skip-patch-check
+
+      - name: Package + build NSIS installer
+        run: |
+          set -euo pipefail
+          cd engine
+          ./mach package
+          # `installer::` lives in toolkit/mozapps/installer/windows/nsis/
+          # makensis.mk and emits $(DIST)/$(PKG_PATH)$(PKG_INST_BASENAME).exe,
+          # i.e. obj-*/dist/install/sea/*.exe.
+          ./mach build installer
+
+      # =======================================================================
+      # WINDOWS CODE SIGNING: INTENTIONALLY ABSENT
+      #
+      # There is NO Authenticode / Azure Trusted Signing step here, and that is
+      # a deliberate decision -- not an oversight and not a TODO. Cthulhu does
+      # not pay for a code-signing certificate, so Windows builds ship UNSIGNED.
+      #
+      # Consequence: SmartScreen shows "Windows protected your PC" on download
+      # and first run. Users click "More info" -> "Run anyway". The download
+      # page (docs/index.html) explains this, and it must keep doing so.
+      #
+      # Please do not "fix" this by adding a signing step. If free signing is
+      # ever pursued, see docs/windows-signing.md -- it covers OSSign (the
+      # service LibreWolf uses) and what applying would involve. Nothing there
+      # is implemented yet.
+      #
+      # Note that signing alone would NOT immediately remove the SmartScreen
+      # warning: reputation accrues per-certificate over time, so the download
+      # page note stays relevant either way.
+      # =======================================================================
+
+      - name: Rename installer
+        run: |
+          set -euo pipefail
+          cd engine
+          EXE=$(ls obj-*/dist/install/sea/*.exe 2>/dev/null | head -1)
+          [ -n "$EXE" ] || { echo "::error::no NSIS installer found under dist/install/sea"; exit 1; }
+          OUT="$GITHUB_WORKSPACE/${APP_NAME}-${VERSION}-windows-x64.exe"
+          cp "$EXE" "$OUT"
+          echo "EXE_PATH=$OUT" >> "$GITHUB_ENV"
+          ls -lh "$OUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: ${{ env.EXE_PATH }}
+          if-no-files-found: error
+          retention-days: 14
+
+  # ===========================================================================
+  # Release -- tags only
+  #
+  # `windows` is continue-on-error, so `needs` sees it as successful even when
+  # it failed. The Windows asset is therefore downloaded best-effort and the
+  # release body says so if it is missing, rather than failing the release and
+  # blocking a perfectly good Mac build.
+  # ===========================================================================
+  release:
+    name: Release
+    needs: [macos, windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # required to create the release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need full history + tags to diff against the previous tag
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos-dmg
+          path: assets
+
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: windows-installer
+          path: assets
+
+      - name: Build release notes
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          PREV=$(git tag --sort=-creatordate --list 'v*' | grep -vFx "$TAG" | head -1 || true)
+          if [ -n "$PREV" ]; then RANGE="$PREV..$TAG"; echo "Since $PREV"; else RANGE="$TAG"; echo "First release"; fi
+
+          {
+            echo "## Changes"
+            echo
+            git log --no-merges --pretty='- %s' "$RANGE" | grep -v '^- Co-Authored-By' || echo "- No commits found in range"
+            echo
+            echo "## Downloads"
+            echo
+            if ls assets/*.dmg >/dev/null 2>&1; then
+              echo "- **macOS** (universal — Apple Silicon + Intel): \`$(basename assets/*.dmg)\`"
+            fi
+            if ls assets/*.exe >/dev/null 2>&1; then
+              echo "- **Windows x64**: \`$(basename assets/*.exe)\`"
+              echo
+              echo "> Windows builds are **unsigned** — this is deliberate; Cthulhu does not pay for a code-signing certificate."
+              echo "> SmartScreen will show \"Windows protected your PC\". Click **More info** → **Run anyway** to continue."
+            else
+              echo "- **Windows x64**: _not produced for this release — the Windows build did not succeed._"
+            fi
+            echo
+            echo "## SHA256"
+            echo
+            echo '```'
+            (cd assets && shasum -a 256 * )
+            echo '```'
+          } > notes.md
+          cat notes.md
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --notes-file notes.md \
+            --latest \
+            assets/*
