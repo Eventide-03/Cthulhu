@@ -66,6 +66,7 @@ cthulhu.jar:
     content/newtab/widgets/orb/orb.js                 (content/newtab/widgets/orb/orb.js)
     content/newtab/widgets/orb/assets/orb.png         (content/newtab/widgets/orb/assets/orb.png)
     content/newtab/widgets/orb/assets/orb.json        (content/newtab/widgets/orb/assets/orb.json)
+    content/newtab/widgets/feature-request/feature-request.js (content/newtab/widgets/feature-request/feature-request.js)
 # Feature modules (see content/modules/README.md). jar.mn does not glob, so each
 # module file is listed explicitly:
     content/modules/index.json                 (content/modules/index.json)
@@ -107,5 +108,11 @@ cthulhu.jar:
     content/modules/side-panels/assets/instagram-icon.png    (content/modules/side-panels/assets/instagram-icon.png)
     content/modules/side-panels/assets/apple-music-icon.png  (content/modules/side-panels/assets/apple-music-icon.png)
     content/modules/side-panels/assets/note-idle.png         (content/modules/side-panels/assets/note-idle.png)
+
+    content/modules/feature-request/manifest.json               (content/modules/feature-request/manifest.json)
+    content/modules/feature-request/feature-request.js          (content/modules/feature-request/feature-request.js)
+    content/modules/feature-request/feature-request.css         (content/modules/feature-request/feature-request.css)
+    content/modules/feature-request/assets/feature-request-16.png (content/modules/feature-request/assets/feature-request-16.png)
+    content/modules/feature-request/assets/feature-request-32.png (content/modules/feature-request/assets/feature-request-32.png)
 # Pixel-font slot: uncomment + drop the file once supplied (see theme.css @font-face).
 #   content/assets/fonts/pixel.woff2    (assets/fonts/pixel.woff2)

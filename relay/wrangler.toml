@@ -1,0 +1,22 @@
+name = "cthulhu-relay"
+main = "worker.js"
+compatibility_date = "2026-08-01"
+
+# Free-tier friendly: Workers includes 100k requests/day, which a feature-request
+# relay will never approach. No KV, no Durable Objects, no paid bindings.
+
+# Per-IP burst limiter. Requires wrangler >= 4.36.0.
+# NOTE: `period` may only be 10 or 60 (seconds) -- those are the only values the
+# platform accepts. 3 per 60s is generous for a human filling in a form and
+# still caps a script hard.
+[[ratelimits]]
+name = "REQUEST_LIMITER"
+namespace_id = "1001"
+
+  [ratelimits.simple]
+  limit = 3
+  period = 60
+
+# DISCORD_WEBHOOK_URL is deliberately NOT here. It is a secret, set with
+# `wrangler secret put` -- see README.md. Never put it in this file: this file
+# is committed to a public repository.

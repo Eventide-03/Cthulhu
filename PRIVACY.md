@@ -35,7 +35,7 @@ There is no server that belongs to this project collecting anything about you.
 | 2 | `api.open-meteo.com` | Ambient weather theming | `cthulhu.ambient.weather.enabled=false` |
 | 3 | Google Calendar / OAuth | Only if you connect a calendar | Don't connect / Disconnect |
 | 4 | Update endpoint | Update checks | `app.update.auto=false` |
-| 5 | Feature-request relay | — | **Not implemented** |
+| 5 | Your feature-request relay | Only when you submit a request | Don't use the feature |
 | 6 | `github.com` | After an update, and About-dialog links | `startup.homepage_override_url=""` |
 
 ### 1. Favicon lookups — ⚠️ Google first, then DuckDuckGo
@@ -165,12 +165,32 @@ expands to **`ISET:<cpu-instruction-set>,MEM:<memory-in-MB>`**.
 **How to turn it off:** set `app.update.auto = false`, and
 `app.update.background.scheduling.enabled = false`, in `about:config`.
 
-### 5. Feature-request relay — not implemented
+### 5. Feature-request relay — only on explicit submission
 
-There is **no feature-request relay in the code**, and nothing is sent anywhere
-when you use this browser today. If one is added, it must be documented here
-before it ships: what is transmitted, whether it is tied to any identifier, and
-how to avoid it. It should be **explicit user action only** — never automatic.
+**Nothing is sent unless you type a feature request and press Send.** There is
+no background traffic to this endpoint, and no telemetry rides along with it.
+
+**Sent:** the message you typed, the name you optionally typed, your Cthulhu
+version, and a coarse platform string (e.g. `Windows (x86_64)` or
+`macOS (aarch64)`). Nothing else — no page you were on, no profile identifier,
+no device id.
+
+**To whom:** a small [Cloudflare Worker](../relay/README.md) run by this project,
+which forwards the message to a private Discord channel. Cloudflare sees your IP
+(it uses it for rate limiting); Discord sees only what the Worker forwards.
+
+**Why:** so you can ask for features without needing a GitHub account.
+
+> **Why a relay rather than posting to Discord directly:** the Discord webhook
+> URL would otherwise have to ship inside the browser, where anyone could pull
+> it out of the binary and post to the channel. The webhook exists only as a
+> Cloudflare secret and is never in the browser or this repository.
+
+**How to turn it off:** don't use the feature. If you want to be certain, clear
+the `cthulhu.relay.url` pref in `about:config` — the button and widget then
+refuse to send at all. Removing the `feature-request` module
+(`cthulhu.module.feature-request.enabled = false`) hides the toolbar button
+entirely.
 
 ### 6. Release notes and post-update page — `github.com`
 
@@ -232,6 +252,7 @@ so decide deliberately.
 | `cthulhu.ambient.geolocation` | `false` | `true` → allows device geolocation as a location source |
 | `cthulhu.ambient.latitude` / `.longitude` | unset | Explicit coordinates; avoids geolocation entirely |
 | `app.update.auto` | `true` | `false` → no automatic update checks |
+| `cthulhu.relay.url` | *(set at build)* | Empty → the feature-request form cannot send anything |
 
 ---
 

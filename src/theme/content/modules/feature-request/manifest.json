@@ -1,0 +1,7 @@
+{
+  "id": "feature-request",
+  "enabled": true,
+  "mount": "browser-window",
+  "css": "feature-request.css",
+  "js": "feature-request.js"
+}

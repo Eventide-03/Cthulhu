@@ -1,0 +1,115 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* Feature-request panel. All colour comes from theme.css tokens -- no hardcoded
+ * values -- so it follows the ambient theme like every other module. */
+
+#cthulhu-feature-request-button > .toolbarbutton-icon {
+  width: 16px;
+  height: 16px;
+  image-rendering: pixelated; /* crisp pixel art; harmless for other icons */
+}
+
+.cthulhu-fr {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 320px;
+  padding: 14px;
+  box-sizing: border-box;
+  background: var(--bg-elevated, #242424);
+  color: var(--fg, #e8e8e8);
+  font-family: var(--font-pixel, monospace);
+}
+
+.cthulhu-fr-title {
+  font-size: 1.05em;
+  font-weight: 700;
+}
+
+.cthulhu-fr-sub,
+.cthulhu-fr-meta,
+.cthulhu-fr-counter {
+  font-size: 0.78em;
+  color: var(--fg-muted, #9a9a9a);
+}
+
+.cthulhu-fr-counter {
+  min-height: 1em; /* reserve the row so the panel doesn't jump as it appears */
+  margin-top: -4px;
+}
+
+.cthulhu-fr-message,
+.cthulhu-fr-name {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  background: var(--surface, #1f1f1f);
+  color: var(--fg, #e8e8e8);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 0.92em;
+  outline: none;
+  resize: vertical;
+}
+
+.cthulhu-fr-message:focus,
+.cthulhu-fr-name:focus {
+  border-color: var(--accent, #5ad1b0);
+}
+
+.cthulhu-fr-message::placeholder,
+.cthulhu-fr-name::placeholder {
+  color: var(--fg-muted, #9a9a9a);
+}
+
+.cthulhu-fr-send {
+  padding: 9px 12px;
+  background: var(--accent, #5ad1b0);
+  color: var(--fg-on-accent, #0a0a0a);
+  border: none;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 0.95em;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cthulhu-fr-send:hover:not(:disabled) {
+  background: var(--accent-hover, #6fe0c2);
+}
+
+.cthulhu-fr-send:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Status line. Empty in the idle state, so it collapses rather than leaving a
+ * gap; the min-height only kicks in once there is something to say. */
+.cthulhu-fr-status {
+  font-size: 0.8em;
+  line-height: 1.4;
+}
+
+.cthulhu-fr-status:not(:empty) {
+  min-height: 1.4em;
+}
+
+.cthulhu-fr[data-state="sending"] .cthulhu-fr-status {
+  color: var(--fg-muted, #9a9a9a);
+}
+
+.cthulhu-fr[data-state="sent"] .cthulhu-fr-status {
+  color: var(--accent, #5ad1b0);
+}
+
+.cthulhu-fr[data-state="failed"] .cthulhu-fr-status {
+  color: var(--notify, #ef4444);
+}
+
+.cthulhu-fr[data-state="sending"] .cthulhu-fr-message,
+.cthulhu-fr[data-state="sending"] .cthulhu-fr-name {
+  opacity: 0.6;
+}
