@@ -176,6 +176,14 @@ jobs:
       - name: Open / update / close tracking issue
         env:
           GH_TOKEN: ${{ github.token }}
+          # REQUIRED. This job deliberately does not check out the repo -- it
+          # probes public URLs and needs no source. But `gh` infers the target
+          # repository from the git remote, so with no checkout every gh call
+          # fails with "failed to determine base repo", and `set -e` kills the
+          # step before the health verdict is ever used. That made the workflow
+          # fail on every run regardless of whether the endpoints were up.
+          # Naming the repo explicitly is cheaper than checking out for it.
+          GH_REPO: ${{ github.repository }}
           OK: ${{ steps.probe.outputs.ok }}
           SIG: ${{ steps.probe.outputs.sig }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
