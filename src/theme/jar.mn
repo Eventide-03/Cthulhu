@@ -83,12 +83,13 @@ cthulhu.jar:
     content/modules/cursors/assets/default.png (content/modules/cursors/assets/default.png)
     content/modules/cursors/assets/pointer.png (content/modules/cursors/assets/pointer.png)
     content/modules/cursors/assets/text.png    (content/modules/cursors/assets/text.png)
-# ambient-theme module (time-of-day / weather / moon; art slots the user can replace):
+# ambient-theme module (time-of-day palette + weather overlays; art slots the
+# user can replace). No sun/moon art here: the celestial element was removed and
+# the moon lives on the home page, drawn from the shared strip at
+# content/newtab/assets/moon.png.
     content/modules/ambient-theme/manifest.json       (content/modules/ambient-theme/manifest.json)
     content/modules/ambient-theme/ambient-theme.js    (content/modules/ambient-theme/ambient-theme.js)
     content/modules/ambient-theme/ambient-theme.css   (content/modules/ambient-theme/ambient-theme.css)
-    content/modules/ambient-theme/assets/sun.png      (content/modules/ambient-theme/assets/sun.png)
-    content/modules/ambient-theme/assets/moon.png     (content/modules/ambient-theme/assets/moon.png)
     content/modules/ambient-theme/assets/rain.png     (content/modules/ambient-theme/assets/rain.png)
     content/modules/ambient-theme/assets/rain.json    (content/modules/ambient-theme/assets/rain.json)
     content/modules/ambient-theme/assets/snow.png     (content/modules/ambient-theme/assets/snow.png)

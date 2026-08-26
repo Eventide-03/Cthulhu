@@ -5,12 +5,14 @@
 /* =============================================================================
  * Ambient theme module.
  *
- * Rethemes the browser from three locally-computed / cheaply-fetched inputs by
+ * Rethemes the browser from two locally-computed / cheaply-fetched inputs by
  * SWAPPING the A2 theme variables (via attributes consumed by ambient-theme.css)
  * and selecting art frames — never by hardcoding colors:
  *   1. time of day  -> local sunrise/sunset (solar formula, no API) -> dawn/day/dusk/night
  *   2. weather       -> Open-Meteo current weather_code -> clear/cloudy/rain/snow/storm
- *   3. moon phase    -> synodic-age formula -> a frame in the moon-phase art strip
+ *
+ * Moon phase used to be a third input here; it now lives in the home-page moon
+ * widget, which draws from the shared strip at content/newtab/assets/moon.png.
  *
  * Location: user pref (cthulhu.ambient.latitude / .longitude) first; optional
  * geolocation (cthulhu.ambient.geolocation=true) as a fallback.
@@ -30,8 +32,6 @@
   const ASSET = "chrome://cthulhu/content/modules/ambient-theme/assets/";
   const RAD = Math.PI / 180;
 
-  const MOON_FRAMES = 8;   // frames in assets/moon.png (author to match)
-  const MOON_SIZE = 32;    // px per moon frame
   const TIME_REFRESH_MS = 5 * 60 * 1000;    // re-evaluate the time band
   const WEATHER_REFRESH_MS = 30 * 60 * 1000; // refresh weather
   const DEFAULT_LOC = { lat: 40.7128, lng: -74.006 }; // placeholder (set the prefs!)
@@ -101,16 +101,6 @@
     if (t >= set - H && t < set + H) return "dusk";
     if (t >= rise + H && t < set - H) return "day";
     return "night";
-  }
-
-  // --- 3. moon phase (synodic age) ------------------------------------------
-  function moonFrame(date) {
-    const SYN = 29.530588853;
-    const jd = date.getTime() / 86400000 + 2440587.5;
-    let age = (jd - 2451550.1) % SYN;          // 2451550.1 = a known new moon (JD)
-    if (age < 0) age += SYN;
-    const phase = age / SYN;                    // 0 = new, .5 = full
-    return Math.round(phase * MOON_FRAMES) % MOON_FRAMES;
   }
 
   // --- 2. weather (Open-Meteo, cached in a pref, graceful offline) -----------

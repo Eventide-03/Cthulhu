@@ -59,16 +59,15 @@ time-of-day is active:
 Overlays mount `#cthulhu-ambient-overlay` (full-window, `pointer-events:none`) and
 are animated by the **A4 sprite helper** (`window.CthulhuSprite.fromAseprite`).
 
-### Moon phase — selects an art frame (not a color)
+### Moon phase — moved out of this module
 
-`moonFrame(date)` computes the synodic age and picks a frame in `assets/moon.png`
-(an 8-frame strip). Shown at night/dusk via `#cthulhu-ambient-celestial`:
+The sun/moon celestial element (`#cthulhu-ambient-celestial`) was removed. The
+moon is now a home-page widget: `content/newtab/widgets/moon/moon.js`, which
+calls the shared `moonEl()` helper in `content/newtab/widgets.js` and draws from
+the shared 8-frame strip at `content/newtab/assets/moon.png`.
 
-| frame | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
-|-------|---|---|---|---|---|---|---|---|
-| phase | new | waxing crescent | first quarter | waxing gibbous | full | waning gibbous | last quarter | waning crescent |
-
-By day/dawn the same element shows `assets/sun.png` instead.
+Replace that file to restyle the moon. There is no moon or sun art in this
+module any more.
 
 ## 3. Configuration (prefs)
 
@@ -95,11 +94,11 @@ built-in placeholder (`40.71, -74.01`, NYC). Set the prefs for correct results.
 
 ```
 assets/
-  sun.png     32×32              — shown by day/dawn
-  moon.png    256×32 (8 × 32)    — phase strip; MOON_FRAMES/MOON_SIZE in the JS
   rain.png    128×32 (4 × 32)    — rain overlay sheet   + rain.json (Aseprite)
   snow.png    128×32 (4 × 32)    — snow overlay sheet   + snow.json (Aseprite)
 ```
+
+(The moon strip is not here — see "Moon phase" above.)
 
 Overlay sheets follow the same Aseprite export convention as the other modules
 (see `theme/assets/README.md`): horizontal strip, JSON Hash/Array with frame
