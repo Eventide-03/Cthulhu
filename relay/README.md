@@ -61,7 +61,7 @@ abused, rotate the webhook and tighten `limit`.
    ```bash
    cd relay && wrangler deploy
    ```
-   Note the URL it prints: `https://cthulhu-relay.<your-subdomain>.workers.dev`.
+   Note the URL it prints: `https://cthulhu-relay.cthulhubrowser.workers.dev`.
 
 4. Set the webhook as a **secret** (it is prompted for, never passed as an
    argument, so it does not land in your shell history):
@@ -73,7 +73,7 @@ abused, rotate the webhook and tighten `limit`.
 5. Point the browser at it — set this pref default in
    `src/browser/app/profile/cthulhu.js` (or per-user in `about:config`):
    ```
-   cthulhu.relay.url = https://cthulhu-relay.<your-subdomain>.workers.dev
+   cthulhu.relay.url = https://cthulhu-relay.cthulhubrowser.workers.dev
    ```
 
 **Redeploying after a code change**
@@ -87,7 +87,7 @@ Secrets persist across deploys — you only set them again to rotate.
 ## Verify it works
 
 ```bash
-curl -i -X POST https://cthulhu-relay.<your-subdomain>.workers.dev \
+curl -i -X POST https://cthulhu-relay.cthulhubrowser.workers.dev \
   -H 'content-type: application/json' \
   -H 'x-cthulhu-client: 1' \
   -d '{"message":"hello from curl","name":"me","version":"1.0.0","platform":"macOS"}'

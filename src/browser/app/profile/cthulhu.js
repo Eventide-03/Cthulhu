@@ -135,4 +135,4 @@ pref("app.update.background.scheduling.enabled", true);
 // Empty by default. Set it to your deployed Worker URL (see relay/README.md);
 // until then the feature-request button and widget say so instead of failing
 // silently.
-pref("cthulhu.relay.url", "");
+pref("cthulhu.relay.url", "https://cthulhu-relay.cthulhubrowser.workers.dev");
