@@ -156,17 +156,41 @@ jobs:
           surfer build --skip-patch-check
           (cd engine && ./mach package)
 
-      # upload-artifact ZIPS its input, which silently discards symlinks and the
-      # executable bit -- both of which a .app bundle depends on. Tar first so
-      # the bundle survives the round trip intact.
+      # The .app that `mach package` leaves in dist/ is NOT a self-contained
+      # bundle -- it is mostly a farm of symlinks pointing at ABSOLUTE paths
+      # inside the objdir (measured: 7575 symlinks, 0 of them relative). That
+      # includes essential files, not just test binaries:
+      #   Contents/Resources/application.ini    -> <objdir>/build/application.ini
+      #   Contents/Resources/dependentlibs.list -> <objdir>/toolkit/library/...
+      # It works in place because the targets exist; it does not survive being
+      # moved to another machine.
+      #
+      # So dereference with `tar -h`, producing a real bundle (276M of links ->
+      # 409M of content). Without this, unify.py in the merge job dies on the
+      # first unreadable link:
+      #   FileNotFoundError: .../Cthulhu.app/Contents/MacOS/http3server
+      #
+      # Prune genuinely-dangling links FIRST -- `tar -h` treats one as a hard
+      # error, and a link that resolves nowhere has nothing to dereference.
+      #
+      # (upload-artifact also zips its input, which discards symlinks and the
+      # executable bit, so tarring is required regardless.)
       - name: Archive the .app
         run: |
           set -euo pipefail
           cd "engine/${{ matrix.objdir }}/dist"
           APP="$(ls -d *.app | head -1)"
           [ -n "$APP" ] || { echo "::error::no .app in ${{ matrix.objdir }}/dist"; exit 1; }
-          echo "Packaging $APP"
-          tar -czf "$GITHUB_WORKSPACE/macos-${{ matrix.arch }}-app.tar.gz" "$APP"
+
+          dangling=0
+          while IFS= read -r l; do
+            echo "  pruning dangling symlink: ${l#$APP/} -> $(readlink "$l")"
+            rm -f "$l"; dangling=$((dangling + 1))
+          done < <(find "$APP" -type l ! -exec test -e {} \; -print)
+          echo "Pruned $dangling dangling symlink(s)."
+
+          echo "Archiving $APP (dereferencing symlinks)"
+          tar -czhf "$GITHUB_WORKSPACE/macos-${{ matrix.arch }}-app.tar.gz" "$APP"
           ls -lh "$GITHUB_WORKSPACE/macos-${{ matrix.arch }}-app.tar.gz"
 
       - uses: actions/upload-artifact@v4
@@ -517,8 +541,31 @@ jobs:
             Write-Host "python3 already present: $((Get-Command python3).Source)"
           }
 
+      # Surfer must be installed on the SAME DRIVE as the workspace.
+      #
+      # Its windowsPathToUnix() (dist/utils/fs.js) strips the drive letter from
+      # absolute paths before reading them:
+      #   C:\npm\prefix\...\configure.sh  ->  /npm/prefix/.../configure.sh
+      # Node then resolves that leading slash against the CURRENT drive. The
+      # runner installs global npm packages on C: but checks the repo out on D:,
+      # so surfer looks for its own bundled template on D: and dies:
+      #   ENOENT: open 'D:\npm\prefix\...\template\branding.optional\configure.sh'
+      # while its code is demonstrably running from C:\npm\prefix.
+      #
+      # Putting the prefix on the workspace drive makes the drive-stripping a
+      # no-op rather than a corruption. UNTESTED beyond this reasoning -- Windows
+      # has never built successfully, and this only clears the next blocker.
       - name: Install Surfer
-        run: npm install -g "@zen-browser/surfer@${SURFER_VERSION}"
+        run: |
+          set -euo pipefail
+          # Forward slashes on purpose: Windows accepts them, and they avoid a
+          # backslash surviving two levels of shell quoting.
+          DRIVE="${GITHUB_WORKSPACE%%:*}"          # e.g. "D"
+          PREFIX="${DRIVE}:/npm-global"
+          echo "Workspace drive: ${DRIVE}: -- installing surfer to ${PREFIX}"
+          npm config set prefix "$PREFIX"
+          echo "${PREFIX}" >> "$GITHUB_PATH"
+          npm install -g "@zen-browser/surfer@${SURFER_VERSION}"
 
       # Non-fatal: configs/windows/mozconfig guards --with-ccache behind a
       # `command -v sccache` check, so a failed install means a slow build
