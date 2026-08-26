@@ -1,0 +1,91 @@
+# Watches for new Firefox ESR releases and opens an issue when one exists.
+#
+# The ESR rebase is the security-critical step of this fork: until it happens,
+# every install is exposed to already-published Mozilla advisories. Nothing
+# about that fails loudly on its own -- hence this watcher.
+#
+# Safe on a public repo: schedule + manual dispatch only (forks cannot trigger
+# it), no secrets beyond the scoped GITHUB_TOKEN, external data is passed via
+# env -- never interpolated into shell text.
+
+name: ESR check
+
+on:
+  schedule:
+    - cron: "23 9 * * 1" # Mondays 09:23 UTC -- weekly is plenty for ESR cadence
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: esr-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compare our ESR against product-details
+        id: cmp
+        run: |
+          set -euo pipefail
+          # Same logic as tools/rebase-esr.sh check; exit 10 = newer available.
+          if tools/rebase-esr.sh check > result.txt 2>&1; then
+            echo "newer=false" >> "$GITHUB_OUTPUT"
+          elif [ $? -eq 10 ] || grep -q "NEWER ESR AVAILABLE" result.txt; then
+            echo "newer=true" >> "$GITHUB_OUTPUT"
+          else
+            cat result.txt
+            echo "::error::version check itself failed (network? product-details format?)"
+            exit 1
+          fi
+          cat result.txt
+          {
+            echo "target=$(sed -n 's/^NEWER ESR AVAILABLE: //p' result.txt | head -1)"
+            echo "ours=$(sed -n 's/^ours    : //p' result.txt | head -1)"
+            echo "eol=$(grep -c 'may be end-of-life' result.txt || true)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open / update the rebase issue
+        if: steps.cmp.outputs.newer == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ steps.cmp.outputs.target }}
+          OURS: ${{ steps.cmp.outputs.ours }}
+          EOL: ${{ steps.cmp.outputs.eol }}
+        run: |
+          set -euo pipefail
+          LABEL="esr-rebase"
+          gh label create "$LABEL" --color D93F0B \
+            --description "A newer Firefox ESR exists; a rebase is due" 2>/dev/null || true
+
+          TITLE="Rebase onto Firefox ESR ${TARGET}"
+          existing=$(gh issue list --state open --label "$LABEL" --search "$TITLE in:title" \
+                       --json number,title --jq ".[] | select(.title == \"$TITLE\") | .number" | head -1)
+          if [ -n "$existing" ]; then
+            echo "#$existing already tracks $TARGET -- nothing to do."
+            exit 0
+          fi
+
+          {
+            echo "Firefox ESR **${TARGET}** is out; this fork is on **${OURS}**."
+            echo
+            echo "Until the rebase ships, installs are exposed to the fixes in Mozilla's"
+            echo "advisories for that release: https://www.mozilla.org/security/advisories/"
+            if [ "${EOL:-0}" != "0" ]; then
+              echo
+              echo "⚠️ **Our ESR line appears in neither product-details slot -- it may be end-of-life.**"
+            fi
+            echo
+            echo '```'
+            echo "tools/rebase-esr.sh rebase ${TARGET}"
+            echo '```'
+            echo
+            echo "Full loop: see RELEASE.md. (Older open esr-rebase issues are superseded by this one.)"
+          } > body.md
+          gh issue create --title "$TITLE" --label "$LABEL" --body-file body.md
+          echo "Opened: $TITLE"
