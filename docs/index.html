@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Cthulhu — a Firefox fork</title>
+<meta name="description" content="Cthulhu — a privacy-conscious Firefox ESR fork. Download for macOS or Windows." />
+<style>
+  /* Pixel theme variables, mirrored from src/theme/content/theme.css so the
+     site and the browser stay visually consistent. Keep in sync by hand. */
+  :root {
+    --bg:            #1a1a1a;
+    --bg-elevated:   #242424;
+    --surface:       #1f1f1f;
+    --surface-hover: #2e2e2e;
+    --fg:            #e8e8e8;
+    --fg-muted:      #9a9a9a;
+    --accent:        #5ad1b0;
+    --accent-hover:  #6fe0c2;
+    --fg-on-accent:  #0a0a0a;
+    --border:        rgba(255, 255, 255, 0.12);
+    --grid-line:     rgba(255, 255, 255, 0.22);
+    /* The theme's grid alpha is tuned for small browser surfaces; across a
+       full page it competes with the text, so the page backdrop uses a
+       dimmer value. The theme variable above is kept verbatim for reference. */
+    --grid-page:     rgba(255, 255, 255, 0.05);
+    --notify:        #ef4444;
+    --font-pixel: "Cthulhu Pixel", ui-monospace, "SFMono-Regular", "Courier New", monospace;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem 1.25rem 4rem;
+    background: var(--bg); color: var(--fg);
+    font-family: var(--font-pixel);
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    /* faint pixel grid */
+    background-image:
+      linear-gradient(var(--grid-page) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-page) 1px, transparent 1px);
+    background-size: 32px 32px;
+    background-position: -1px -1px;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  header { text-align: center; margin-bottom: 2.5rem; }
+
+  /* ART SLOT — logo. Replace the <div> with <img src="assets/logo.png"
+     alt="Cthulhu" width="128" height="128"> (128×128 recommended; supply a
+     256×256 for 2x). image-rendering:pixelated keeps pixel art crisp. */
+  .logo-slot {
+    width: 128px; height: 128px; margin: 0 auto 1.25rem;
+    display: grid; place-items: center;
+    border: 2px dashed var(--border); border-radius: 12px;
+    color: var(--fg-muted); font-size: 0.72rem; text-align: center;
+    image-rendering: pixelated;
+  }
+  h1 { font-size: 2.25rem; margin: 0 0 .35rem; letter-spacing: .02em; }
+  .tagline { color: var(--fg-muted); margin: 0; }
+
+  .buttons { display: flex; gap: 1rem; flex-wrap: wrap; justify-content: center; margin: 2rem 0 .75rem; }
+  .btn {
+    flex: 1 1 260px; max-width: 320px;
+    display: block; padding: 1.1rem 1.25rem;
+    background: var(--surface); color: var(--fg);
+    border: 2px solid var(--border); border-radius: 10px;
+    text-decoration: none; text-align: center;
+    transition: background .15s, border-color .15s, transform .15s;
+  }
+  .btn:hover { background: var(--surface-hover); border-color: var(--accent); transform: translateY(-2px); }
+  .btn .os { display: block; font-size: 1.1rem; font-weight: 700; }
+  .btn .meta { display: block; font-size: .78rem; color: var(--fg-muted); margin-top: .3rem; }
+
+  /* OS detection highlights the button matching the visitor's platform. Both
+     always remain clickable -- detection is a hint, never a gate. */
+  .btn.recommended {
+    background: var(--accent); color: var(--fg-on-accent); border-color: var(--accent);
+  }
+  .btn.recommended:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+  .btn.recommended .meta { color: rgba(10,10,10,.75); }
+  .btn.recommended::after {
+    content: "detected"; display: block; margin-top: .45rem;
+    font-size: .68rem; text-transform: uppercase; letter-spacing: .08em; opacity: .8;
+  }
+
+  .version { text-align: center; color: var(--fg-muted); font-size: .82rem; min-height: 1.2em; }
+  .version a { color: var(--accent); }
+
+  .note {
+    background: var(--bg-elevated); border: 1px solid var(--border);
+    border-left: 3px solid var(--notify);
+    border-radius: 8px; padding: 1rem 1.15rem; margin: 2rem 0; font-size: .88rem;
+  }
+  .note.calm { border-left-color: var(--accent); }
+  .note h2 { font-size: .95rem; margin: 0 0 .5rem; }
+  .note p { margin: .5rem 0 0; color: var(--fg-muted); }
+  .note kbd {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+    padding: .1rem .4rem; font-family: inherit; font-size: .85em; color: var(--fg);
+  }
+
+  /* ART SLOT — screenshot. Replace with <img src="assets/screenshot.png"
+     alt="Cthulhu new tab" style="width:100%;border-radius:10px">. */
+  .shot-slot {
+    aspect-ratio: 16 / 10; margin: 2.5rem 0;
+    display: grid; place-items: center;
+    border: 2px dashed var(--border); border-radius: 12px;
+    color: var(--fg-muted); font-size: .8rem; text-align: center; padding: 1rem;
+  }
+
+  footer { text-align: center; color: var(--fg-muted); font-size: .8rem; margin-top: 3rem; }
+  footer a { color: var(--accent); text-decoration: none; margin: 0 .5rem; }
+  footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="logo-slot" id="logo-slot">ART SLOT<br />logo 128×128</div>
+    <h1>Cthulhu</h1>
+    <p class="tagline">A privacy-conscious Firefox ESR fork.</p>
+  </header>
+
+  <!-- Both links default to the releases page, which is always valid even with
+       JavaScript disabled or if the API call fails. The script below upgrades
+       them to direct asset URLs. -->
+  <div class="buttons">
+    <a class="btn" id="btn-mac"
+       href="https://github.com/Eventide-03/Cthulhu/releases/latest">
+      <span class="os">Download for Mac</span>
+      <span class="meta" id="meta-mac">Universal — Apple Silicon &amp; Intel</span>
+    </a>
+    <a class="btn" id="btn-win"
+       href="https://github.com/Eventide-03/Cthulhu/releases/latest">
+      <span class="os">Download for Windows</span>
+      <span class="meta" id="meta-win">64-bit installer</span>
+    </a>
+  </div>
+
+  <p class="version" id="version">
+    <a href="https://github.com/Eventide-03/Cthulhu/releases/latest">All releases and release notes →</a>
+  </p>
+
+  <div class="note">
+    <h2>⚠️ Windows will warn you before it runs</h2>
+    <p>
+      Cthulhu's Windows installer is <strong>unsigned</strong>. This is
+      deliberate — code-signing certificates are an ongoing cost this project
+      doesn't carry.
+    </p>
+    <p>
+      Windows SmartScreen will say <em>"Windows protected your PC"</em>. To
+      continue, click <kbd>More info</kbd>, then <kbd>Run anyway</kbd>.
+    </p>
+    <p>
+      This warning means Windows doesn't recognise the publisher — not that
+      anything is wrong with the file. You can verify your download against the
+      SHA256 checksum published with every release.
+    </p>
+  </div>
+
+  <div class="note calm">
+    <h2>Updates are automatic</h2>
+    <p>
+      Cthulhu updates itself in the background, the same way Firefox does. You
+      only need to download from this page once.
+    </p>
+  </div>
+
+  <div class="shot-slot">ART SLOT — screenshot (16:10)</div>
+
+  <footer>
+    <a href="https://github.com/Eventide-03/Cthulhu">Source</a> ·
+    <a href="https://github.com/Eventide-03/Cthulhu/blob/main/PRIVACY.md">Privacy</a> ·
+    <a href="https://github.com/Eventide-03/Cthulhu/blob/main/SECURITY.md">Security</a> ·
+    <a href="https://github.com/Eventide-03/Cthulhu/blob/main/docs/windows-signing.md">Windows signing</a>
+    <p>Not affiliated with Mozilla. Firefox is a trademark of the Mozilla Foundation.</p>
+  </footer>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var REPO = "Eventide-03/Cthulhu";
+
+  /* ---- OS detection -------------------------------------------------------
+   * A hint only: it adds a highlight, it never hides or disables the other
+   * button. userAgentData is preferred where available; the userAgent string
+   * is the fallback. Anything we can't identify (Linux, mobile, unknown) simply
+   * gets no highlight, which is the correct neutral outcome. */
+  function detect() {
+    var p = (navigator.userAgentData && navigator.userAgentData.platform) || "";
+    var ua = navigator.userAgent || "";
+    var s = (p + " " + ua).toLowerCase();
+    if (s.indexOf("mac") !== -1) return "mac";
+    if (s.indexOf("win") !== -1) return "win";
+    return null;
+  }
+  var os = detect();
+  if (os === "mac") document.getElementById("btn-mac").classList.add("recommended");
+  if (os === "win") document.getElementById("btn-win").classList.add("recommended");
+
+  /* ---- Resolve the real asset URLs ----------------------------------------
+   * Asset filenames carry the version (Cthulhu-1.2.0-macos-universal.dmg), so a
+   * hardcoded /releases/latest/download/<name> link would break on every
+   * release. Instead ask the API for the latest release and pick assets by
+   * suffix, so the links stay correct no matter the version.
+   *
+   * Unauthenticated API calls are rate limited (60/hr per IP). On any failure
+   * we simply leave the buttons pointing at the releases page. */
+  fetch("https://api.github.com/repos/" + REPO + "/releases/latest", {
+    headers: { Accept: "application/vnd.github+json" }
+  })
+    .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+    .then(function (rel) {
+      var assets = rel.assets || [];
+      function find(suffix) {
+        for (var i = 0; i < assets.length; i++) {
+          if (assets[i].name.slice(-suffix.length) === suffix) return assets[i];
+        }
+        return null;
+      }
+      var mac = find("-macos-universal.dmg");
+      var win = find("-windows-x64.exe");
+
+      function wire(asset, btnId, metaId) {
+        if (!asset) return;
+        document.getElementById(btnId).href = asset.browser_download_url;
+        var mb = (asset.size / 1048576).toFixed(0);
+        var meta = document.getElementById(metaId);
+        meta.textContent = meta.textContent + " · " + mb + " MB";
+      }
+      wire(mac, "btn-mac", "meta-mac");
+      wire(win, "btn-win", "meta-win");
+
+      if (rel.tag_name) {
+        document.getElementById("version").innerHTML =
+          "Latest: <strong>" + rel.tag_name + "</strong> · " +
+          '<a href="' + rel.html_url + '">release notes →</a>';
+      }
+    })
+    .catch(function () {
+      /* Buttons already point at /releases/latest -- nothing to do. */
+    });
+})();
+</script>
+</body>
+</html>
