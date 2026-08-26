@@ -36,24 +36,40 @@ env:
 
 jobs:
   # ===========================================================================
-  # macOS -- UNIVERSAL, signed + notarized + stapled, shipped as a .dmg
+  # macOS build -- ONE ARCHITECTURE PER JOB, run in parallel.
+  #
+  # WHY SPLIT: a single Firefox compile on a macos-latest runner measured
+  # 4h48m (run 32919948246). Two of them back to back in one job needs ~9.5h
+  # against GitHub's 6h ceiling, so the previous single-job universal build
+  # could never have passed -- even with every other bug fixed, the second arch
+  # would have been killed mid-compile. Split, each job carries one ~5h build
+  # and they run concurrently; macos-merge then does the cheap part.
   #
   # Surfer has no universal-build support: `surfer build` just runs `./mach
-  # build` for the host arch. So we build twice and merge with Firefox's own
-  # unifier (toolkit/mozapps/installer/unify.py), which is what Mozilla does in
-  # taskcluster/scripts/misc/unify.sh.
-  #
-  # Per-arch target and objdir are injected through Surfer's root ./mozconfig
-  # override slot, which it appends AFTER configs/macos/mozconfig. That file
-  # deliberately carries neither, so a plain local `surfer build` is unaffected.
+  # build` for the host arch. The per-arch target and objdir are injected
+  # through Surfer's root ./mozconfig override slot, which it appends AFTER
+  # configs/macos/mozconfig. That file deliberately carries neither, so a plain
+  # local `surfer build` is unaffected.
   #
   # MOZ_OBJDIR is mandatory: Firefox's default objdir derives from the HOST
   # triple, not the target, so both passes would otherwise collide.
   # ===========================================================================
-  macos:
-    name: macOS (universal)
+  macos-build:
+    name: macOS ${{ matrix.arch }}
     runs-on: macos-latest
     timeout-minutes: 360
+    strategy:
+      # Keep going if one arch fails -- a broken x86_64 should not throw away a
+      # good 5-hour arm64 build, and vice versa.
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            target: aarch64-apple-darwin
+            objdir: obj-arm64
+          - arch: x86_64
+            target: x86_64-apple-darwin
+            objdir: obj-x86_64
     steps:
       - uses: actions/checkout@v4
 
@@ -62,7 +78,7 @@ jobs:
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then
             V="${GITHUB_REF_NAME#v}"
           else
-            V="$(node -p "require('./surfer.json').brands.nightly.release.displayVersion")-dev.$(git rev-parse --short HEAD)"
+            V="$(node -p "require('./surfer.json').brands.release.release.displayVersion")-dev.$(git rev-parse --short HEAD)"
           fi
           echo "VERSION=$V" >> "$GITHUB_ENV"
           echo "Version: $V"
@@ -84,25 +100,35 @@ jobs:
       - name: Install sccache
         run: brew install sccache
 
+      # The runners ship a rustup toolchain with ONLY the host target installed
+      # (aarch64-apple-darwin). Cross-compiling to x86_64 then dies 24s into
+      # configure, at "checking for rust target triplet":
+      #   error[E0463]: can't find crate for `std`
+      #   ERROR: Cannot compile for x86_64-apple-darwin with .../rustc
+      # This is what killed run 32919948246 after a successful 4h48m arm64
+      # build. Adding the host's own target is a no-op, so this runs for both.
+      - name: Ensure the Rust target is installed
+        run: |
+          set -euo pipefail
+          rustup target add "${{ matrix.target }}"
+          rustup target list --installed
+
       # ---- CACHE BUDGET -----------------------------------------------------
       # GitHub caps the Actions cache at 10 GB per repo, evicting LRU. The
       # extracted Firefox source is ~4 GB and an objdir is 10-20 GB, so caching
       # either would blow the budget and evict the one thing that actually saves
       # wall-clock: the compiler object cache.
       #
-      # Spend: macOS sccache 2 GB + Windows sccache 2 GB + source tarball
-      #        ~0.7 GB ~= 4.7 GB, leaving headroom.
-      # Skipped: engine/ (re-downloadable, huge), obj-* (far too big),
-      #        ~/.mozbuild toolchains (3-5 GB/platform -- would eat the whole
-      #        budget alone; --enable-bootstrap refetches them).
+      # The key is per-ARCH: the two matrix legs compile different object code
+      # and would otherwise evict each other on every run.
       # -----------------------------------------------------------------------
       - name: Cache sccache objects
         uses: actions/cache@v4
         with:
           path: ~/Library/Caches/Mozilla.sccache
-          key: sccache-macos-${{ github.sha }}
+          key: sccache-macos-${{ matrix.arch }}-${{ github.sha }}
           restore-keys: |
-            sccache-macos-
+            sccache-macos-${{ matrix.arch }}-
 
       - name: Cache Firefox source tarball
         uses: actions/cache@v4
@@ -116,39 +142,149 @@ jobs:
       - name: Apply patches
         run: surfer import
 
-      # Each arch is packaged in the SAME step that builds it, while its own
-      # ./mozconfig is active -- mach reads target and objdir from that file, so
-      # packaging both later (with only the last mozconfig present) would
-      # package the wrong tree. `mach package` is required because unify.py
-      # expects packaged (omni.ja) apps; that is how Mozilla drives it.
-      - name: Build + package arm64
+      # Packaged in the SAME step that builds it, while its own ./mozconfig is
+      # active -- mach reads target and objdir from that file. `mach package` is
+      # required because unify.py expects packaged (omni.ja) apps; that is how
+      # Mozilla drives it.
+      - name: Build + package ${{ matrix.arch }}
         run: |
-          cat > mozconfig <<'EOF'
-          ac_add_options --target=aarch64-apple-darwin
-          mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-arm64
+          cat > mozconfig <<EOF
+          ac_add_options --target=${{ matrix.target }}
+          mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/${{ matrix.objdir }}
           EOF
+          cat mozconfig
           surfer build --skip-patch-check
           (cd engine && ./mach package)
 
-      - name: Build + package x86_64
+      # upload-artifact ZIPS its input, which silently discards symlinks and the
+      # executable bit -- both of which a .app bundle depends on. Tar first so
+      # the bundle survives the round trip intact.
+      - name: Archive the .app
         run: |
-          cat > mozconfig <<'EOF'
-          ac_add_options --target=x86_64-apple-darwin
-          mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-x86_64
-          EOF
-          surfer build --skip-patch-check
-          (cd engine && ./mach package)
+          set -euo pipefail
+          cd "engine/${{ matrix.objdir }}/dist"
+          APP="$(ls -d *.app | head -1)"
+          [ -n "$APP" ] || { echo "::error::no .app in ${{ matrix.objdir }}/dist"; exit 1; }
+          echo "Packaging $APP"
+          tar -czf "$GITHUB_WORKSPACE/macos-${{ matrix.arch }}-app.tar.gz" "$APP"
+          ls -lh "$GITHUB_WORKSPACE/macos-${{ matrix.arch }}-app.tar.gz"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-app-${{ matrix.arch }}
+          path: macos-${{ matrix.arch }}-app.tar.gz
+          if-no-files-found: error
+          retention-days: 3
+
+      # The merge job needs `mar` and `signmar`, and those only exist as build
+      # outputs. Ship them from the x86_64 leg (arbitrary -- either would do)
+      # rather than making the merge job compile anything. signmar is linked
+      # against the NSS/NSPR dylibs next to it, so they travel too.
+      - name: Archive the MAR tooling
+        if: matrix.arch == 'x86_64'
+        run: |
+          set -euo pipefail
+          cd "engine/${{ matrix.objdir }}"
+          [ -x dist/bin/signmar ]    || { echo "::error::dist/bin/signmar missing";    exit 1; }
+          [ -x dist/host/bin/mar ]   || { echo "::error::dist/host/bin/mar missing";   exit 1; }
+          tar -czf "$GITHUB_WORKSPACE/macos-martools.tar.gz" \
+            dist/bin/signmar dist/host/bin/mar $(ls dist/bin/*.dylib 2>/dev/null || true)
+          ls -lh "$GITHUB_WORKSPACE/macos-martools.tar.gz"
+
+      - uses: actions/upload-artifact@v4
+        if: matrix.arch == 'x86_64'
+        with:
+          name: macos-martools
+          path: macos-martools.tar.gz
+          if-no-files-found: error
+          retention-days: 3
+
+  # ===========================================================================
+  # macOS merge -- unify, sign, notarize, package, MAR.
+  #
+  # Everything here is minutes, not hours: no compilation happens. It does need
+  # a Firefox source tree, because `mach python` drives both unify.py and
+  # make_dmg, so it re-runs surfer download + import (~15 min) rather than
+  # dragging a 4 GB tree through the artifact store.
+  # ===========================================================================
+  macos-merge:
+    name: macOS (universal)
+    needs: macos-build
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            V="${GITHUB_REF_NAME#v}"
+          else
+            V="$(node -p "require('./surfer.json').brands.release.release.displayVersion")-dev.$(git rev-parse --short HEAD)"
+          fi
+          echo "VERSION=$V" >> "$GITHUB_ENV"
+          echo "Version: $V"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Surfer
+        run: npm install -g "@zen-browser/surfer@${SURFER_VERSION}"
+
+      - name: Cache Firefox source tarball
+        uses: actions/cache@v4
+        with:
+          path: .surfer/engine
+          key: ff-src-${{ hashFiles('surfer.json') }}
+
+      # A source tree only -- nothing is compiled here. `mach python` needs the
+      # tree to bootstrap its virtualenv; patches are applied so the tree
+      # matches what was built.
+      - name: Download Firefox source
+        run: surfer download
+
+      - name: Apply patches
+        run: surfer import
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos-app-arm64
+          path: incoming
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos-app-x86_64
+          path: incoming
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos-martools
+          path: incoming
+
+      - name: Unpack the build outputs
+        run: |
+          set -euo pipefail
+          mkdir -p stage/arm64 stage/x86_64 martools
+          tar -xzf incoming/macos-arm64-app.tar.gz  -C stage/arm64
+          tar -xzf incoming/macos-x86_64-app.tar.gz -C stage/x86_64
+          tar -xzf incoming/macos-martools.tar.gz   -C martools
+          ARM="$PWD/stage/arm64/$(ls stage/arm64 | head -1)"
+          X64="$PWD/stage/x86_64/$(ls stage/x86_64 | head -1)"
+          [ -d "$ARM" ] && [ -d "$X64" ] || { echo "::error::could not locate both .app bundles"; exit 1; }
+          echo "ARM_APP=$ARM" >> "$GITHUB_ENV"
+          echo "X64_APP=$X64" >> "$GITHUB_ENV"
+          chmod +x martools/dist/bin/signmar martools/dist/host/bin/mar
+          ls -l "$ARM" "$X64"
 
       # unify.py merges app2 INTO app1 in place, so the x86_64 tree becomes the
       # universal one.
       - name: Unify into a universal app
         run: |
+          set -euo pipefail
           cd engine
-          ARM=$(ls -d obj-arm64/dist/*.app | head -1)
-          X64=$(ls -d obj-x86_64/dist/*.app | head -1)
-          [ -d "$ARM" ] && [ -d "$X64" ] || { echo "::error::could not locate both .app bundles"; exit 1; }
-          LIPO=lipo ./mach python toolkit/mozapps/installer/unify.py "$X64" "$ARM"
-          echo "UNIVERSAL_APP=$PWD/$X64" >> "$GITHUB_ENV"
+          LIPO=lipo ./mach python toolkit/mozapps/installer/unify.py "$X64_APP" "$ARM_APP"
+          echo "UNIVERSAL_APP=$X64_APP" >> "$GITHUB_ENV"
 
       - name: Verify universal binary
         run: |
@@ -266,9 +402,13 @@ jobs:
           MAR_SIGNING_DB_B64: ${{ secrets.MAR_SIGNING_DB_B64 }}
         run: |
           set -euo pipefail
-          OBJ="$GITHUB_WORKSPACE/engine/obj-x86_64"   # the unified tree
-          export DYLD_LIBRARY_PATH="$OBJ/dist/bin"
-          SIGNMAR="$OBJ/dist/bin/signmar"
+          # Nothing was compiled in this job -- mar/signmar come from the
+          # x86_64 build job's `macos-martools` artifact. signmar dlopens the
+          # NSS/NSPR dylibs that shipped alongside it.
+          TOOLS="$GITHUB_WORKSPACE/martools"
+          export DYLD_LIBRARY_PATH="$TOOLS/dist/bin"
+          SIGNMAR="$TOOLS/dist/bin/signmar"
+          MAR_BIN="$TOOLS/dist/host/bin/mar"
           DER="$GITHUB_WORKSPACE/src/toolkit/mozapps/update/updater/release_primary.der"
 
           BUILDID=$(sed -n 's/^BuildID=//p' "$UNIVERSAL_APP/Contents/Resources/application.ini" | head -1)
@@ -277,7 +417,7 @@ jobs:
 
           OUT="$GITHUB_WORKSPACE/${APP_NAME}-${VERSION}-macos-universal.complete.mar"
           (cd "$GITHUB_WORKSPACE/engine" && \
-            MAR="$OBJ/dist/host/bin/mar" \
+            MAR="$MAR_BIN" \
             MOZ_PRODUCT_VERSION="$VERSION" \
             MAR_CHANNEL_ID="release" \
             tools/update-packaging/make_full_update.sh "$OUT.unsigned" "$UNIVERSAL_APP")
@@ -338,7 +478,7 @@ jobs:
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then
             V="${GITHUB_REF_NAME#v}"
           else
-            V="$(node -p "require('./surfer.json').brands.nightly.release.displayVersion")-dev.$(git rev-parse --short HEAD)"
+            V="$(node -p "require('./surfer.json').brands.release.release.displayVersion")-dev.$(git rev-parse --short HEAD)"
           fi
           echo "VERSION=$V" >> "$GITHUB_ENV"
 
@@ -408,8 +548,49 @@ jobs:
           path: .surfer/engine
           key: ff-src-${{ hashFiles('surfer.json') }}
 
-      - name: Download Firefox source
-        run: surfer download
+      # Surfer's Windows unpack path is BROKEN for every ESR release, so we do
+      # it ourselves. `surfer download` extracts with 7z and then moves a
+      # directory it *names* `firefox-<config.version.version>` -- but Mozilla's
+      # tarball `firefox-153.0esr.source.tar.xz` contains a top-level directory
+      # called `firefox-153.0`, with NO `esr` suffix. The move then dies with
+      #   ENOENT: lstat '...\.surfer\engine\firefox-153.0esr'
+      # (surfer dist/commands/download/firefox.js, unpackFirefoxSource).
+      #
+      # macOS/Linux never hit this because that branch pipes the tarball through
+      # `tar --strip-components=1`, which does not care what the directory is
+      # called. Only the Windows branch hardcodes the name.
+      #
+      # The 7z extraction itself is fine -- CI logs show both passes completing
+      # -- so we keep it and just discover the directory by glob instead of
+      # guessing its name. `surfer import` then proceeds normally.
+      - name: Download and unpack Firefox source
+        run: |
+          set -euo pipefail
+          FFVER="$(node -p "require('./surfer.json').version.version")"
+          TMP=".surfer/engine"
+          TARBALL="$TMP/firefox-${FFVER}.source.tar.xz"
+          mkdir -p "$TMP"
+
+          if [ ! -f "$TARBALL" ]; then
+            URL="https://archive.mozilla.org/pub/firefox/releases/${FFVER}/source/firefox-${FFVER}.source.tar.xz"
+            echo "Downloading $URL"
+            curl -fL --retry 3 --retry-delay 5 -o "$TARBALL" "$URL"
+          else
+            echo "Using cached $TARBALL"
+          fi
+
+          7z x "$TARBALL" -o"$TMP" -y >/dev/null
+          7z x "$TMP/firefox-${FFVER}.source.tar" -o"$TMP" -y >/dev/null
+
+          # Whatever the inner directory is called, there is exactly one.
+          SRCDIR="$(find "$TMP" -maxdepth 1 -mindepth 1 -type d -name 'firefox-*' | head -1)"
+          [ -n "$SRCDIR" ] || { echo "::error::no firefox-* directory after extraction"; exit 1; }
+          echo "Extracted source directory: $SRCDIR"
+
+          rm -rf engine
+          mv "$SRCDIR" engine
+          [ -f engine/mach ] || { echo "::error::engine/mach missing after extract"; exit 1; }
+          rm -f "$TMP/firefox-${FFVER}.source.tar"
 
       - name: Apply patches
         run: surfer import
@@ -536,7 +717,7 @@ jobs:
   # ===========================================================================
   release:
     name: Release
-    needs: [macos, windows]
+    needs: [macos-merge, windows]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
