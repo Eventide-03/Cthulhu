@@ -46,13 +46,17 @@ jobs:
   # and they run concurrently; macos-merge then does the cheap part.
   #
   # Surfer has no universal-build support: `surfer build` just runs `./mach
-  # build` for the host arch. The per-arch target and objdir are injected
-  # through Surfer's root ./mozconfig override slot, which it appends AFTER
+  # build` for the host arch. The target and objdir are injected through
+  # Surfer's root ./mozconfig override slot, which it appends AFTER
   # configs/macos/mozconfig. That file deliberately carries neither, so a plain
   # local `surfer build` is unaffected.
   #
-  # MOZ_OBJDIR is mandatory: Firefox's default objdir derives from the HOST
-  # triple, not the target, so both passes would otherwise collide.
+  # MOZ_OBJDIR is still set explicitly even though both arches now use the same
+  # name: Firefox derives its default objdir from the HOST triple, so the
+  # x86_64 leg would otherwise build into a directory named for aarch64 -- true,
+  # since the runner is arm64, but actively misleading to anyone reading a log.
+  # Pinning it also keeps the path identical across both legs, which Info.plist
+  # depends on (see the matrix comment below).
   # ===========================================================================
   macos-build:
     name: macOS ${{ matrix.arch }}
@@ -62,14 +66,25 @@ jobs:
       # Keep going if one arch fails -- a broken x86_64 should not throw away a
       # good 5-hour arm64 build, and vice versa.
       fail-fast: false
+      # objdir is DELIBERATELY THE SAME for both arches. Info.plist embeds the
+      # absolute object directory:
+      #   <key>MozillaDeveloperObjPath</key>
+      #   <string>/Users/runner/work/Cthulhu/Cthulhu/engine/obj-...</string>
+      # (browser/app/Makefile.in passes -DMOZ_DEVELOPER_OBJ_PATH=$(topobjdir)).
+      # With per-arch names those strings differ, so unify.py rejects Info.plist
+      # and the three helper .apps no matter how the build ID is pinned.
+      #
+      # Distinct objdirs were only ever needed because both compiles shared one
+      # job and one filesystem. They are separate runners now, with identical
+      # workspace paths, so one shared name makes the plists byte-identical.
       matrix:
         include:
           - arch: arm64
             target: aarch64-apple-darwin
-            objdir: obj-arm64
+            objdir: obj
           - arch: x86_64
             target: x86_64-apple-darwin
-            objdir: obj-x86_64
+            objdir: obj
     steps:
       - uses: actions/checkout@v4
 
@@ -82,6 +97,35 @@ jobs:
           fi
           echo "VERSION=$V" >> "$GITHUB_ENV"
           echo "Version: $V"
+
+      # BOTH ARCHES MUST SHARE ONE BUILD ID, or unify.py refuses to merge them:
+      #   error: Can't unify Contents/Resources/application.ini: file differs
+      #   error: Can't unify Contents/Resources/platform.ini: file differs
+      #   error: Can't unify Contents/Resources/modules/AppConstants.sys.mjs
+      #   error: Can't unify Contents/Info.plist   (+ the three helper .apps)
+      #
+      # Every one of those differences is the build timestamp: application.ini
+      # carries BuildID=, AppConstants carries MOZ_BUILDID, and the macOS
+      # CFBundleVersion is derived from the build date too (e.g. "126.8.24").
+      # UnifiedBuildFinder only tolerates *.manifest ordering, buildconfig.html
+      # and install.rdf -- it has no special case for any of these, so they must
+      # be byte-identical.
+      #
+      # The two legs are separate jobs that start seconds apart, so
+      # datetime.now() gives them different IDs. Pin MOZ_BUILD_DATE to the
+      # COMMIT timestamp: both legs check out the same commit, so both compute
+      # the same value with no cross-job coordination.
+      #
+      # build/variables.py silently ignores the variable unless it is EXACTLY
+      # 14 characters, falling back to datetime.now() -- which would look like
+      # this fix simply did not work. Length is asserted below.
+      - name: Pin a shared build ID across both arches
+        run: |
+          set -euo pipefail
+          BD="$(TZ=UTC git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S HEAD)"
+          [ "${#BD}" -eq 14 ] || { echo "::error::MOZ_BUILD_DATE must be 14 chars, got '${BD}' (${#BD})"; exit 1; }
+          echo "MOZ_BUILD_DATE=$BD" >> "$GITHUB_ENV"
+          echo "Shared build ID: $BD"
 
       - name: Free disk space
         run: |
@@ -188,6 +232,21 @@ jobs:
             rm -f "$l"; dangling=$((dangling + 1))
           done < <(find "$APP" -type l ! -exec test -e {} \; -print)
           echo "Pruned $dangling dangling symlink(s)."
+
+          # ARCH-ONLY STRAYS. unify.py requires the two trees to hold the same
+          # set of paths and errors on any file present in one and not the
+          # other:
+          #   error: File missing in .../arm64/Cthulhu.app: Contents/Resources/rapl
+          # rapl is Intel's power-measurement CLI, gated in tools/power/moz.build
+          # on TARGET_CPU == "x86_64", so it can never exist on arm64. It is a
+          # developer tool, not a browser component, and has no business in a
+          # shipped bundle -- drop it rather than teach unify to ignore it.
+          for stray in Contents/Resources/rapl; do
+            if [ -e "$APP/$stray" ]; then
+              echo "  dropping arch-only stray: $stray"
+              rm -rf "${APP:?}/$stray"
+            fi
+          done
 
           echo "Archiving $APP (dereferencing symlinks)"
           tar -czhf "$GITHUB_WORKSPACE/macos-${{ matrix.arch }}-app.tar.gz" "$APP"
