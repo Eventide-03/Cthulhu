@@ -233,19 +233,52 @@ jobs:
           done < <(find "$APP" -type l ! -exec test -e {} \; -print)
           echo "Pruned $dangling dangling symlink(s)."
 
-          # ARCH-ONLY STRAYS. unify.py requires the two trees to hold the same
-          # set of paths and errors on any file present in one and not the
-          # other:
-          #   error: File missing in .../arm64/Cthulhu.app: Contents/Resources/rapl
-          # rapl is Intel's power-measurement CLI, gated in tools/power/moz.build
-          # on TARGET_CPU == "x86_64", so it can never exist on arm64. It is a
-          # developer tool, not a browser component, and has no business in a
-          # shipped bundle -- drop it rather than teach unify to ignore it.
-          for stray in Contents/Resources/rapl; do
+          # BUILD-TOOL STRAYS. These are build-time artifacts that `mach package`
+          # copies into the bundle but that no shipped browser needs, and each
+          # breaks unify.py in its own way. Dropped from BOTH legs so the two
+          # trees stay symmetric -- unify errors on any path present in one and
+          # missing from the other.
+          #
+          #   rapl      Intel's power-measurement CLI, gated in tools/power/
+          #             moz.build on TARGET_CPU == "x86_64", so it cannot exist
+          #             on arm64:
+          #               error: File missing in arm64: Contents/Resources/rapl
+          #
+          #   nsinstall A HOST build utility (a file-installer, like install(1)).
+          #             Host tools are built for the machine doing the building,
+          #             so on the cross leg the "x86_64" bundle contains an ARM64
+          #             nsinstall. unify hands every Mach-O pair to lipo, which
+          #             refuses two slices of the same arch:
+          #               lipo: ... have the same architectures (arm64) and
+          #               can't be in the same fat output file
+          #             Confirmed by scanning the actual CI artifact: nsinstall
+          #             is the ONLY binary in the x86_64 bundle that is not
+          #             x86_64, so it is the only such collision.
+          for stray in Contents/Resources/rapl Contents/Resources/nsinstall; do
             if [ -e "$APP/$stray" ]; then
               echo "  dropping arch-only stray: $stray"
               rm -rf "${APP:?}/$stray"
             fi
+          done
+
+          # Early warning for the NEXT host-tool leak. unify only discovers an
+          # arch mismatch after both 4-hour compiles have finished, and reports
+          # it as an opaque lipo error. Surface it here instead, where the log
+          # names the file directly. Warn rather than fail: a stray that unify
+          # happens to tolerate should not throw away a good build.
+          case "${{ matrix.arch }}" in
+            arm64)  want=arm64  ;;
+            x86_64) want=x86_64 ;;
+          esac
+          find "$APP" -type f -perm +111 | while read -r f; do
+            t="$(file -b "$f" 2>/dev/null)"
+            case "$t" in
+              *Mach-O*)
+                case "$t" in
+                  *"$want"*) ;;
+                  *) echo "::warning::${f#$APP/} is not $want ($t) -- likely a host tool that will break unify" ;;
+                esac ;;
+            esac
           done
 
           echo "Archiving $APP (dereferencing symlinks)"
