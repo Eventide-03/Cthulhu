@@ -312,7 +312,17 @@ jobs:
           done
 
           echo "Archiving $APP (dereferencing symlinks)"
-          tar -czhf "$GITHUB_WORKSPACE/macos-${{ matrix.arch }}-app.tar.gz" "$APP"
+          # -C is REQUIRED so the bundle sits at the ROOT of the tar. The
+          # packaged app lives at dist/$(MOZ_PKG_DIR)/<name>.app, so archiving
+          # "$APP" verbatim stores members as `Cthulhu/Cthulhu.app/...` and the
+          # merge job -- which takes the first entry after extraction -- picks
+          # the STAGING DIRECTORY instead of the bundle. unify then runs one
+          # level too high and still reports success, and the failure only
+          # surfaces later as an empty path handed to lipo:
+          #   lipo: can't open input file:  (No such file or directory)
+          tar -czhf "$GITHUB_WORKSPACE/macos-${{ matrix.arch }}-app.tar.gz" \
+            -C "$(dirname "$APP")" "$(basename "$APP")"
+          echo "Tar root: $(tar -tzf "$GITHUB_WORKSPACE/macos-${{ matrix.arch }}-app.tar.gz" | head -1)"
           ls -lh "$GITHUB_WORKSPACE/macos-${{ matrix.arch }}-app.tar.gz"
 
       - uses: actions/upload-artifact@v4
@@ -415,13 +425,27 @@ jobs:
           tar -xzf incoming/macos-arm64-app.tar.gz  -C stage/arm64
           tar -xzf incoming/macos-x86_64-app.tar.gz -C stage/x86_64
           tar -xzf incoming/macos-martools.tar.gz   -C martools
-          ARM="$PWD/stage/arm64/$(ls stage/arm64 | head -1)"
-          X64="$PWD/stage/x86_64/$(ls stage/x86_64 | head -1)"
-          [ -d "$ARM" ] && [ -d "$X64" ] || { echo "::error::could not locate both .app bundles"; exit 1; }
+          # Locate each bundle explicitly rather than taking the first directory
+          # entry. `ls | head -1` silently returned the packaging STAGING dir
+          # when the tar carried one, and every later step then operated one
+          # level above the bundle -- unify included, which reported success on
+          # the wrong tree. Match *.app, and assert the bundle really is one.
+          find_app() {
+            find "$1" -maxdepth 2 -type d -name '*.app' | sort | head -1
+          }
+          ARM="$(find_app stage/arm64)"
+          X64="$(find_app stage/x86_64)"
+          for v in ARM X64; do
+            eval "p=\$$v"
+            [ -n "$p" ] || { echo "::error::no .app found in stage for $v"; find stage -maxdepth 3 || true; exit 1; }
+            [ -x "$p/Contents/MacOS/$APP_NAME" ] || { echo "::error::$p is not an app bundle -- no Contents/MacOS/$APP_NAME"; ls -R "$p" | head -40; exit 1; }
+          done
+          ARM="$PWD/$ARM"; X64="$PWD/$X64"
           echo "ARM_APP=$ARM" >> "$GITHUB_ENV"
           echo "X64_APP=$X64" >> "$GITHUB_ENV"
           chmod +x martools/dist/bin/signmar martools/dist/host/bin/mar
-          ls -l "$ARM" "$X64"
+          echo "arm64 : $ARM"
+          echo "x86_64: $X64"
 
       # unify.py merges app2 INTO app1 in place, so the x86_64 tree becomes the
       # universal one.
