@@ -223,8 +223,38 @@ jobs:
         run: |
           set -euo pipefail
           cd "engine/${{ matrix.objdir }}/dist"
-          APP="$(ls -d *.app | head -1)"
-          [ -n "$APP" ] || { echo "::error::no .app in ${{ matrix.objdir }}/dist"; exit 1; }
+
+          # TAKE THE PACKAGED BUNDLE, NOT THE BUILD OUTPUT.
+          #
+          # Two different .app bundles exist under dist/ after `mach package`:
+          #
+          #   dist/<name>.app                 the raw BUILD output -- a farm of
+          #                                   symlinks into the objdir, carrying
+          #                                   build tools (nsinstall, rapl) and
+          #                                   no `precomplete`.
+          #   dist/$(MOZ_PKG_DIR)/<name>.app  the PACKAGED tree that packager.py
+          #                                   assembles: real files, and
+          #                                   generate_precomplete() has run.
+          #
+          # `ls -d *.app` matched the first one, which is why the MAR step died
+          # with "precomplete file is missing!" -- make_full_update.sh needs that
+          # file and only the packaged tree has it. (MOZ_PKG_DIR defaults to
+          # MOZ_APP_NAME, and nothing cleans the staging directory up.)
+          #
+          # Selected by the presence of `precomplete` rather than by name, so
+          # this does not depend on MOZ_PKG_DIR's value: that file IS the thing
+          # that distinguishes a packaged tree from a build directory.
+          APP=""
+          while IFS= read -r cand; do
+            if [ -f "$cand/Contents/Resources/precomplete" ]; then APP="${cand#./}"; break; fi
+          done < <(find . -maxdepth 3 -type d -name '*.app' | sort)
+
+          if [ -z "$APP" ]; then
+            echo "::error::no packaged .app (one containing Contents/Resources/precomplete) under ${{ matrix.objdir }}/dist"
+            echo "Candidates found:"; find . -maxdepth 3 -type d -name '*.app' || true
+            exit 1
+          fi
+          echo "Packaged bundle: $APP"
 
           dangling=0
           while IFS= read -r l; do
