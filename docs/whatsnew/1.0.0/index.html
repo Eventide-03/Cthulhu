@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>What's new in Cthulhu 1.0.0</title>
+<style>
+  :root {
+    --bg:#1a1a1a; --bg-elevated:#242424; --surface:#1f1f1f; --surface-hover:#2e2e2e;
+    --fg:#e8e8e8; --fg-muted:#9a9a9a; --accent:#5ad1b0; --accent-hover:#6fe0c2;
+    --fg-on-accent:#0a0a0a; --border:rgba(255,255,255,.12); --grid-page:rgba(255,255,255,.05);
+    --font-pixel:"Cthulhu Pixel", ui-monospace, "SFMono-Regular", "Courier New", monospace;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;padding:3rem 1.25rem 4rem;background:var(--bg);color:var(--fg);
+    font-family:var(--font-pixel);line-height:1.65;-webkit-font-smoothing:antialiased;
+    background-image:linear-gradient(var(--grid-page) 1px,transparent 1px),
+                     linear-gradient(90deg,var(--grid-page) 1px,transparent 1px);
+    background-size:32px 32px;background-position:-1px -1px;
+  }
+  .wrap{max-width:680px;margin:0 auto}
+  header{text-align:center;margin-bottom:2.5rem}
+  /* ART SLOT — release hero. Replace with
+     <img src="hero.png" alt="" style="width:100%;border-radius:12px">
+     (a 16:9 pixel-art banner works well; keep it under ~200 KB). */
+  .hero-slot{
+    aspect-ratio:16/9;margin-bottom:2rem;display:grid;place-items:center;
+    border:2px dashed var(--border);border-radius:12px;color:var(--fg-muted);
+    font-size:.8rem;text-align:center;padding:1rem;image-rendering:pixelated;
+  }
+  .version{display:inline-block;padding:.25rem .75rem;border-radius:999px;
+    background:var(--accent);color:var(--fg-on-accent);font-size:.8rem;margin-bottom:.75rem}
+  h1{font-size:2rem;margin:0 0 .35rem}
+  .sub{color:var(--fg-muted);margin:0}
+  section{background:var(--bg-elevated);border:1px solid var(--border);border-radius:10px;
+    padding:1.25rem 1.4rem;margin:1.25rem 0}
+  section h2{font-size:1rem;margin:0 0 .6rem;color:var(--accent)}
+  ul{margin:.4rem 0 0;padding-left:1.1rem}
+  li{margin:.3rem 0}
+  footer{text-align:center;color:var(--fg-muted);font-size:.8rem;margin-top:3rem}
+  footer a{color:var(--accent);text-decoration:none;margin:0 .5rem}
+  footer a:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="hero-slot">ART SLOT — release hero (16:9)</div>
+    <span class="version">1.0.0</span>
+    <h1>What's new</h1>
+    <p class="sub">Cthulhu updated itself in the background. Here's what changed.</p>
+  </header>
+
+  <section>
+    <h2>Changes</h2>
+    <!-- CI replaces this block with the release notes. Edit
+         docs/whatsnew/template.html to change the surrounding design. -->
+    <ul><li>CI: archive the bundle at the tar root, and locate it by name on unpack</li><li>CI: archive the PACKAGED .app, not the raw build output</li><li>CI: drop nsinstall, the last build tool breaking the universal merge</li><li>CI: make the two macOS halves byte-identical where unify.py demands it</li><li>CI: ship real .app bundles to the merge job, and put Surfer on the right drive</li><li>Endpoint health: give gh a repo, and seed the update manifests</li><li>CI: split the macOS universal build, fix the x86_64 and Windows blockers</li><li>Theme: new moon art, and drop the dead sun/moon assets</li><li>Point the feature-request relay at the deployed Worker</li><li>Release/rebase runbooks, ESR rebase tooling, weekly ESR watcher</li><li>Feature requests: Cloudflare Worker relay + browser module and widget</li><li>Self-hosted signed updates: MAR signing, static manifests, post-update page</li><li>Add download page and Windows code-signing research</li><li>Add cross-platform build and release workflow</li><li>Configure macOS universal and Windows x64 builds</li><li>Add SECURITY.md and PRIVACY.md</li><li>Add a weather kill switch and drop Surfer&#x27;s Zen Browser URLs</li><li>Brand the build as Cthulhu and sweep Mozilla trademarks</li><li>bench: replace raw baselines with a path-free RESULTS.md</li><li>Unbundle uBlock Origin; install it from AMO instead</li><li>Add MPL-2.0 LICENSE</li><li>Add endpoint health watchdog for the update manifest and relay</li><li>Fix Home tab regressions introduced by the Firefox 153 rebase</li><li>Pet + Google Calendar widgets, bundled uBlock Origin, fullscreen cursor fix</li><li>Side panels, folder widget, home button overhaul, Firefox 153 ESR rebase</li><li>Quick-link fixes, home tab as pinned Home button, quit on last window close</li><li>Fix User-Agent to identify as standard Firefox (site compatibility)</li><li>feat: about:cthulhu home/new-tab widget dashboard + home button + file picker</li><li>cursors: real cat/pointer/text art, force custom cursors chrome-wide; drop example demo</li><li>Phase 3: chrome theme layer — injection, loader, sprites, cursors, ambient-theme</li><li>Phase 2: Chrome import — permissions, first-run wiring, cross-platform notes</li><li>Phase 1: debloat + lightweight defaults + baseline benchmark</li><li>Phase 0: rebranded ESR 140 first build</li><li>Configure Surfer project for Cthulhu branding</li><li>Initial commit</li><li>**macOS** (universal — Apple Silicon + Intel): `Cthulhu-1.0.0-macos-universal.dmg`</li><li>**Windows x64**: _not produced for this release — the Windows build did not succeed._</li></ul>
+  </section>
+
+  <footer>
+    <a href="../../">Download page</a> ·
+    <a href="https://github.com/Eventide-03/Cthulhu/releases/tag/v1.0.0">Full release notes</a> ·
+    <a href="https://github.com/Eventide-03/Cthulhu">Source</a>
+  </footer>
+</div>
+</body>
+</html>
