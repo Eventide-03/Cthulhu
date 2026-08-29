@@ -802,10 +802,49 @@ jobs:
       - name: Apply patches
         run: ./node_modules/.bin/surfer import
 
-      # UNCERTAIN: Firefox on Windows expects the MozillaBuild environment
-      # (MSYS bash, GNU make). windows-latest ships VS 2022 and Python but NOT
-      # MozillaBuild. `mach bootstrap` is the supported way in; if it cannot
-      # provision the environment this is the step that fails first.
+      # MozillaBuild is a HARD PREREQUISITE on Windows, not something bootstrap
+      # can provide. build/mach_initialize.py runs
+      # _maybe_activate_mozillabuild_environment() on EVERY ./mach invocation,
+      # and it asserts before doing anything else:
+      #
+      #   mozillabuild = Path(os.environ.get("MOZILLABUILD", r"C:\mozilla-build"))
+      #   assert mozillabuild.exists(), 'MozillaBuild was not found at ...'
+      #
+      # windows-latest ships VS 2022 and Python but not MozillaBuild, so the
+      # earlier `mach bootstrap` attempt died there -- bootstrap never got to
+      # run. It is mach itself that needs this, so it must be installed before
+      # any mach call, not just before bootstrap.
+      #
+      # Installing at the default location means MOZILLABUILD does not need to
+      # be set. mach then prepends msys2/usr/bin and bin from here onto PATH,
+      # which is where the MSYS tools and GNU make come from.
+      - name: Install MozillaBuild
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $url = "https://ftp.mozilla.org/pub/mozilla/libraries/win32/MozillaBuildSetup-Latest.exe"
+          $exe = Join-Path $env:RUNNER_TEMP "MozillaBuildSetup.exe"
+          Write-Host "Downloading $url"
+          Invoke-WebRequest -Uri $url -OutFile $exe
+          Write-Host "Installer size: $((Get-Item $exe).Length) bytes"
+          # NSIS installer: /S is silent, /D= sets the target and must come last
+          # and unquoted.
+          Start-Process -FilePath $exe -ArgumentList "/S","/D=C:\mozilla-build" -Wait -NoNewWindow
+          if (-not (Test-Path "C:\mozilla-build")) {
+            Write-Host "::error::MozillaBuild did not install to C:\mozilla-build"
+            exit 1
+          }
+          # mach reads one of these two layouts; if neither exists it will add a
+          # non-existent directory to PATH and fail later, further from the cause.
+          $msys = @("C:\mozilla-build\msys2\usr\bin", "C:\mozilla-build\msys\bin") |
+                  Where-Object { Test-Path $_ }
+          if (-not $msys) {
+            Write-Host "::error::no msys tools under C:\mozilla-build"
+            Get-ChildItem "C:\mozilla-build" | Select-Object -First 30 | Format-Table Name
+            exit 1
+          }
+          Write-Host "MozillaBuild installed; msys tools at: $($msys -join ', ')"
+
       - name: Bootstrap build environment
         run: |
           cd engine
