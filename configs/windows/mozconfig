@@ -35,9 +35,24 @@ ac_add_options --enable-updater
 # behavioural difference between the two platform configs.
 ac_add_options --enable-crashreporter
 
-# Standalone JS shell. Not needed to ship a browser and it lengthens the build;
-# retained because it was in the original config. Comment out to cut build time.
-ac_add_options --enable-js-shell
+# Standalone JS shell. Not needed to ship a browser and it lengthens the build.
+# Dropped on Windows: the runner is the tightest environment we build in (4
+# cores / 16 GB) and this is pure extra work for something we do not ship.
+# ac_add_options --enable-js-shell
+
+# PARALLELISM IS A MEMORY LIMIT HERE, NOT A SPEED KNOB.
+#
+# With no MOZ_MAKE_FLAGS this defaulted to -j4 (one per core), and the build
+# died after 81 minutes with four clang processes and rustc competing for RAM:
+#   LLVM ERROR: out of memory
+#   clang-cl: error: unable to execute command: ...
+#             The paging file is too small for this operation to complete. (0x5AF)
+#   rustc-LLVM ERROR: out of memory -- could not compile `gkrust`
+#
+# gkrust is a single enormous crate and is the peak-memory moment of the whole
+# build, so it must not be sharing the machine with three other compilers.
+# macOS sets -j4 and is fine; the Windows runner is not the same machine.
+mk_add_options MOZ_MAKE_FLAGS="-j2"
 
 # Compiler cache -- same guard as macOS, see that file for the rationale.
 if command -v sccache >/dev/null 2>&1; then

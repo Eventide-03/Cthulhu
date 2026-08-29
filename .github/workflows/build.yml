@@ -850,6 +850,43 @@ jobs:
           cd engine
           ./mach --no-interactive bootstrap --application-choice browser
 
+      # clang-cl named the pagefile directly when the build ran out of memory:
+      #   The paging file is too small for this operation to complete. (0x5AF)
+      # The runner has 16 GB of RAM and a small system-managed pagefile, which
+      # is not enough headroom for linking gkrust. Reducing -j2 (see
+      # configs/windows/mozconfig) lowers concurrent demand; this raises the
+      # ceiling for the single peak allocation that no amount of serialising
+      # avoids.
+      #
+      # Deliberately inline PowerShell rather than a third-party pagefile
+      # action: this job also holds MAR_SIGNING_DB_B64, and a marketplace action
+      # here would run with access to it. Not worth the supply-chain exposure
+      # for a settings change.
+      #
+      # Non-fatal: if this cannot be applied the build simply retains the
+      # default pagefile and may still succeed at -j2.
+      - name: Enlarge the pagefile
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $ErrorActionPreference = "Stop"
+          $cs = Get-CimInstance -ClassName Win32_ComputerSystem
+          Write-Host ("Physical memory: {0:N1} GB" -f ($cs.TotalPhysicalMemory / 1GB))
+          if ($cs.AutomaticManagedPagefile) {
+            Set-CimInstance -InputObject $cs -Property @{ AutomaticManagedPagefile = $false }
+            Write-Host "Disabled automatic pagefile management."
+          }
+          # Put it on the workspace drive, which has far more free space than C:.
+          $drive = "D:"
+          if (-not (Test-Path $drive)) { $drive = "C:" }
+          $path = "$drive\pagefile.sys"
+          Get-CimInstance -ClassName Win32_PageFileSetting -ErrorAction SilentlyContinue |
+            ForEach-Object { Remove-CimInstance -InputObject $_ }
+          New-CimInstance -ClassName Win32_PageFileSetting `
+            -Property @{ Name = $path; InitialSize = 16384; MaximumSize = 32768 } | Out-Null
+          Get-CimInstance -ClassName Win32_PageFileSetting |
+            ForEach-Object { Write-Host ("Pagefile: {0} initial={1}MB max={2}MB" -f $_.Name, $_.InitialSize, $_.MaximumSize) }
+
       - name: Build
         run: ./node_modules/.bin/surfer build --skip-patch-check
 
