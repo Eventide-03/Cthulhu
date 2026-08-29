@@ -68,6 +68,14 @@
     transition: background .15s, border-color .15s, transform .15s;
   }
   .btn:hover { background: var(--surface-hover); border-color: var(--accent); transform: translateY(-2px); }
+  /* A platform with no asset in the latest release. Stays visible so the page
+     still says what Cthulhu targets, but must not look clickable. */
+  .btn.unavailable {
+    opacity: .5; cursor: not-allowed; border-style: dashed;
+  }
+  .btn.unavailable:hover {
+    background: var(--surface); border-color: var(--border); transform: none;
+  }
   .btn .os { display: block; font-size: 1.1rem; font-weight: 700; }
   .btn .meta { display: block; font-size: .78rem; color: var(--fg-muted); margin-top: .3rem; }
 
@@ -97,6 +105,16 @@
   .note kbd {
     background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
     padding: .1rem .4rem; font-family: inherit; font-size: .85em; color: var(--fg);
+  }
+  .note ol { margin: .5rem 0 0; padding-left: 1.25rem; color: var(--fg-muted); }
+  .note ol li { margin: .25rem 0; }
+  .note ol li strong { color: var(--fg); }
+  /* The quarantine command is the one thing here a reader may need to copy
+     exactly, so let it wrap rather than overflow on a narrow screen. */
+  .note code {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+    padding: .1rem .35rem; font-family: inherit; font-size: .85em; color: var(--fg);
+    overflow-wrap: anywhere;
   }
 
   /* ART SLOT — screenshot. Replace with <img src="assets/screenshot.png"
@@ -141,6 +159,37 @@
   <p class="version" id="version">
     <a href="https://github.com/Eventide-03/Cthulhu/releases/latest">All releases and release notes →</a>
   </p>
+
+  <div class="note">
+    <h2>⚠️ macOS will refuse to open it at first</h2>
+    <p>
+      The Mac build is <strong>unsigned and un-notarized</strong>, for the same
+      reason as Windows below — Apple's Developer Program is a yearly fee this
+      project doesn't carry, and notarization has no free tier.
+    </p>
+    <p>
+      Gatekeeper will say Cthulhu <em>"cannot be opened because the developer
+      cannot be verified"</em>. Opening it the normal way gives you no choice but
+      <kbd>Move to Bin</kbd>, so do this instead, once:
+    </p>
+    <ol>
+      <li>Drag <strong>Cthulhu</strong> into your Applications folder.</li>
+      <li><strong>Right-click</strong> it (or Control-click) and choose
+        <kbd>Open</kbd>.</li>
+      <li>In the dialog that appears, click <kbd>Open</kbd> again.</li>
+    </ol>
+    <p>
+      macOS remembers the exception, so every launch after that is normal. If
+      the dialog still won't let you through, run
+      <code>xattr -d com.apple.quarantine /Applications/Cthulhu.app</code> in
+      Terminal.
+    </p>
+    <p>
+      This means macOS can't confirm who published the app — not that anything
+      is wrong with it. Verify your download against the SHA256 checksum
+      published with every release if you'd like to be certain.
+    </p>
+  </div>
 
   <div class="note">
     <h2>⚠️ Windows will warn you before it runs</h2>
@@ -226,10 +275,21 @@
       var win = find("-windows-x64.exe");
 
       function wire(asset, btnId, metaId) {
-        if (!asset) return;
-        document.getElementById(btnId).href = asset.browser_download_url;
-        var mb = (asset.size / 1048576).toFixed(0);
+        var btn = document.getElementById(btnId);
         var meta = document.getElementById(metaId);
+        if (!asset) {
+          // No asset for this platform in the latest release. Say so plainly
+          // instead of leaving a live-looking button pointing at a releases
+          // page with nothing on it for them -- a dead end with no explanation
+          // is worse than an honest "not yet".
+          btn.classList.add("unavailable");
+          btn.removeAttribute("href");
+          btn.setAttribute("aria-disabled", "true");
+          meta.textContent = "Not available yet";
+          return;
+        }
+        btn.href = asset.browser_download_url;
+        var mb = (asset.size / 1048576).toFixed(0);
         meta.textContent = meta.textContent + " · " + mb + " MB";
       }
       wire(mac, "btn-mac", "meta-mac");

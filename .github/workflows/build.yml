@@ -21,6 +21,13 @@ on:
         description: "Also run the Windows job"
         type: boolean
         default: true
+      # Lets a Windows-only shakedown run in ~30 minutes instead of dragging two
+      # four-hour macOS compiles along for no reason. Tag builds always run
+      # everything -- this input only exists for workflow_dispatch.
+      macos:
+        description: "Run the macOS jobs"
+        type: boolean
+        default: true
 
 concurrency:
   group: build-${{ github.ref }}
@@ -62,6 +69,8 @@ jobs:
     name: macOS ${{ matrix.arch }}
     runs-on: macos-latest
     timeout-minutes: 360
+    # Always runs for a tag; skippable only on a manual dispatch.
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.macos }}
     strategy:
       # Keep going if one arch fails -- a broken x86_64 should not throw away a
       # good 5-hour arm64 build, and vice versa.
@@ -687,31 +696,36 @@ jobs:
             Write-Host "python3 already present: $((Get-Command python3).Source)"
           }
 
-      # Surfer must be installed on the SAME DRIVE as the workspace.
+      # SURFER IS INSTALLED LOCALLY ON WINDOWS, and invoked by explicit relative
+      # path. Both halves of that matter.
       #
-      # Its windowsPathToUnix() (dist/utils/fs.js) strips the drive letter from
-      # absolute paths before reading them:
+      # WHY LOCAL: surfer's windowsPathToUnix() (dist/utils/fs.js) strips the
+      # drive letter off absolute paths before reading them --
       #   C:\npm\prefix\...\configure.sh  ->  /npm/prefix/.../configure.sh
-      # Node then resolves that leading slash against the CURRENT drive. The
-      # runner installs global npm packages on C: but checks the repo out on D:,
-      # so surfer looks for its own bundled template on D: and dies:
+      # -- and Node resolves that leading slash against the CURRENT drive. The
+      # runner puts global npm packages on C: but checks the repo out on D:, so
+      # a globally-installed surfer looks for its own bundled template on the
+      # wrong drive and dies:
       #   ENOENT: open 'D:\npm\prefix\...\template\branding.optional\configure.sh'
-      # while its code is demonstrably running from C:\npm\prefix.
+      # Installed under the workspace, surfer's own files are already on D:, so
+      # stripping the drive and re-resolving against D: lands back where it
+      # started. The bug becomes a no-op instead of a corruption.
       #
-      # Putting the prefix on the workspace drive makes the drive-stripping a
-      # no-op rather than a corruption. UNTESTED beyond this reasoning -- Windows
-      # has never built successfully, and this only clears the next blocker.
+      # WHY AN EXPLICIT PATH: a previous attempt set the npm prefix to a D:
+      # directory and appended it to GITHUB_PATH, but the runner's pre-existing
+      # C:\npm\prefix still won the PATH lookup -- the stack traces proved the
+      # C: copy was the one running. Calling ./node_modules/.bin/surfer removes
+      # the ambiguity entirely rather than fighting over PATH order.
+      #
+      # Steps run with the workspace as cwd, which is also what surfer needs:
+      # it derives .surfer/, configs/ and engine/ from process.cwd().
       - name: Install Surfer
         run: |
           set -euo pipefail
-          # Forward slashes on purpose: Windows accepts them, and they avoid a
-          # backslash surviving two levels of shell quoting.
-          DRIVE="${GITHUB_WORKSPACE%%:*}"          # e.g. "D"
-          PREFIX="${DRIVE}:/npm-global"
-          echo "Workspace drive: ${DRIVE}: -- installing surfer to ${PREFIX}"
-          npm config set prefix "$PREFIX"
-          echo "${PREFIX}" >> "$GITHUB_PATH"
-          npm install -g "@zen-browser/surfer@${SURFER_VERSION}"
+          npm install --no-save "@zen-browser/surfer@${SURFER_VERSION}"
+          test -x ./node_modules/.bin/surfer || test -f ./node_modules/.bin/surfer.cmd \
+            || { echo "::error::surfer shim missing from ./node_modules/.bin"; ls -l ./node_modules/.bin || true; exit 1; }
+          echo "Surfer installed at: $(pwd)/node_modules/@zen-browser/surfer"
 
       # Non-fatal: configs/windows/mozconfig guards --with-ccache behind a
       # `command -v sccache` check, so a failed install means a slow build
@@ -786,7 +800,7 @@ jobs:
           rm -f "$TMP/firefox-${FFVER}.source.tar"
 
       - name: Apply patches
-        run: surfer import
+        run: ./node_modules/.bin/surfer import
 
       # UNCERTAIN: Firefox on Windows expects the MozillaBuild environment
       # (MSYS bash, GNU make). windows-latest ships VS 2022 and Python but NOT
@@ -798,7 +812,7 @@ jobs:
           ./mach --no-interactive bootstrap --application-choice browser
 
       - name: Build
-        run: surfer build --skip-patch-check
+        run: ./node_modules/.bin/surfer build --skip-patch-check
 
       - name: Package + build NSIS installer
         run: |
