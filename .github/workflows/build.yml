@@ -920,15 +920,32 @@ jobs:
       - name: Build
         run: ./node_modules/.bin/surfer build --skip-patch-check
 
-      - name: Package + build NSIS installer
+      # `mach package` ALREADY BUILDS THE INSTALLER on Windows -- there is no
+      # separate step to run, and adding one fails:
+      #   mozmake: *** No rule to make target 'installer'.  Stop.
+      #
+      # `installer` is not a top-level target. It lives in toolkit/mozapps/
+      # installer/windows/nsis/makensis.mk and is reachable only through
+      # packager.mk's make-package rule, which on Windows does:
+      #
+      #   make-package: FORCE
+      #       $(MAKE) make-package-internal
+      #   ifeq (WINNT,$(OS_ARCH))
+      #   ifeq ($(MOZ_PKG_FORMAT),ZIP)
+      #       $(MAKE) -C windows ZIP_IN='$(ABS_DIST)/$(PACKAGE)' installer
+      #
+      # Our MOZ_PKG_FORMAT is ZIP, so that fires as part of packaging. The build
+      # log confirms it end to end: makensis emits setup.exe and setup-stub.exe,
+      # UPX packs the SFX stub, and 7-Zip rolls 342 MiB into app.7z -- all
+      # before `mach package` reports "Created package".
+      #
+      # The `installer` target also demands ZIP_IN, which only that rule sets,
+      # so invoking it directly could not have worked even at the right level.
+      - name: Package (builds the NSIS installer too)
         run: |
           set -euo pipefail
           cd engine
           ./mach package
-          # `installer::` lives in toolkit/mozapps/installer/windows/nsis/
-          # makensis.mk and emits $(DIST)/$(PKG_PATH)$(PKG_INST_BASENAME).exe,
-          # i.e. obj-*/dist/install/sea/*.exe.
-          ./mach build installer
 
       # =======================================================================
       # WINDOWS CODE SIGNING: INTENTIONALLY ABSENT
@@ -955,8 +972,23 @@ jobs:
         run: |
           set -euo pipefail
           cd engine
+          # Expected at dist/install/sea/, but fall back to a wider search
+          # before giving up -- and if it really is absent, print what IS in
+          # dist/ so the next person is not guessing. `setup.exe` and
+          # `setup-stub.exe` are NSIS build intermediates under
+          # browser/installer/windows/instgen/, NOT the shippable installer, so
+          # the search is deliberately scoped to dist/.
           EXE=$(ls obj-*/dist/install/sea/*.exe 2>/dev/null | head -1)
-          [ -n "$EXE" ] || { echo "::error::no NSIS installer found under dist/install/sea"; exit 1; }
+          if [ -z "$EXE" ]; then
+            EXE=$(find obj-*/dist -maxdepth 3 -name '*.exe' -type f 2>/dev/null \
+                  | grep -viE "setup(-stub)?\.exe$" | head -1)
+          fi
+          if [ -z "$EXE" ]; then
+            echo "::error::no NSIS installer found under dist/"
+            echo "dist/ contains:"; find obj-*/dist -maxdepth 3 \( -name '*.exe' -o -name '*.zip' \) -type f 2>/dev/null | head -20
+            exit 1
+          fi
+          echo "Installer: $EXE"
           OUT="$GITHUB_WORKSPACE/${APP_NAME}-${VERSION}-windows-x64.exe"
           cp "$EXE" "$OUT"
           echo "EXE_PATH=$OUT" >> "$GITHUB_ENV"
