@@ -869,23 +869,53 @@ jobs:
         shell: pwsh
         continue-on-error: true
         run: |
-          $ErrorActionPreference = "Stop"
-          $cs = Get-CimInstance -ClassName Win32_ComputerSystem
+          # NO `$ErrorActionPreference = "Stop"` and no silent failure. The
+          # previous version had both, and combined with continue-on-error it
+          # printed the memory line, threw on the next statement, and reported
+          # SUCCESS -- so the pagefile was never actually changed while the log
+          # implied it had been. Every stage below reports what it did.
+          $cs = Get-WmiObject -Class Win32_ComputerSystem -EnableAllPrivileges
           Write-Host ("Physical memory: {0:N1} GB" -f ($cs.TotalPhysicalMemory / 1GB))
-          if ($cs.AutomaticManagedPagefile) {
-            Set-CimInstance -InputObject $cs -Property @{ AutomaticManagedPagefile = $false }
-            Write-Host "Disabled automatic pagefile management."
+
+          # Get-WmiObject with -EnableAllPrivileges, not Get-CimInstance:
+          # flipping AutomaticManagedPagefile needs SeCreatePagefilePrivilege,
+          # and the CIM cmdlets do not carry it.
+          try {
+            if ($cs.AutomaticManagedPagefile) {
+              $cs.AutomaticManagedPagefile = $false
+              $r = $cs.Put()
+              Write-Host "Disabled automatic pagefile management ($($r.Path))."
+            } else {
+              Write-Host "Automatic pagefile management already off."
+            }
+          } catch {
+            Write-Host "::warning::could not disable automatic pagefile management: $($_.Exception.Message)"
           }
-          # Put it on the workspace drive, which has far more free space than C:.
-          $drive = "D:"
-          if (-not (Test-Path $drive)) { $drive = "C:" }
-          $path = "$drive\pagefile.sys"
-          Get-CimInstance -ClassName Win32_PageFileSetting -ErrorAction SilentlyContinue |
-            ForEach-Object { Remove-CimInstance -InputObject $_ }
-          New-CimInstance -ClassName Win32_PageFileSetting `
-            -Property @{ Name = $path; InitialSize = 16384; MaximumSize = 32768 } | Out-Null
-          Get-CimInstance -ClassName Win32_PageFileSetting |
-            ForEach-Object { Write-Host ("Pagefile: {0} initial={1}MB max={2}MB" -f $_.Name, $_.InitialSize, $_.MaximumSize) }
+
+          # Workspace drive has far more free space than C:.
+          $drive = if (Test-Path "D:\") { "D:" } else { "C:" }
+          $path  = "$drive\pagefile.sys"
+          try {
+            Get-WmiObject -Class Win32_PageFileSetting -EnableAllPrivileges |
+              ForEach-Object { Write-Host "Removing existing pagefile: $($_.Name)"; $_.Delete() }
+            Set-WmiInstance -Class Win32_PageFileSetting `
+              -Arguments @{ Name = $path; InitialSize = 16384; MaximumSize = 32768 } | Out-Null
+            Write-Host "Requested 16GB/32GB pagefile at $path"
+          } catch {
+            Write-Host "::warning::could not set the pagefile: $($_.Exception.Message)"
+          }
+
+          # Report what Windows actually holds now. A pagefile change may not
+          # take effect until reboot, which we cannot do here -- so treat this
+          # as evidence, not proof, and let the build be the real test.
+          $now = Get-WmiObject -Class Win32_PageFileSetting -EnableAllPrivileges
+          if ($now) {
+            $now | ForEach-Object { Write-Host ("Configured pagefile: {0} initial={1}MB max={2}MB" -f $_.Name, $_.InitialSize, $_.MaximumSize) }
+          } else {
+            Write-Host "::warning::no explicit pagefile configured; the build runs with whatever the system manages"
+          }
+          Get-WmiObject -Class Win32_PageFileUsage |
+            ForEach-Object { Write-Host ("In use now: {0} allocated={1}MB" -f $_.Name, $_.AllocatedBaseSize) }
 
       - name: Build
         run: ./node_modules/.bin/surfer build --skip-patch-check

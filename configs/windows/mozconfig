@@ -54,6 +54,22 @@ ac_add_options --enable-crashreporter
 # macOS sets -j4 and is fine; the Windows runner is not the same machine.
 mk_add_options MOZ_MAKE_FLAGS="-j2"
 
+# DEBUG SYMBOLS OFF -- this is what actually gets gkrust to link.
+#
+# -j2 alone was not enough; the build still died at 88 minutes with
+#   rustc-LLVM ERROR: out of memory -- could not compile `gkrust`
+# config/makefiles/rust.mk:371 forces `-C codegen-units=1` on target recipes,
+# so rustc compiles gkrust as ONE LLVM module and holds all of its debug info
+# in memory at once. build/moz.configure/rust.configure only appends
+# `debuginfo=` when --enable-debug-symbols is set, so turning symbols off
+# removes the single largest allocation in the build.
+#
+# TRADE-OFF, deliberate: --enable-crashreporter is still on above, and without
+# symbols those minidumps cannot be symbolicated. Kept the reporter anyway --
+# a crash we can count is worth more than one we never hear about, and this is
+# reversible the moment Windows builds on a machine with real memory.
+ac_add_options --disable-debug-symbols
+
 # Compiler cache -- same guard as macOS, see that file for the rationale.
 if command -v sccache >/dev/null 2>&1; then
   ac_add_options --with-ccache=sccache
