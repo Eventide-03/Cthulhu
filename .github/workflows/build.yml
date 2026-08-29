@@ -970,25 +970,44 @@ jobs:
 
       - name: Rename installer
         run: |
-          set -euo pipefail
+          # `set -e` is DELIBERATELY OFF for the search below.
+          #
+          # The previous version ran `set -euo pipefail` and then
+          #   EXE=$(ls obj-*/dist/install/sea/*.exe 2>/dev/null | head -1)
+          # When the glob matches nothing, `ls` exits 2; with pipefail that is
+          # the pipeline's status, and `set -e` killed the step THERE -- before
+          # the fallback search or the "here is what dist/ contains" listing
+          # could run. The step failed with exit 2 and printed nothing at all,
+          # so the run told us nothing about whether the installer exists. A
+          # guard that pre-empts its own diagnostics is worse than no guard.
+          # (`find` on a missing directory has the same problem, hence `|| true`
+          # on both searches.)
+          set -uo pipefail
           cd engine
-          # Expected at dist/install/sea/, but fall back to a wider search
-          # before giving up -- and if it really is absent, print what IS in
-          # dist/ so the next person is not guessing. `setup.exe` and
-          # `setup-stub.exe` are NSIS build intermediates under
-          # browser/installer/windows/instgen/, NOT the shippable installer, so
-          # the search is deliberately scoped to dist/.
-          EXE=$(ls obj-*/dist/install/sea/*.exe 2>/dev/null | head -1)
+
+          # -path rather than a shell glob: matches regardless of the objdir
+          # name and does not fail when an intermediate directory is absent.
+          EXE=$(find . -path '*/dist/install/sea/*.exe' -type f 2>/dev/null | head -1 || true)
+
+          # Fallback: anything .exe under dist/ that is not an NSIS
+          # intermediate. setup.exe and setup-stub.exe live under
+          # browser/installer/windows/instgen/ and are build inputs, not the
+          # shippable installer.
           if [ -z "$EXE" ]; then
-            EXE=$(find obj-*/dist -maxdepth 3 -name '*.exe' -type f 2>/dev/null \
-                  | grep -viE "setup(-stub)?\.exe$" | head -1)
+            EXE=$(find . -path '*/dist/*' -name '*.exe' -type f 2>/dev/null \
+                  | grep -viE "setup(-stub)?\.exe$" | head -1 || true)
           fi
+
           if [ -z "$EXE" ]; then
             echo "::error::no NSIS installer found under dist/"
-            echo "dist/ contains:"; find obj-*/dist -maxdepth 3 \( -name '*.exe' -o -name '*.zip' \) -type f 2>/dev/null | head -20
+            echo "--- every .exe and .zip under dist/ ---"
+            find . -path '*/dist/*' \( -name '*.exe' -o -name '*.zip' \) -type f 2>/dev/null | head -40 || true
+            echo "--- dist/ top level ---"
+            ls -la obj-*/dist 2>/dev/null | head -30 || true
             exit 1
           fi
           echo "Installer: $EXE"
+          set -e   # from here on, a failure IS a real failure
           OUT="$GITHUB_WORKSPACE/${APP_NAME}-${VERSION}-windows-x64.exe"
           cp "$EXE" "$OUT"
           echo "EXE_PATH=$OUT" >> "$GITHUB_ENV"
