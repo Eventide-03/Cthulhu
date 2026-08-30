@@ -1051,7 +1051,17 @@ jobs:
             echo "::error::MAR_SIGNING_DB_B64 is not set. Refusing to publish an unsigned MAR."
             exit 1
           fi
-          KEYDIR="$RUNNER_TEMP/markeys"; rm -rf "$KEYDIR"; mkdir -p "$KEYDIR"
+          # mktemp, NOT "$RUNNER_TEMP/markeys". On Windows RUNNER_TEMP is a
+          # native path (D:\a\_temp) and git-bash reads its backslashes as
+          # escapes, so the MAR built fine and then signing died on:
+          #   tar: D\:\a\\_temp/markeys: Cannot open: No such file or directory
+          # mktemp returns a POSIX path that both git-bash and the tools accept.
+          # macOS keeps using RUNNER_TEMP -- it is already POSIX there and that
+          # path is proven.
+          KEYDIR="$(mktemp -d)"
+          # The key must not outlive this step even if signing or verification
+          # fails below.
+          trap 'rm -rf "$KEYDIR"' EXIT
           echo "$MAR_SIGNING_DB_B64" | base64 --decode | tar xz -C "$KEYDIR"
           "$PWD/$OBJ/dist/bin/signmar" -d "$KEYDIR" -n cthulhu-mar -s "$OUT.unsigned" "$OUT"
           "$PWD/$OBJ/dist/bin/signmar" \
