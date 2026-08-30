@@ -985,28 +985,37 @@ jobs:
           set -uo pipefail
           cd engine
 
-          # -path rather than a shell glob: matches regardless of the objdir
-          # name and does not fail when an intermediate directory is absent.
-          EXE=$(find . -path '*/dist/install/sea/*.exe' -type f 2>/dev/null | head -1 || true)
+          # THE INSTALLER IS AT dist/<name>.installer.exe, NOT dist/install/sea/.
+          #
+          # makensis.mk writes it to $(ABS_DIST)/$(PKG_PATH)$(PKG_INST_BASENAME).exe
+          # and package-name.mk defines PKG_PATH as EMPTY with
+          #   PKG_INST_BASENAME = $(PKG_BASENAME).installer
+          # so it lands directly in dist/ as
+          #   Cthulhu-<version>.<locale>.<platform>.installer.exe
+          # The dist/install/sea/ path this step used to search was wrong from
+          # the day it was written.
+          #
+          # NO BROAD FALLBACK. The previous version fell back to "any .exe under
+          # dist/" and happily selected dist/bin/BadCertAndPinningServer.exe -- a
+          # TLS test binary -- then copied it to the release filename and
+          # reported success. Shipping 854K of test server as the Windows
+          # installer is far worse than failing, so if the expected artifact is
+          # not there this step now stops and shows what is.
+          #
+          # The pattern deliberately does not match .installer-stub.exe: that is
+          # the small web-download stub, not the full offline installer.
+          EXE=$(find . -path '*/dist/*.installer.exe' -type f -not -path '*/dist/bin/*' 2>/dev/null | head -1 || true)
 
-          # Fallback: anything .exe under dist/ that is not an NSIS
-          # intermediate. setup.exe and setup-stub.exe live under
-          # browser/installer/windows/instgen/ and are build inputs, not the
-          # shippable installer.
           if [ -z "$EXE" ]; then
-            EXE=$(find . -path '*/dist/*' -name '*.exe' -type f 2>/dev/null \
-                  | grep -viE "setup(-stub)?\.exe$" | head -1 || true)
-          fi
-
-          if [ -z "$EXE" ]; then
-            echo "::error::no NSIS installer found under dist/"
-            echo "--- every .exe and .zip under dist/ ---"
-            find . -path '*/dist/*' \( -name '*.exe' -o -name '*.zip' \) -type f 2>/dev/null | head -40 || true
+            echo "::error::no installer at dist/*.installer.exe"
+            echo "--- .exe files directly in dist/ ---"
+            find . -path '*/dist/*.exe' -maxdepth 4 -type f -not -path '*/dist/bin/*' 2>/dev/null | head -30 || true
             echo "--- dist/ top level ---"
-            ls -la obj-*/dist 2>/dev/null | head -30 || true
+            ls -la obj-*/dist 2>/dev/null | head -40 || true
             exit 1
           fi
           echo "Installer: $EXE"
+          ls -lh "$EXE"
           set -e   # from here on, a failure IS a real failure
           OUT="$GITHUB_WORKSPACE/${APP_NAME}-${VERSION}-windows-x64.exe"
           cp "$EXE" "$OUT"
