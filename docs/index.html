@@ -274,7 +274,7 @@
       var mac = find("-macos-universal.dmg");
       var win = find("-windows-x64.exe");
 
-      function wire(asset, btnId, metaId) {
+      function wire(asset, btnId, metaId, tag) {
         var btn = document.getElementById(btnId);
         var meta = document.getElementById(metaId);
         if (!asset) {
@@ -282,18 +282,28 @@
           // instead of leaving a live-looking button pointing at a releases
           // page with nothing on it for them -- a dead end with no explanation
           // is worse than an honest "not yet".
+          //
+          // Name the RELEASE, not the visitor. "Not available yet" on its own
+          // reads as if the site were withholding it because of the machine
+          // you happen to be browsing from. It is not: this build simply is
+          // not in the release, and everyone sees the same thing whatever they
+          // are running.
           btn.classList.add("unavailable");
           btn.removeAttribute("href");
           btn.setAttribute("aria-disabled", "true");
-          meta.textContent = "Not available yet";
+          meta.textContent = tag ? "Not in " + tag + " yet" : "Not released yet";
+          btn.title =
+            "This build is not part of " + (tag || "the latest release") +
+            ". Nothing to do with the computer you are browsing from — " +
+            "everyone sees this until the build ships.";
           return;
         }
         btn.href = asset.browser_download_url;
         var mb = (asset.size / 1048576).toFixed(0);
         meta.textContent = meta.textContent + " · " + mb + " MB";
       }
-      wire(mac, "btn-mac", "meta-mac");
-      wire(win, "btn-win", "meta-win");
+      wire(mac, "btn-mac", "meta-mac", rel.tag_name);
+      wire(win, "btn-win", "meta-win", rel.tag_name);
 
       if (rel.tag_name) {
         document.getElementById("version").innerHTML =
