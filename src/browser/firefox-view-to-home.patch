@@ -1,0 +1,608 @@
+Cthulhu: remove Firefox View at the source and put the Home tab in its place.
+
+WHAT THIS DOES
+  * browser.js               FirefoxViewHandler's body is replaced with the Home
+                             tab implementation. The NAME is kept on purpose:
+                             ~25 call sites across SessionStore, tabbrowser,
+                             the all-tabs menu and URILoadingHelper compare
+                             against FirefoxViewHandler.tab; with .tab
+                             permanently null they are all inert, so the Home
+                             tab is an ordinary pinned tab everywhere and none
+                             of them need patching. Every former Firefox View
+                             entry point (openTab / openToolbarMouseEvent) now
+                             toggles Home. Also enforces, at this level:
+                               - the Home tab can never be navigated away in
+                                 place (loads are reopened in a new tab);
+                               - dropping a tab on the button pins it.
+  * browser-init.js          Calls FirefoxViewHandler.init() from
+                             _delayedStartup. Upstream defined init() but never
+                             called it anywhere.
+  * navigator-toolbox.inc.xhtml
+                             The button is relabelled with the existing
+                             navbar-home string. Its id is unchanged so
+                             CustomizableUI placement, tabs.css [open] styling
+                             and the toolbar migration keep working.
+  * browser-menubar.inc.xhtml / browser-menubar.js / nonbrowser-mac.js
+                             Tools > Firefox View menu item removed.
+  * QuickActionsLoaderDefault.sys.mjs
+                             "Firefox View" urlbar quick action removed.
+  * AboutRedirector.cpp / components.conf
+                             about:firefoxview unregistered.
+
+WHAT IT DELIBERATELY LEAVES
+  browser/components/firefoxview/ stays in the build. The Sidebar's history,
+  bookmarks and synced-tabs panels, split view and the AI window all import
+  helpers.mjs / fxview-tab-list.mjs / firefoxview.css from that directory.
+  With about:firefoxview gone it is an internal library, not a feature.
+
+The visual side (icon, hiding the pinned Home tab from the strip) lives in
+src/theme/content/browser.css. Regenerate after an ESR bump with
+tools/rebase-esr.sh; the hunks are small except browser.js.
+
+diff --git a/browser/base/content/browser-init.js b/browser/base/content/browser-init.js
+index 311e36a..78549e7 100644
+--- a/browser/base/content/browser-init.js
++++ b/browser/base/content/browser-init.js
+@@ -554,6 +554,9 @@ var gBrowserInit = {
+     UpdateUrlbarSearchSplitterState();
+ 
+     BookmarkingUI.init();
++    // Cthulhu: the Home button. Upstream defined FirefoxViewHandler.init()
++    // but never called it; the Home handler needs it (see browser.js).
++    FirefoxViewHandler.init();
+     gURLBar.delayedStartupInit();
+     if (Services.prefs.getBoolPref("browser.search.widget.new", false)) {
+       document.getElementById("searchbar-new")?.delayedStartupInit();
+diff --git a/browser/base/content/browser-menubar.inc.xhtml b/browser/base/content/browser-menubar.inc.xhtml
+index d6df593..42b0071 100644
+--- a/browser/base/content/browser-menubar.inc.xhtml
++++ b/browser/base/content/browser-menubar.inc.xhtml
+@@ -383,8 +383,6 @@
+                         hidden="true"
+                         data-l10n-id="menu-tools-fxa-re-auth"/>
+ 
+-              <menuitem id="menu_openFirefoxView"
+-                        data-l10n-id="menu-tools-firefox-view"/>
+               <menuseparator id="devToolsSeparator"/>
+               <menu id="browserToolsMenu" data-l10n-id="menu-tools-browser-tools">
+                 <menupopup id="menuWebDeveloperPopup">
+diff --git a/browser/base/content/browser-menubar.js b/browser/base/content/browser-menubar.js
+index 30a957f..182f631 100644
+--- a/browser/base/content/browser-menubar.js
++++ b/browser/base/content/browser-menubar.js
+@@ -60,9 +60,6 @@ document.addEventListener(
+         case "sync-reauthitem":
+           gSync.openSignInAgainPage("menubar");
+           break;
+-        case "menu_openFirefoxView":
+-          FirefoxViewHandler.openTab();
+-          break;
+         case "hiddenUndoCloseWindow":
+           SessionWindowUI.undoCloseWindow(0);
+           break;
+diff --git a/browser/base/content/browser.js b/browser/base/content/browser.js
+index c919cf5..025c2da 100644
+--- a/browser/base/content/browser.js
++++ b/browser/base/content/browser.js
+@@ -95,8 +95,6 @@ ChromeUtils.defineESModuleGetters(this, {
+   SubDialog: "resource://gre/modules/SubDialog.sys.mjs",
+   SubDialogManager: "resource://gre/modules/SubDialog.sys.mjs",
+   TabCrashHandler: "resource:///modules/ContentCrashHandlers.sys.mjs",
+-  TabsSetupFlowManager:
+-    "resource:///modules/firefox-view-tabs-setup-manager.sys.mjs",
+   TaskbarTabsChrome:
+     "resource:///modules/taskbartabs/TaskbarTabsChrome.sys.mjs",
+   TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
+@@ -4823,150 +4821,322 @@ var ConfirmationHint = {
+   },
+ };
+ 
++// =============================================================================
++// Cthulhu: Firefox View is REMOVED. What upstream calls FirefoxViewHandler is
++// now the Home button.
++//
++// The object deliberately KEEPS its upstream name. Roughly twenty-five places
++// in the tree consult `FirefoxViewHandler.tab` to special-case the hidden
++// Firefox View tab -- SessionStore skips it, tabbrowser excludes it from tab
++// lists and pinning, the all-tabs menu filters it, URILoadingHelper diverts
++// loads away from it, and so on. With `tab` permanently null every one of
++// those comparisons is inert, so the Home tab is treated as an ordinary pinned
++// tab everywhere (exactly what we want) and none of those call sites need
++// patching. The two entry points every Firefox View trigger funnels through --
++// openTab() and openToolbarMouseEvent(): the toolbar button, the History
++// menu, the urlbar quick action, keyboard commands, AccountsGlue, the messaging
++// system -- now toggle Home instead. about:firefoxview itself is unregistered
++// in AboutRedirector.cpp, so the page cannot be reached by any route.
++//
++// HOME is one pinned about:cthulhu#home tab per window, toggled the way Zen
++// toggles a pinned tab: click to switch to it, click again to return to the tab
++// you came from. It is hidden from the tab strip via [cthulhu-home-tab] (theme
++// browser.css) so the button is its only affordance; underneath it remains a
++// fully real, session-restored tab.
++//
++// Three guarantees live here, at the lowest level rather than in a runtime
++// module, so they do not depend on script load order:
++//   1. The button always reaches Home (openTab / openToolbarMouseEvent).
++//   2. Nothing can navigate the Home tab away in place: any load that is not
++//      about:cthulhu is cancelled and reopened in a NEW tab (_homeGuard).
++//   3. Dropping a tab onto the button pins it (_installDropTarget).
++// =============================================================================
++// =============================================================================
++// Cthulhu: Firefox View is REMOVED. What upstream calls FirefoxViewHandler is
++// now the Home button.
++//
++// The object deliberately KEEPS its upstream name. Roughly twenty-five places
++// in the tree consult `FirefoxViewHandler.tab` to special-case the hidden
++// Firefox View tab -- SessionStore skips it, tabbrowser excludes it from tab
++// lists and pinning, the all-tabs menu filters it, URILoadingHelper diverts
++// loads away from it, and so on. With `tab` permanently null every one of
++// those comparisons is inert, so the Home tab is treated as an ordinary pinned
++// tab everywhere (exactly what we want) and none of those call sites need
++// patching. The two entry points every Firefox View trigger funnels through --
++// openTab() and openToolbarMouseEvent(): the toolbar button, the History
++// menu, the urlbar quick action, keyboard commands, AccountsGlue, the messaging
++// system -- now toggle Home instead. about:firefoxview itself is unregistered
++// in AboutRedirector.cpp, so the page cannot be reached by any route.
++//
++// HOME is one pinned about:cthulhu#home tab per window, toggled the way Zen
++// toggles a pinned tab: click to switch to it, click again to return to the tab
++// you came from. It is hidden from the tab strip via [cthulhu-home-tab] (theme
++// browser.css) so the button is its only affordance; underneath it remains a
++// fully real, session-restored tab.
++//
++// Three guarantees live here, at the lowest level rather than in a runtime
++// module, so they do not depend on script load order:
++//   1. The button always reaches Home (openTab / openToolbarMouseEvent).
++//   2. Nothing can navigate the Home tab away in place: any load that is not
++//      about:cthulhu is cancelled and reopened in a NEW tab (_homeGuard).
++//   3. Dropping a tab onto the button pins it (_installDropTarget).
++// =============================================================================
+ var FirefoxViewHandler = {
++  // Permanently null -- see header. The Home tab lives in _homeTab instead.
+   tab: null,
+   BUTTON_ID: "firefox-view-button",
++  HOME_URL: "about:cthulhu#home",
++  HOME_ATTR: "cthulhu-home-tab",
++
+   get button() {
+     return document.getElementById(this.BUTTON_ID);
+   },
+-  init() {
+-    CustomizableUI.addListener(this);
+ 
+-    ChromeUtils.defineESModuleGetters(this, {
+-      SyncedTabs: "resource://services-sync/SyncedTabs.sys.mjs",
+-    });
+-  },
+-  uninit() {
+-    CustomizableUI.removeListener(this);
+-  },
+-  onWidgetRemoved(aWidgetId) {
+-    if (aWidgetId == this.BUTTON_ID && this.tab) {
+-      gBrowser.removeTab(this.tab);
+-    }
+-  },
+-  onWidgetAdded(aWidgetId) {
+-    if (aWidgetId === this.BUTTON_ID) {
+-      this.button.removeAttribute("open");
++  // Per-window state. Re-checked live against gBrowser.tabs on every use rather
++  // than trusted blindly, so closing or unpinning the Home tab (or the tab we
++  // would return to) outside the button self-heals instead of leaving a
++  // reference to a dead <tab>.
++  _homeTab: null,
++  _previousTab: null,
++  _started: false,
++  _lastCancelled: null,
++
++  // ---- lifecycle (init() is called from browser-init.js _delayedStartup) ----
++  init() {
++    if (this._started) {
++      return;
+     }
++    this._started = true;
++
++    // Pinned tabs persist across restarts on their own, so SessionStore may
++    // restore the Home tab before or after this runs, via its own tab-creation
++    // path that knows nothing about our marker attribute. Adopt whatever is
++    // already there, and keep adopting as tabs arrive.
++    this._adoptExistingHomeTab();
++    this._onTabArrived = () => this._adoptExistingHomeTab();
++    this._onTabSelect = () => this._updateButtonState();
++    gBrowser.tabContainer.addEventListener("SSTabRestored", this._onTabArrived);
++    gBrowser.tabContainer.addEventListener("TabOpen", this._onTabArrived);
++    gBrowser.tabContainer.addEventListener("TabSelect", this._onTabSelect);
++    gBrowser.addTabsProgressListener(this._homeGuard);
++    this._installDropTarget();
++    this._updateButtonState();
+   },
+-  openTab(section) {
+-    if (!CustomizableUI.getPlacementOfWidget(this.BUTTON_ID)) {
+-      CustomizableUI.addWidgetToArea(
+-        this.BUTTON_ID,
+-        CustomizableUI.AREA_TABSTRIP,
+-        CustomizableUI.getPlacementOfWidget("tabbrowser-tabs").position
+-      );
+-    }
+-    let viewURL = "about:firefoxview";
+-    if (section) {
+-      viewURL = `${viewURL}#${section}`;
+-    }
+-    // Need to account for navigation to Firefox View pages
+-    if (
+-      this.tab &&
+-      this.tab.linkedBrowser.currentURI.spec.split("#")[0] != viewURL
+-    ) {
+-      gBrowser.removeTab(this.tab);
+-      this.tab = null;
+-    }
+-    if (!this.tab) {
+-      this.tab = gBrowser.addTrustedTab(viewURL);
+-      this.tab.addEventListener("TabClose", this, { once: true });
+-      gBrowser.tabContainer.addEventListener("TabSelect", this);
+-      window.addEventListener("activate", this);
+-      gBrowser.hideTab(this.tab);
+-      this.button.setAttribute("aria-controls", this.tab.linkedPanel);
+-    }
+-    // we put this here to avoid a race condition that would occur
+-    // if this was called in response to "TabSelect"
+-    this._closeDeviceConnectedTab();
+-    gBrowser.selectedTab = this.tab;
+-  },
+-  openToolbarMouseEvent(event, section) {
+-    if (event?.type == "mousedown" && event?.button != 0) {
++  uninit() {
++    if (!this._started) {
+       return;
+     }
+-    this.openTab(section);
+-  },
+-  handleEvent(e) {
+-    switch (e.type) {
+-      case "TabSelect": {
+-        const selected = e.target == this.tab;
+-        this.button?.toggleAttribute("open", selected);
+-        this.button?.setAttribute("aria-pressed", selected);
+-        this._recordViewIfTabSelected();
+-        this._onTabForegrounded();
+-        // If Fx View is opened, add temporary style to make first available tab focusable
+-        // When Fx View is closed, remove temporary -moz-user-focus style from first available tab
+-        gBrowser.visibleTabs[0].style.MozUserFocus =
+-          e.target == this.tab ? "normal" : "";
+-        break;
++    this._started = false;
++    gBrowser.tabContainer.removeEventListener("SSTabRestored", this._onTabArrived);
++    gBrowser.tabContainer.removeEventListener("TabOpen", this._onTabArrived);
++    gBrowser.tabContainer.removeEventListener("TabSelect", this._onTabSelect);
++    gBrowser.removeTabsProgressListener(this._homeGuard);
++  },
++  // Upstream CustomizableUI hooks other code may still invoke. Nothing to do.
++  onWidgetRemoved() {},
++  onWidgetAdded() {},
++
++  // ---- upstream entry points ----
++  // `section` (history / opentabs / chats / ...) is accepted and ignored: there
++  // are no sections any more, every caller lands on Home.
++  //
++  // ONLY openTab() toggles. navigator-toolbox.js routes the button's mousedown
++  // to openToolbarMouseEvent() AND its command (fired by the click that
++  // follows, and by keyboard activation) to openTab(). Upstream could act on
++  // both because opening Firefox View twice was idempotent; a toggle is not,
++  // and reacting to both would flip Home on and straight back off on every
++  // click. Ignoring mousedown makes exactly one toggle per activation with no
++  // debounce, and keeps keyboard, menu and programmatic callers on one path.
++  openTab(_section) {
++    this.toggleHome();
++  },
++  openToolbarMouseEvent(_event, _section) {
++    // Intentionally nothing -- see above.
++  },
++
++  // ---- Home tab bookkeeping ----
++  _isLive(tab) {
++    return !!tab && !tab.closing && gBrowser.tabs.includes(tab);
++  },
++  _findHomeUrlTab() {
++    for (const tab of gBrowser.tabs) {
++      if (tab.linkedBrowser?.currentURI?.spec === this.HOME_URL) {
++        return tab;
+       }
+-      case "TabClose":
+-        this.tab = null;
+-        gBrowser.tabContainer.removeEventListener("TabSelect", this);
+-        this.button?.removeAttribute("aria-controls");
+-        break;
+-      case "activate":
+-        this._onTabForegrounded();
+-        break;
+     }
++    return null;
+   },
+-  _closeDeviceConnectedTab() {
+-    if (!TabsSetupFlowManager.didFxaTabOpen) {
+-      return;
++  /** Claim a pre-existing Home tab as THE Home tab. Idempotent and cheap. */
++  _adoptExistingHomeTab() {
++    if (this._isLive(this._homeTab)) {
++      return true;
+     }
+-    // close the tab left behind after a user pairs a device and
+-    // is redirected back to the Firefox View tab
+-    const fxaRoot = Services.prefs.getCharPref(
+-      "identity.fxaccounts.remote.root"
+-    );
+-    const fxDeviceConnectedTab = gBrowser.tabs.find(tab =>
+-      tab.linkedBrowser.currentURI.displaySpec.startsWith(
+-        `${fxaRoot}pair/auth/complete`
+-      )
+-    );
+-
+-    if (!fxDeviceConnectedTab) {
+-      return;
++    const tab = this._findHomeUrlTab();
++    if (!tab) {
++      return false;
+     }
+-
+-    if (gBrowser.tabs.length <= 2) {
+-      // if its the only tab besides the Firefox View tab,
+-      // open a new tab first so the browser doesn't close
+-      gBrowser.addTrustedTab("about:newtab");
++    this._homeTab = tab;
++    tab.setAttribute(this.HOME_ATTR, "1");
++    if (!tab.pinned) {
++      gBrowser.pinTab(tab);
+     }
+-    gBrowser.removeTab(fxDeviceConnectedTab);
+-    TabsSetupFlowManager.didFxaTabOpen = false;
++    this._updateButtonState();
++    return true;
+   },
+-  _onTabForegrounded() {
+-    if (this.tab?.selected) {
+-      this.SyncedTabs.syncTabs();
++  _updateButtonState() {
++    const btn = this.button;
++    if (!btn) {
++      return;
+     }
++    const active =
++      this._isLive(this._homeTab) && gBrowser.selectedTab === this._homeTab;
++    // [open] reuses upstream's own "this button's tab is selected" styling in
++    // tabs.css, so the pressed look matches the rest of the strip for free.
++    btn.toggleAttribute("open", active);
++    btn.setAttribute("aria-pressed", String(active));
+   },
+-  _recordViewIfTabSelected() {
+-    if (this.tab?.selected) {
+-      const PREF_NAME = "browser.firefox-view.button-clicks";
+-      const MAX_DAYS_COUNT = 30 * 24 * 60 * 60 * 1000;
+-      let buttonClicksData = JSON.parse(
+-        Services.prefs.getStringPref(
+-          PREF_NAME,
+-          '{"count":0,"lastCountTime":""}'
+-        )
+-      );
+-      let { count, lastCountTime } = buttonClicksData;
+-      // Record telemetry
+-      Glean.firefoxviewNext.tabSelectedToolbarbutton.record();
+ 
+-      if (Math.round(Date.now()) - lastCountTime >= MAX_DAYS_COUNT) {
+-        // reset count every 30 days
+-        count = 0;
++  toggleHome() {
++    try {
++      if (this._isLive(this._homeTab)) {
++        if (gBrowser.selectedTab === this._homeTab) {
++          // Already on Home: go back to what you were doing. Home stays
++          // pinned and open; it just stops being selected.
++          if (this._isLive(this._previousTab)) {
++            gBrowser.selectedTab = this._previousTab;
++          } else {
++            // Nothing valid to return to -- open a fresh tab rather than
++            // leaving no way back to browsing.
++            BrowserCommands.openTab();
++          }
++          this._previousTab = null;
++        } else {
++          this._previousTab = gBrowser.selectedTab;
++          gBrowser.selectedTab = this._homeTab;
++        }
++      } else if (this._adoptExistingHomeTab()) {
++        // A restored Home tab landed after init -- take it over rather than
++        // creating a second one beside it.
++        this._previousTab = gBrowser.selectedTab;
++        gBrowser.selectedTab = this._homeTab;
+       } else {
+-        count++;
++        this._previousTab = gBrowser.selectedTab;
++        this._homeTab = gBrowser.addTab(this.HOME_URL, {
++          triggeringPrincipal:
++            Services.scriptSecurityManager.getSystemPrincipal(),
++          pinned: true,
++          inBackground: false,
++        });
++        this._homeTab.setAttribute(this.HOME_ATTR, "1");
++      }
++    } catch (err) {
++      console.error("Cthulhu Home: navigation failed:", err);
++    }
++    this._updateButtonState();
++  },
++
++  // ---- guarantee 2: the Home tab is never navigated away in place ----
++  // Link clicks and the urlbar already divert off a pinned tab natively
++  // (URILoadingHelper's host-change rule). This catches everything else --
++  // chiefly content-initiated loads such as location.href from the page, which
++  // is exactly how a search from the home page used to destroy it. The load is
++  // cancelled at STATE_START, before the old document is torn down, and the
++  // same URL is opened in a new tab with the original triggering principal.
++  _homeGuard: {
++    onStateChange(browser, webProgress, request, flags) {
++      const self = FirefoxViewHandler;
++      const WPL = Ci.nsIWebProgressListener;
++      if (
++        !webProgress.isTopLevel ||
++        !(flags & WPL.STATE_START) ||
++        !(flags & WPL.STATE_IS_DOCUMENT) ||
++        !self._isLive(self._homeTab) ||
++        browser !== self._homeTab.linkedBrowser ||
++        request === self._lastCancelled
++      ) {
++        return;
++      }
++      let spec;
++      try {
++        spec = request.QueryInterface(Ci.nsIChannel).URI.spec;
++      } catch (e) {
++        return;
+       }
+-      buttonClicksData.lastCountTime = Math.round(Date.now());
+-      buttonClicksData.count = count;
+-      Services.prefs.setStringPref(PREF_NAME, JSON.stringify(buttonClicksData));
++      if (spec.startsWith("about:cthulhu") || spec == "about:blank") {
++        return;
++      }
++      self._lastCancelled = request;
++      let triggeringPrincipal = null;
++      try {
++        triggeringPrincipal = request.loadInfo?.triggeringPrincipal;
++      } catch (e) {}
++      try {
++        request.cancel(Cr.NS_BINDING_ABORTED);
++      } catch (e) {}
++      gBrowser.addTab(spec, {
++        triggeringPrincipal:
++          triggeringPrincipal ||
++          Services.scriptSecurityManager.getSystemPrincipal(),
++        inBackground: false,
++        relatedToCurrent: true,
++      });
++    },
++  },
++
++  // ---- guarantee 3: drop a tab on the button to pin it ----
++  // The button sits at the start of the strip, where pinned tabs live, so a
++  // tab dragged onto it is pinned and stays there. Setting dropEffect="move"
++  // is what tells drag-and-drop.js's handle_dragend that the drop landed
++  // somewhere; without it, a drop outside #tabbrowser-tabs is read as "dragged
++  // out of the window" and the tab is DETACHED into a new window instead.
++  _installDropTarget() {
++    const btn = this.button;
++    if (!btn || btn._cthulhuDropTarget) {
++      return;
+     }
++    btn._cthulhuDropTarget = true;
++    const isTabDrag = dt => {
++      try {
++        return dt.mozTypesAt(0).contains(TAB_DROP_TYPE);
++      } catch (e) {
++        return false;
++      }
++    };
++    const accept = event => {
++      if (!isTabDrag(event.dataTransfer)) {
++        return;
++      }
++      event.preventDefault();
++      event.dataTransfer.dropEffect = "move";
++    };
++    btn.addEventListener("dragenter", accept);
++    btn.addEventListener("dragover", accept);
++    btn.addEventListener("drop", event => {
++      const dt = event.dataTransfer;
++      if (!isTabDrag(dt)) {
++        return;
++      }
++      event.preventDefault();
++      event.stopPropagation();
++      dt.dropEffect = "move";
++      for (let i = 0; i < dt.mozItemCount; i++) {
++        let tab = dt.mozGetDataAt(TAB_DROP_TYPE, i);
++        // Tab group labels ride the same drag type; only real tabs pin.
++        if (!tab || tab.localName != "tab" || tab === this._homeTab) {
++          continue;
++        }
++        // "Same window" is decided by membership in this window's tab list,
++        // not by comparing ownerGlobal to `window`: that identity check can
++        // fail across compartments, and when it does adoptTab() clones the
++        // tab into the pinned zone and closes the original -- so the dropped
++        // tab vanishes and a copy appears pinned. Membership cannot misfire.
++        if (!gBrowser.tabs.includes(tab)) {
++          tab = gBrowser.adoptTab(tab);
++        }
++        if (tab && !tab.pinned) {
++          gBrowser.pinTab(tab);
++        }
++      }
++    });
+   },
+ };
+diff --git a/browser/base/content/navigator-toolbox.inc.xhtml b/browser/base/content/navigator-toolbox.inc.xhtml
+index 7b2ac0d..d494960 100644
+--- a/browser/base/content/navigator-toolbox.inc.xhtml
++++ b/browser/base/content/navigator-toolbox.inc.xhtml
+@@ -38,7 +38,7 @@
+       <hbox id="TabsToolbar-customization-target" flex="1">
+         <toolbarbutton id="firefox-view-button"
+                        class="toolbarbutton-1 chromeclass-toolbar-additional"
+-                       data-l10n-id="toolbar-button-firefox-view-2"
++                       data-l10n-id="navbar-home"
+                        role="button"
+                        aria-pressed="false"
+                        cui-areatype="toolbar"
+diff --git a/browser/base/content/nonbrowser-mac.js b/browser/base/content/nonbrowser-mac.js
+index 2f71305..01102b0 100644
+--- a/browser/base/content/nonbrowser-mac.js
++++ b/browser/base/content/nonbrowser-mac.js
+@@ -42,7 +42,6 @@ var NonBrowserWindow = {
+       "Browser:BookmarkAllTabs",
+       "View:PageInfo",
+       "History:UndoCloseTab",
+-      "menu_openFirefoxView",
+     ];
+     var element;
+ 
+diff --git a/browser/components/about/AboutRedirector.cpp b/browser/components/about/AboutRedirector.cpp
+index 958db71..7b0722f 100644
+--- a/browser/components/about/AboutRedirector.cpp
++++ b/browser/components/about/AboutRedirector.cpp
+@@ -79,8 +79,6 @@ static const RedirEntry kRedirMap[] = {
+          nsIAboutModule::URI_CAN_LOAD_IN_PRIVILEGEDABOUT_PROCESS |
+          nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
+          nsIAboutModule::IS_SECURE_CHROME_UI},
+-    {"firefoxview", "chrome://browser/content/firefoxview/firefoxview.html",
+-     nsIAboutModule::ALLOW_SCRIPT | nsIAboutModule::IS_SECURE_CHROME_UI},
+     {"opentabs", "chrome://browser/content/tabbrowser/opentabs.html",
+      nsIAboutModule::ALLOW_SCRIPT | nsIAboutModule::IS_SECURE_CHROME_UI |
+          nsIAboutModule::HIDE_FROM_ABOUTABOUT},
+diff --git a/browser/components/about/components.conf b/browser/components/about/components.conf
+index 669c691..b8a3a63 100644
+--- a/browser/components/about/components.conf
++++ b/browser/components/about/components.conf
+@@ -12,7 +12,6 @@ pages = [
+     'keyboard',
+     'logins',
+     'loginsimportreport',
+-    'firefoxview',
+     'messagepreview',
+     'opentabs',
+     'policies',
+diff --git a/browser/components/urlbar/QuickActionsLoaderDefault.sys.mjs b/browser/components/urlbar/QuickActionsLoaderDefault.sys.mjs
+index b99a80b..e4ab61b 100644
+--- a/browser/components/urlbar/QuickActionsLoaderDefault.sys.mjs
++++ b/browser/components/urlbar/QuickActionsLoaderDefault.sys.mjs
+@@ -126,14 +126,6 @@ const DEFAULT_ACTIONS = {
+       "https://support.mozilla.org/products/firefox?as=u&utm_source=inproduct"
+     ),
+   },
+-  firefoxview: {
+-    l10nCommands: ["quickactions-cmd-firefoxview"],
+-    icon: "chrome://browser/skin/firefox-view.svg",
+-    label: "quickactions-firefoxview",
+-    onPick: (_queryContext, controller) => {
+-      controller.browserWindow.FirefoxViewHandler.openTab();
+-    },
+-  },
+   inspect: {
+     l10nCommands: ["quickactions-cmd-inspector2"],
+     icon: "chrome://devtools/skin/images/open-inspector.svg",

@@ -1,7 +1,0 @@
-{
-  "id": "home-button",
-  "enabled": true,
-  "mount": "browser-window",
-  "css": "home-button.css",
-  "js": "home-button.js"
-}

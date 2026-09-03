@@ -65,6 +65,33 @@ clients: app.update checks Pages manifest → downloads MAR from Releases → ve
 Details: RELEASE.md (loop), docs/updates/README.md (update service),
 relay/README.md (feature-request relay).
 
+### The Home button is a source patch, not a module
+
+`src/browser/firefox-view-to-home.patch` removes Firefox View from Firefox
+itself and turns its tab-strip button into the Home button. The logic lives in
+`browser/base/content/browser.js` (the `FirefoxViewHandler` object, name kept so
+upstream's ~25 `FirefoxViewHandler.tab` checks stay inert) and is started from
+`browser-init.js`. Only the look -- icon, hiding the pinned Home tab from the
+strip -- is in `src/theme/content/browser.css`. Three things are guaranteed
+there and nowhere else: the button reaches Home, the Home tab is never navigated
+away in place (loads reopen in a new tab), and dropping a tab on the button pins
+it. If Home misbehaves, start in that patch; there is no `home-button` module
+any more. After an ESR bump, `tools/rebase-esr.sh` reports whether it still
+applies -- the `browser.js` hunk is the one that will need attention -- and
+`cd engine && ./mach python ../tools/home-button-test.py --check-fxview-gone`
+proves the behaviour end to end against the local build (24 checks, ~4 min).
+
+Dev-build gotcha -- two bundle names. `surfer build` exports
+`MOZ_MACBUNDLE_NAME` from the brand and writes `dist/nightly.app`; `surfer run`
+just calls `./mach run`, which uses the *configured* name and launches
+`dist/Firefox Nightly.app`. If that second bundle is missing, `surfer run` fails
+with "Binary expected at .../Firefox Nightly.app/... does not exist". Either
+bundle also keeps its own copied `XUL` and `browser.xhtml`, which `mach build`
+does not always re-copy, so a C++ or `.inc.xhtml` change can look unapplied.
+Create or refresh the one `surfer run` uses with
+`make -C engine/obj-*/browser/app repackage` (add `MOZ_MACBUNDLE_NAME=nightly.app`
+to refresh the other). JS files are symlinks into `engine/` and are always live.
+
 ## Secrets and where they live (names only — values never leave their vault)
 
 | Name | Where | For |

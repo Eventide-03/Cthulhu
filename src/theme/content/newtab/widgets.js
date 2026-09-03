@@ -219,15 +219,35 @@ window.CthulhuHome = (function () {
       openConfig: () => openConfig(instance.el), // let a widget open its own config
       closeConfig: () => { const m = document.querySelector(".cthulhu-config-modal"); if (m) m.remove(); },
       isHome: mode === "home",
-      // The home page lives in a single pinned tab the Home button toggles to
-      // (see home-button.js) -- navigating it away in place would silently
-      // destroy that tab (nothing left to toggle back to). Widgets that send
-      // the user somewhere else (quick-links, search, ...) should call this
-      // instead of setting location.href directly: it opens a new tab on the
-      // home page, and navigates in place as before on an ordinary new tab.
+      // The home page lives in ONE pinned tab that the Home button toggles to.
+      // Navigating it away in place would destroy it (nothing left to toggle
+      // back to), so anything that sends the user somewhere else -- search,
+      // quick-links, ... -- must come through here rather than setting
+      // location.href. On the home tab this asks the browser window directly
+      // for a new tab: about:cthulhu is a system-principal page in the parent
+      // process, so topChromeWindow is reachable; window.open is the fallback.
+      // The browser also enforces this at the source -- FirefoxViewHandler's
+      // _homeGuard in browser/base/content/browser.js cancels any in-place
+      // load of the Home tab and reopens it in a new tab -- so this is the
+      // polite path, not the only line of defence. An ordinary new tab (not
+      // the pinned Home) still navigates in place, as a new tab should.
       openLink(url) {
-        if (this.isHome) window.open(url, "_blank");
-        else location.href = url;
+        const chromeWin = window.browsingContext?.topChromeWindow;
+        const onHomeTab =
+          !!chromeWin?.gBrowser?.selectedTab?.hasAttribute("cthulhu-home-tab");
+        if (this.isHome || onHomeTab) {
+          if (chromeWin?.gBrowser) {
+            chromeWin.gBrowser.addTab(url, {
+              triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+              inBackground: false,
+              relatedToCurrent: true,
+            });
+          } else {
+            window.open(url, "_blank");
+          }
+          return;
+        }
+        location.href = url;
       },
     };
   }

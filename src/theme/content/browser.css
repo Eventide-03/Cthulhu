@@ -28,7 +28,7 @@
 /* Stock Firefox draws a thin separator (border-inline-start) plus reserved
  * padding on #tabbrowser-tabs whenever a toolbarbutton precedes it -- meant
  * to set the tab strip off from a real pinned tab sitting right there. Our
- * Home button's pinned tab is deliberately hidden (home-button.css), so with
+ * Home button's pinned tab is deliberately hidden (see below), so with
  * nothing to separate from, that just reads as a stray thin bar next to the
  * button. Home button always sits directly before the tab strip here, so
  * this is safe to drop unconditionally. */
@@ -36,4 +36,38 @@
   border-inline-start: none !important;
   padding-inline-start: 0 !important;
   margin-inline-start: 0 !important;
+}
+
+/* =============================================================================
+ * Home button.
+ *
+ * Firefox View is removed at the SOURCE: src/browser/firefox-view-to-home.patch
+ * replaces FirefoxViewHandler in browser/base/content/browser.js with the Home
+ * tab logic, unregisters about:firefoxview, and drops the menu item and urlbar
+ * quick action. Nothing here is behaviour -- this is only what the button looks
+ * like. It keeps the upstream id (#firefox-view-button) on purpose so that
+ * CustomizableUI's placement rules, tabs.css's [open] styling and the toolbar
+ * migration code that pins it to the start of the strip all keep working.
+ * ============================================================================= */
+#firefox-view-button {
+  /* ART SLOT: assets/home.png -- 16x16 CSS px; supply a 32x32 source for HiDPI.
+     The toolbar renders it into the icon box below. */
+  list-style-image: url("chrome://cthulhu/content/assets/home.png") !important;
+  /* Less inner padding so the icon can render larger. */
+  --toolbarbutton-inner-padding: 3px !important;
+}
+#firefox-view-button > .toolbarbutton-icon {
+  width: 48px !important;
+  height: 48px !important;
+  image-rendering: pixelated; /* crisp pixel art; harmless for anything else */
+}
+
+/* The button IS the Home tab. The pinned about:cthulhu#home tab behind it is
+ * hidden from the strip so there is one affordance, not a home icon sitting
+ * next to a second, identical pinned-tab icon. Underneath it stays a fully
+ * real, selectable, session-restored tab -- only its strip rendering goes.
+ * (display:none rather than gBrowser.hideTab(): tabbrowser refuses to hide a
+ * pinned or selected tab, and this one is both.) */
+tab[cthulhu-home-tab] {
+  display: none !important;
 }

@@ -21,6 +21,7 @@ cthulhu.jar:
     content/sprite.js                   (content/sprite.js)
     content/sprite.css                  (content/sprite.css)
     content/assets/toolbar-badge.svg    (assets/toolbar-badge.svg)
+    content/assets/home.png             (assets/home.png)
 # Home / new-tab page (about:cthulhu; registered by AboutCthulhu.sys.mjs):
     content/newtab/index.html               (content/newtab/index.html)
     content/newtab/newtab.css               (content/newtab/newtab.css)
@@ -94,11 +95,6 @@ cthulhu.jar:
     content/modules/ambient-theme/assets/rain.json    (content/modules/ambient-theme/assets/rain.json)
     content/modules/ambient-theme/assets/snow.png     (content/modules/ambient-theme/assets/snow.png)
     content/modules/ambient-theme/assets/snow.json    (content/modules/ambient-theme/assets/snow.json)
-# home-button module (repurposes the Firefox View button as a Home button):
-    content/modules/home-button/manifest.json         (content/modules/home-button/manifest.json)
-    content/modules/home-button/home-button.js        (content/modules/home-button/home-button.js)
-    content/modules/home-button/home-button.css       (content/modules/home-button/home-button.css)
-    content/modules/home-button/assets/home.png       (content/modules/home-button/assets/home.png)
 # side-panels module (Now Playing squircle + Discord/Instagram/Apple Music sidebar):
     content/modules/side-panels/manifest.json               (content/modules/side-panels/manifest.json)
     content/modules/side-panels/side-panels.js              (content/modules/side-panels/side-panels.js)
