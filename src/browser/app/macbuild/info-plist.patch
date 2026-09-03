@@ -1,0 +1,30 @@
+Cthulhu: drop CFBundleIconName so our firefox.icns is what macOS shows.
+
+Upstream sets BOTH icon keys. CFBundleIconName names an "AppIcon" asset
+inside Contents/Resources/Assets.car, and LaunchServices prefers it over
+CFBundleIconFile -- so the Dock kept drawing Firefox's gradient sphere
+even though firefox.icns had been replaced with our pixel art. Measured
+with NSWorkspace.icon(forFile:): 4709 distinct colours at 128px, against
+the 16 our art actually contains.
+
+Assets.car is a compiled asset catalog produced from Mozilla's own
+artwork and shipped by browser/app/Makefile.in; regenerating it would
+mean carrying an .xcassets and an actool (full Xcode) build step purely
+to restate an icon we already ship as .icns. Removing the key makes
+macOS fall back to CFBundleIconFile, which is the ordinary path and
+works on every version. The stale Assets.car stays in the bundle but is
+no longer consulted for the app icon.
+
+diff --git a/browser/app/macbuild/Contents/Info.plist.in b/browser/app/macbuild/Contents/Info.plist.in
+index c45e7f9b70..2795b177f4 100644
+--- a/browser/app/macbuild/Contents/Info.plist.in
++++ b/browser/app/macbuild/Contents/Info.plist.in
+@@ -190,8 +190,6 @@
+ 	<string>@MAC_APP_NAME@ @APP_VERSION@</string>
+ 	<key>CFBundleIconFile</key>
+ 	<string>firefox.icns</string>
+-	<key>CFBundleIconName</key>
+-	<string>AppIcon</string>
+ 	<key>CFBundleIdentifier</key>
+ 	<string>@MOZ_MACBUNDLE_ID@</string>
+ 	<key>CFBundleInfoDictionaryVersion</key>
