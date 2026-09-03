@@ -1,0 +1,94 @@
+Cthulhu: Ctrl/Cmd+W on a pinned tab UNLOADS it instead of doing nothing.
+
+Upstream already refuses to close a pinned tab with the keyboard and
+just moves the selection to the first unpinned tab, which makes the
+shortcut feel inert. Pinned tabs here live beside the Home button as
+long-lived fixtures, so the useful meaning of "close" on one is "drop
+what it holds in memory but keep the tab" -- discardBrowser().
+
+Upstream's own selection move is load-bearing: _mayDiscardBrowser()
+refuses to discard the selected tab, so moving off it is what makes the
+discard possible. With no unpinned tab to move to, the selection cannot
+move and this is a no-op.
+
+The Home tab is exempt. It is the one pinned tab that must stay
+available and it is hidden from the strip, so unloading it would only
+buy an invisible tab that reloads on the next Home press.
+
+Not force-discarded: forcing skips beforeunload and dismisses open
+dialogs, so a pinned tab holding an unsubmitted form would lose it
+silently -- worse than the close this shortcut usually performs, which
+at least prompts.
+
+The discard waits for TabSwitchDone. Tearing the browser down while the
+async switcher is still leaving it lands in onLayersCleared() with the
+tab in an unexpected state and trips AsyncTabSwitcher's assertion: a
+dump() in release builds, a throw in DEBUG ones.
+
+diff --git a/browser/base/content/browser-commands.js b/browser/base/content/browser-commands.js
+--- a/browser/base/content/browser-commands.js
++++ b/browser/base/content/browser-commands.js
+@@ -370,14 +370,63 @@ var BrowserCommands = {
+ 
+     // Keyboard shortcuts that would close a tab that is pinned select the first
+     // unpinned tab instead.
++    //
++    // Cthulhu: and then UNLOAD that pinned tab. Upstream already refuses to
++    // close a pinned tab this way and merely moves the selection off it, which
++    // leaves the shortcut feeling like it did nothing. Pinned tabs here sit
++    // beside the Home button as long-lived fixtures, so the useful meaning of
++    // "close" on one is "drop what it is holding in memory but keep it" --
++    // which is exactly discardBrowser().
++    //
++    // Moving the selection first is not incidental: _mayDiscardBrowser()
++    // refuses to discard the selected tab, so upstream's own step is what
++    // makes the discard possible. If there is no unpinned tab to move to, the
++    // selection cannot move, the discard is refused, and this is a no-op.
++    //
++    // NOT force-discarded. Forcing skips the beforeunload check and dismisses
++    // open dialogs, so a pinned tab holding an unsubmitted form would lose it
++    // silently -- worse than the close this shortcut usually performs, which
++    // at least prompts. A tab that declines to unload simply stays loaded.
+     if (
+       event &&
+       (event.ctrlKey || event.metaKey || event.altKey) &&
+       gBrowser.selectedTab.pinned
+     ) {
++      let pinnedTab = gBrowser.selectedTab;
+       if (gBrowser.visibleTabs.length > gBrowser.pinnedTabCount) {
+         gBrowser.tabContainer.selectedIndex = gBrowser.pinnedTabCount;
+       }
++      // The Home tab is exempt: it is the one pinned tab that must stay
++      // available, and it is hidden from the strip, so an unloaded Home would
++      // be an invisible tab that reloads itself the next time the Home button
++      // is pressed -- a cost with no visible benefit.
++      if (pinnedTab.hasAttribute("cthulhu-home-tab")) {
++        return;
++      }
++
++      const unloadPinnedTab = () => {
++        if (gBrowser.discardBrowser(pinnedTab)) {
++          // Upstream sets this only when forcing, to mark a tab the user
++          // unloaded on purpose rather than one restored lazily. That is
++          // precisely this case, so mark it and get the faded-tab styling.
++          pinnedTab.toggleAttribute("discarded", true);
++        }
++      };
++
++      // Do not tear the browser down while the async tab switcher is still
++      // switching away from it: clearing its layers mid-switch lands in
++      // AsyncTabSwitcher.onLayersCleared() with the tab in an unexpected
++      // state, which trips its internal assertion -- a dump() in release
++      // builds, but a throw in DEBUG ones. gBrowser._switcher exists only for
++      // the duration of a switch and is torn down immediately before
++      // TabSwitchDone fires, so it doubles as "is a switch in flight".
++      if (gBrowser._switcher) {
++        gBrowser.addEventListener("TabSwitchDone", unloadPinnedTab, {
++          once: true,
++        });
++      } else {
++        unloadPinnedTab();
++      }
+       return;
+     }
+ 
