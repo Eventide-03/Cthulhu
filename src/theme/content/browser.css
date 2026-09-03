@@ -25,17 +25,44 @@
   background-image: none !important;
 }
 
-/* Stock Firefox draws a thin separator (border-inline-start) plus reserved
- * padding on #tabbrowser-tabs whenever a toolbarbutton precedes it -- meant
- * to set the tab strip off from a real pinned tab sitting right there. Our
- * Home button's pinned tab is deliberately hidden (see below), so with
- * nothing to separate from, that just reads as a stray thin bar next to the
- * button. Home button always sits directly before the tab strip here, so
- * this is safe to drop unconditionally. */
-#tabbrowser-tabs {
-  border-inline-start: none !important;
-  padding-inline-start: 0 !important;
-  margin-inline-start: 0 !important;
+/* The thin divider between the Home button and the tab strip.
+ *
+ * Upstream does NOT put it on #tabbrowser-tabs. tabs.css draws it as
+ * #tabbrowser-tabs[orient="horizontal"]::before -- a zero-width flex item
+ * whose border-inline-start IS the line -- selected by
+ * `:is(toolbarbutton, toolbarpaletteitem) ~ #tabbrowser-tabs::before`, i.e.
+ * whenever any toolbar button precedes the strip. (An earlier version of this
+ * rule zeroed the border on the element itself and so did nothing at all.)
+ *
+ * Because the pseudo is the FIRST flex child it lands between the Home button
+ * and the pinned tabs. Pinned tabs belong beside Home, on Home's side of the
+ * divider, so reorder the flex items instead of restyling the pseudo:
+ *
+ *     [Home] [pinned tabs] | [scrolling tab strip]
+ *
+ * Only these three take part; the container's other children (drop
+ * indicators, the drag-to-pin promo, the vertical splitter, the a11y label)
+ * are zero-width or display:none in horizontal mode and keep order 0. */
+#tabbrowser-tabs[orient="horizontal"] {
+  & > #pinned-tabs-container { order: 1; }
+  &::before { order: 2; }
+  & > #tabbrowser-arrowscrollbox { order: 3; }
+
+  /* With nothing pinned the divider separates the Home button from the tab
+   * strip alone and reads as a stray bar, which is how it used to look.
+   * Upstream hides its pinned splitter with #pinned-tabs-container:empty, but
+   * that test is useless here: the Home tab is itself a pinned tab (merely
+   * hidden from the strip, see below), so the container is never empty and
+   * never matches. Ask instead whether a pinned tab exists that ISN'T Home.
+   *
+   * !important because upstream's rule wins the cascade otherwise: ours is the
+   * more specific selector on paper, but Firefox does not credit :has() with
+   * its argument's specificity, so the plain declaration loses. Verified with
+   * InspectorUtils.getMatchingCSSRules -- both rules match, upstream's sorted
+   * last. Everything else in this file overrides chrome CSS the same way. */
+  &:not(:has(> #pinned-tabs-container > tab:not([cthulhu-home-tab])))::before {
+    display: none !important;
+  }
 }
 
 /* =============================================================================

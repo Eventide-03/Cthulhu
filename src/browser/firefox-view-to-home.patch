@@ -538,10 +538,9 @@ index c919cf5..025c2da 100644
    },
  };
 diff --git a/browser/base/content/navigator-toolbox.inc.xhtml b/browser/base/content/navigator-toolbox.inc.xhtml
-index 7b2ac0d..d494960 100644
 --- a/browser/base/content/navigator-toolbox.inc.xhtml
 +++ b/browser/base/content/navigator-toolbox.inc.xhtml
-@@ -38,7 +38,7 @@
+@@ -38,11 +38,11 @@
        <hbox id="TabsToolbar-customization-target" flex="1">
          <toolbarbutton id="firefox-view-button"
                         class="toolbarbutton-1 chromeclass-toolbar-additional"
@@ -550,6 +549,11 @@ index 7b2ac0d..d494960 100644
                         role="button"
                         aria-pressed="false"
                         cui-areatype="toolbar"
+-                       removable="true"/>
++                       removable="false"/>
+ 
+         <tabs id="tabbrowser-tabs"
+               is="tabbrowser-tabs"
 diff --git a/browser/base/content/nonbrowser-mac.js b/browser/base/content/nonbrowser-mac.js
 index 2f71305..01102b0 100644
 --- a/browser/base/content/nonbrowser-mac.js
