@@ -125,6 +125,14 @@ pref("app.update.auto", true);
 // is closed, so an update is ready on next launch rather than downloading then.
 pref("app.update.background.enabled", true);
 pref("app.update.background.scheduling.enabled", true);
+// If the running build is older than this many days, BrowserGlue kicks off a
+// background update check at startup (firefox.js turns the behaviour on with
+// app.update.checkInstallTime; this supplies the threshold it reads). Upstream
+// defines it per branding -- 63 for official/release, 2 for nightly -- but the
+// branding directory Surfer generates omits it entirely, so getIntPref threw
+// NS_ERROR_UNEXPECTED at BrowserGlue.sys.mjs:445 on every startup and the
+// check never ran. 63 matches our release channel.
+pref("app.update.checkInstallTime.days", 63);
 
 // -- Feature-request relay --
 // The PUBLIC URL of the Cloudflare Worker that forwards feature requests to
