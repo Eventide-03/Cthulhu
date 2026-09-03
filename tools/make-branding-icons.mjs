@@ -22,6 +22,17 @@
 // logo-mac.png -> firefox.icns (macOS app icon), logo.png -> about-logo.png and
 // about-logo@2x.png, and each logo<size>.png -> default<size>.png. The two .ico
 // files are written here because sharp cannot encode ICO.
+//
+// EXCEPT firefox.icns, which we build ourselves and override. Surfer generates
+// it via async-icns, whose resizeImage() is literally `sips -Z <size>` -- the
+// smooth resample this whole script exists to avoid. Measured on the generated
+// file: the 512 entry kept the master's 16 colours, but 16/32/64/128/256 came
+// out at 210-1098 colours, i.e. blurred, and 128/256 are the sizes macOS
+// actually shows in the Dock. So we write a nearest-neighbour firefox.icns to
+// src/browser/branding/<brand>/ instead. surfer's applyPatches() runs the
+// branding patch BEFORE the src/ copy-patch stage, so ours lands last and wins;
+// browser/app/Makefile.in copies it with `cp -RL`, which follows the symlink
+// that the copy-patch stage creates.
 import { createRequire } from "node:module";
 import { execSync } from "node:child_process";
 import { mkdirSync, writeFileSync, existsSync } from "node:fs";
@@ -134,6 +145,146 @@ written.push(
   ["firefox.ico", icoSizes.join("/"), "16px + 64px masters"],
   ["firefox64.ico", 64, "64px master"]
 );
+
+// ---------------------------------------------------------------------------
+// macOS app icon. Built here rather than left to surfer -- see the header.
+//
+// An .iconset maps each name to one pixel size; @2x entries are just the
+// larger pixel size under a second name, so several names share one image.
+// Every size below is an integer multiple of whichever master suits it: the
+// 16 master covers 16 and 32 (where the detailed drawing would turn to mud),
+// the 64 master covers 64 and up.
+//
+// The container is written by hand rather than with `iconutil`, for the same
+// reason the ICO is: iconutil corrupts the art. Feeding it a correct .iconset
+// still produced an .icns whose 16x16 entry had four opaque bottom-right
+// pixels change from rgb(25,25,64) to rgb(25,25,0) -- the blue channel's last
+// RLE run dropped, in the legacy `is32` type it writes for small icons. There
+// are no partial-alpha pixels in the master, so nothing else explains it.
+// Writing PNG-typed entries ourselves stores each image byte-for-byte, and as
+// a bonus drops the macOS-only iconutil dependency so this runs anywhere.
+//
+// Layout: "icns" + big-endian uint32 total length, then one record per entry
+// of 4-byte OSType + big-endian uint32 length (records COUNT their own 8-byte
+// header). Types are the PNG-capable ones (10.7+); several sizes appear twice
+// because macOS looks up the @2x variants under their own type.
+// The 16 and 32 entries additionally need the LEGACY types. icp4/icp5 nominally
+// hold a PNG, but iconutil ignores ours and re-derives those two sizes by
+// smoothly downscaling a bigger entry -- so macOS's icon services, which share
+// that reader, would blur exactly the sizes used in Finder lists and the window
+// proxy icon. Supplying is32/il32 (24-bit RGB, RLE) plus their s8mk/l8mk alpha
+// masks pins them exactly.
+const ICNS_PNG = [
+  ["icp4", 16, () => src16],   // 16x16
+  ["icp5", 32, () => src16],   // 32x32
+  ["ic11", 32, () => src16],   // 16x16@2x
+  ["ic12", 64, () => src64],   // 32x32@2x
+  ["ic07", 128, () => src64],  // 128x128
+  ["ic13", 256, () => src64],  // 128x128@2x
+  ["ic08", 256, () => src64],  // 256x256
+  ["ic14", 512, () => src64],  // 256x256@2x
+  ["ic09", 512, () => src64],  // 512x512
+  ["ic10", 1024, () => src64], // 512x512@2x
+];
+const ICNS_LEGACY = [
+  ["is32", "s8mk", 16, () => src16],
+  ["il32", "l8mk", 32, () => src16],
+];
+
+/** Apple's PackBits variant, as used by is32/il32 colour planes.
+ *  control < 0x80: (control + 1) literal bytes follow.
+ *  control >= 0x80: repeat the next byte (control - 0x80 + 3) times.
+ *
+ *  The last byte of every plane is force-emitted as a one-byte literal so the
+ *  stream never ENDS on a repeat run. Apple's own reader drops a trailing
+ *  repeat run: feeding iconutil a correct .iconset produced an .icns whose
+ *  16x16 blue plane lost its final run of four, turning the bottom-right
+ *  rgb(25,25,64) pixels into rgb(25,25,0). Our encoder round-trips exactly
+ *  through a spec-conformant decoder, so this only sidesteps that reader bug. */
+function packBits(plane) {
+  const out = [];
+  const tail = plane[plane.length - 1];
+  plane = plane.subarray(0, plane.length - 1);
+  let i = 0;
+  while (i < plane.length) {
+    let run = 1;
+    while (i + run < plane.length && plane[i + run] === plane[i] && run < 130) {
+      run++;
+    }
+    if (run >= 3) {
+      out.push(0x80 + run - 3, plane[i]);
+      i += run;
+      continue;
+    }
+    // Gather literals until a run of 3+ starts, or we hit the 128-byte cap.
+    const start = i;
+    while (i < plane.length && i - start < 128) {
+      if (
+        i + 2 < plane.length &&
+        plane[i] === plane[i + 1] &&
+        plane[i] === plane[i + 2]
+      ) {
+        break;
+      }
+      i++;
+    }
+    out.push(i - start - 1, ...plane.subarray(start, i));
+  }
+  out.push(0, tail);
+  if (pad) {
+    out.push(0, 0);
+  }
+  return Buffer.from(out);
+}
+
+const record = (type, data) => {
+  const head = Buffer.alloc(8);
+  head.write(type, 0, 4, "ascii");
+  head.writeUInt32BE(data.length + 8, 4);
+  return [head, data];
+};
+
+const records = [];
+for (const [type, size, master] of ICNS_PNG) {
+  records.push(...record(type, await scale(master(), size)));
+}
+for (const [rgbType, maskType, size, master] of ICNS_LEGACY) {
+  const { data } = await sharp(master())
+    .resize(size, size, { kernel: sharp.kernel.nearest, fit: "fill" })
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const px = size * size;
+  // Colour data is stored as three separate planes, each RLE'd on its own.
+  const planes = [0, 1, 2].map(c => {
+    const plane = Buffer.alloc(px);
+    for (let i = 0; i < px; i++) {
+      plane[i] = data[i * 4 + c];
+    }
+    return packBits(plane, c === 2);
+  });
+  records.push(...record(rgbType, Buffer.concat(planes)));
+  // The mask is a plain uncompressed 8-bit alpha channel.
+  const mask = Buffer.alloc(px);
+  for (let i = 0; i < px; i++) {
+    mask[i] = data[i * 4 + 3];
+  }
+  records.push(...record(maskType, mask));
+}
+const body = Buffer.concat(records);
+const icnsHeader = Buffer.alloc(8);
+icnsHeader.write("icns", 0, 4, "ascii");
+icnsHeader.writeUInt32BE(body.length + 8, 4);
+
+const icnsDir = path.resolve("src", "browser", "branding", brand);
+mkdirSync(icnsDir, { recursive: true });
+const icnsPath = path.join(icnsDir, "firefox.icns");
+writeFileSync(icnsPath, Buffer.concat([icnsHeader, body]));
+written.push([
+  path.relative(process.cwd(), icnsPath),
+  [...new Set(ICNS_PNG.map(e => e[1]))].join("/"),
+  "16px + 64px masters",
+]);
 
 console.log(`Wrote ${written.length} files to ${path.relative(process.cwd(), outDir)}:`);
 for (const [name, size, from] of written) {
