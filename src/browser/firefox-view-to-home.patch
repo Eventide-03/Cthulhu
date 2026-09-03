@@ -81,7 +81,6 @@ index 30a957f..182f631 100644
            SessionWindowUI.undoCloseWindow(0);
            break;
 diff --git a/browser/base/content/browser.js b/browser/base/content/browser.js
-index c919cf5..025c2da 100644
 --- a/browser/base/content/browser.js
 +++ b/browser/base/content/browser.js
 @@ -95,8 +95,6 @@ ChromeUtils.defineESModuleGetters(this, {
@@ -93,7 +92,7 @@ index c919cf5..025c2da 100644
    TaskbarTabsChrome:
      "resource:///modules/taskbartabs/TaskbarTabsChrome.sys.mjs",
    TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
-@@ -4823,150 +4821,322 @@ var ConfirmationHint = {
+@@ -4823,150 +4821,395 @@ var ConfirmationHint = {
    },
  };
  
@@ -167,24 +166,7 @@ index c919cf5..025c2da 100644
    get button() {
      return document.getElementById(this.BUTTON_ID);
    },
--  init() {
--    CustomizableUI.addListener(this);
- 
--    ChromeUtils.defineESModuleGetters(this, {
--      SyncedTabs: "resource://services-sync/SyncedTabs.sys.mjs",
--    });
--  },
--  uninit() {
--    CustomizableUI.removeListener(this);
--  },
--  onWidgetRemoved(aWidgetId) {
--    if (aWidgetId == this.BUTTON_ID && this.tab) {
--      gBrowser.removeTab(this.tab);
--    }
--  },
--  onWidgetAdded(aWidgetId) {
--    if (aWidgetId === this.BUTTON_ID) {
--      this.button.removeAttribute("open");
++
 +  // Per-window state. Re-checked live against gBrowser.tabs on every use rather
 +  // than trusted blindly, so closing or unpinning the Home tab (or the tab we
 +  // would return to) outside the button self-heals instead of leaving a
@@ -195,11 +177,17 @@ index c919cf5..025c2da 100644
 +  _lastCancelled: null,
 +
 +  // ---- lifecycle (init() is called from browser-init.js _delayedStartup) ----
-+  init() {
+   init() {
+-    CustomizableUI.addListener(this);
 +    if (this._started) {
 +      return;
-     }
++    }
 +    this._started = true;
+ 
+-    ChromeUtils.defineESModuleGetters(this, {
+-      SyncedTabs: "resource://services-sync/SyncedTabs.sys.mjs",
+-    });
++    this._ensureButtonPlaced();
 +
 +    // Pinned tabs persist across restarts on their own, so SessionStore may
 +    // restore the Home tab before or after this runs, via its own tab-creation
@@ -214,6 +202,29 @@ index c919cf5..025c2da 100644
 +    gBrowser.addTabsProgressListener(this._homeGuard);
 +    this._installDropTarget();
 +    this._updateButtonState();
+   },
+   uninit() {
+-    CustomizableUI.removeListener(this);
+-  },
+-  onWidgetRemoved(aWidgetId) {
+-    if (aWidgetId == this.BUTTON_ID && this.tab) {
+-      gBrowser.removeTab(this.tab);
++    if (!this._started) {
++      return;
+     }
+-  },
+-  onWidgetAdded(aWidgetId) {
+-    if (aWidgetId === this.BUTTON_ID) {
+-      this.button.removeAttribute("open");
++    this._started = false;
++    gBrowser.tabContainer.removeEventListener("SSTabRestored", this._onTabArrived);
++    gBrowser.tabContainer.removeEventListener("TabOpen", this._onTabArrived);
++    gBrowser.tabContainer.removeEventListener("TabSelect", this._onTabSelect);
++    gBrowser.removeTabsProgressListener(this._homeGuard);
++    if (this._areaListener) {
++      CustomizableUI.removeListener(this._areaListener);
++      this._areaListener = null;
+     }
    },
 -  openTab(section) {
 -    if (!CustomizableUI.getPlacementOfWidget(this.BUTTON_ID)) {
@@ -250,8 +261,60 @@ index c919cf5..025c2da 100644
 -  },
 -  openToolbarMouseEvent(event, section) {
 -    if (event?.type == "mousedown" && event?.button != 0) {
-+  uninit() {
-+    if (!this._started) {
++  // Upstream CustomizableUI hooks other code may still invoke. Nothing to do.
++  onWidgetRemoved() {},
++  onWidgetAdded() {},
++
++  /**
++   * Put the button back if it is not on a toolbar.
++   *
++   * The button is marked removable="false" so it cannot be taken off again,
++   * but that only protects profiles from here on. A profile that removed it
++   * BEFORE that landed has "firefox-view-button" missing from its saved
++   * TabsToolbar placements, and nothing restores it: upstream's own re-add
++   * runs only while currentVersion < 18 and profiles are long past that. The
++   * result is a browser with no way to reach Home at all, since the Home tab
++   * itself is hidden from the strip -- and no way to drag it back either,
++   * because CustomizableUI will not drag a non-removable widget.
++   *
++   * So check on every startup rather than migrating once. It is cheap, it is
++   * idempotent (a placed widget returns early), and "the Home button exists"
++   * is an invariant here, not a preference.
++   */
++  _ensureButtonPlaced() {
++    const AREA = CustomizableUI.AREA_TABSTRIP;
++
++    // Returns false while the area's saved placements have not been restored
++    // over the defaults yet -- there is no positive "is it restored" API, so
++    // ask for the ids and let it throw. Doing the work before that point is
++    // useless: restoreStateForArea overwrites whatever we did.
++    const place = () => {
++      let ids;
++      try {
++        ids = CustomizableUI.getWidgetIdsInArea(AREA);
++      } catch (err) {
++        return false;
++      }
++      try {
++        if (!ids.includes(this.BUTTON_ID)) {
++          CustomizableUI.addWidgetToArea(this.BUTTON_ID, AREA, 0);
++        } else if (ids[0] !== this.BUTTON_ID) {
++          // removable="false" makes CustomizableUI re-add the button by itself
++          // when a profile's saved placements are missing it -- but it appends
++          // it at the END of the strip, past the tabs and the all-tabs button.
++          // Home belongs at the start, which is also where the pinned tabs
++          // beside it expect it. The user cannot move it themselves (a
++          // non-removable widget is not draggable), so pinning the position
++          // takes nothing away from them.
++          CustomizableUI.moveWidgetWithinArea(this.BUTTON_ID, 0);
++        }
++      } catch (err) {
++        console.error("Cthulhu Home: could not place the Home button:", err);
++      }
++      return true;
++    };
++
++    if (place()) {
        return;
      }
 -    this.openTab(section);
@@ -269,15 +332,20 @@ index c919cf5..025c2da 100644
 -        gBrowser.visibleTabs[0].style.MozUserFocus =
 -          e.target == this.tab ? "normal" : "";
 -        break;
-+    this._started = false;
-+    gBrowser.tabContainer.removeEventListener("SSTabRestored", this._onTabArrived);
-+    gBrowser.tabContainer.removeEventListener("TabOpen", this._onTabArrived);
-+    gBrowser.tabContainer.removeEventListener("TabSelect", this._onTabSelect);
-+    gBrowser.removeTabsProgressListener(this._homeGuard);
++    // Too early: try again once the tab strip's area is registered, which
++    // happens after its state is restored.
++    this._areaListener = {
++      onAreaNodeRegistered: area => {
++        if (area !== AREA) {
++          return;
++        }
++        CustomizableUI.removeListener(this._areaListener);
++        this._areaListener = null;
++        place();
++      },
++    };
++    CustomizableUI.addListener(this._areaListener);
 +  },
-+  // Upstream CustomizableUI hooks other code may still invoke. Nothing to do.
-+  onWidgetRemoved() {},
-+  onWidgetAdded() {},
 +
 +  // ---- upstream entry points ----
 +  // `section` (history / opentabs / chats / ...) is accepted and ignored: there
