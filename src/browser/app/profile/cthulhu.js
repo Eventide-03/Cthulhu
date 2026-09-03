@@ -94,6 +94,14 @@ pref("extensions.unifiedExtensions.button.always_visible", false);
 // would rather ship weather theming as opt-in.
 pref("cthulhu.ambient.weather.enabled", true);
 
+// -- Theme --
+// The browser-wide palette (content/themes.js): a preset id, or "ambient" to
+// follow the time of day. "night" is what the chrome shipped locked to before
+// the engine existed; the home page now follows the same pref, so the two are
+// always the same palette. The Theme widget on the home page writes these.
+pref("cthulhu.theme", "night");
+pref("cthulhu.theme.favorites", "[]");
+
 // -- Override Surfer's hardcoded Zen Browser URLs --
 // Surfer (the Zen Browser build tool) generates the branding pref file
 // browser/branding/<brand>/pref/firefox-branding.js with zen-browser.app URLs

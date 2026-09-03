@@ -1,0 +1,10 @@
+{
+  "background": "landscape.png",
+  "player": "player.json",
+  "story": "story.json",
+  "spawn": { "x": 96, "y": 80 },
+  "walkable": { "x": 4, "y": 62, "w": 184, "h": 42 },
+  "speed": 36,
+  "companion": { "name": "Sprout" },
+  "decayPerHour": { "fullness": 5, "energy": 3, "mood": 4 }
+}

@@ -7,6 +7,13 @@
  * See widgets.js and widgets/README.md. */
 "use strict";
 
+// Apply the browser-wide theme (pref cthulhu.theme) to this page before the
+// grid draws, and keep following it. Same engine the chrome uses, so the page
+// and the toolbar are always the same palette.
+if (window.CthulhuThemes) {
+  try { CthulhuThemes.watch(document); } catch (e) { console.error("[Cthulhu:newtab] theme:", e); }
+}
+
 // Switching between #home and new-tab is only a hash change (no reload), which
 // wouldn't re-pick the mode / layout — so force a fresh load when the hash flips.
 window.addEventListener("hashchange", () => location.reload());
@@ -37,7 +44,8 @@ window.addEventListener("hashchange", () => location.reload());
       // "a" is deliberately NOT cancelled so a link tile (quick-link) can be
       // dragged to move the widget; a click still navigates (GridStack tells a
       // click from a drag by movement).
-      draggable: { cancel: "input,textarea,select,button,[contenteditable]" },
+      // canvas: the minigame's world takes clicks and key focus itself.
+      draggable: { cancel: "input,textarea,select,button,[contenteditable],canvas" },
     },
     el
   );

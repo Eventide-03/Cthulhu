@@ -20,6 +20,8 @@ cthulhu.jar:
     content/loader.js                   (content/loader.js)
     content/sprite.js                   (content/sprite.js)
     content/sprite.css                  (content/sprite.css)
+# Theme engine: shared by the chrome (browser.js) and the home page (index.html).
+    content/themes.js                   (content/themes.js)
     content/assets/toolbar-badge.svg    (assets/toolbar-badge.svg)
     content/assets/home.png             (assets/home.png)
 # Home / new-tab page (about:cthulhu; registered by AboutCthulhu.sys.mjs):
@@ -68,6 +70,38 @@ cthulhu.jar:
     content/newtab/widgets/orb/assets/orb.png         (content/newtab/widgets/orb/assets/orb.png)
     content/newtab/widgets/orb/assets/orb.json        (content/newtab/widgets/orb/assets/orb.json)
     content/newtab/widgets/feature-request/feature-request.js (content/newtab/widgets/feature-request/feature-request.js)
+# Palette icons -- ART SLOT: one 16x16 icon.png per widget, shown in the widget
+# drawer instead of a dot (widgets.js paletteIcon). Overwrite in place.
+    content/newtab/widgets/clock/assets/icon.png           (content/newtab/widgets/clock/assets/icon.png)
+    content/newtab/widgets/calendar/assets/icon.png        (content/newtab/widgets/calendar/assets/icon.png)
+    content/newtab/widgets/quick-links/assets/icon.png     (content/newtab/widgets/quick-links/assets/icon.png)
+    content/newtab/widgets/folder/assets/icon.png          (content/newtab/widgets/folder/assets/icon.png)
+    content/newtab/widgets/notes/assets/icon.png           (content/newtab/widgets/notes/assets/icon.png)
+    content/newtab/widgets/search/assets/icon.png          (content/newtab/widgets/search/assets/icon.png)
+    content/newtab/widgets/feature-request/assets/icon.png (content/newtab/widgets/feature-request/assets/icon.png)
+    content/newtab/widgets/moon/assets/icon.png            (content/newtab/widgets/moon/assets/icon.png)
+    content/newtab/widgets/orb/assets/icon.png             (content/newtab/widgets/orb/assets/icon.png)
+    content/newtab/widgets/pet/assets/icon.png             (content/newtab/widgets/pet/assets/icon.png)
+    content/newtab/widgets/gradient/assets/icon.png        (content/newtab/widgets/gradient/assets/icon.png)
+# theme widget (browser-wide palette picker; presets live in content/themes.js):
+    content/newtab/widgets/theme/theme.js                  (content/newtab/widgets/theme/theme.js)
+    content/newtab/widgets/theme/assets/icon.png           (content/newtab/widgets/theme/assets/icon.png)
+# studio widgets: palette / reference board / deadlines
+    content/newtab/widgets/palette/palette.js              (content/newtab/widgets/palette/palette.js)
+    content/newtab/widgets/palette/assets/icon.png         (content/newtab/widgets/palette/assets/icon.png)
+    content/newtab/widgets/refboard/refboard.js            (content/newtab/widgets/refboard/refboard.js)
+    content/newtab/widgets/refboard/assets/icon.png        (content/newtab/widgets/refboard/assets/icon.png)
+    content/newtab/widgets/deadlines/deadlines.js          (content/newtab/widgets/deadlines/deadlines.js)
+    content/newtab/widgets/deadlines/assets/icon.png       (content/newtab/widgets/deadlines/assets/icon.png)
+# minigame widget (ART SLOTS: landscape.png, player.png+json; data: game.json,
+# story.json -- see the widget's README):
+    content/newtab/widgets/game/game.js                    (content/newtab/widgets/game/game.js)
+    content/newtab/widgets/game/assets/icon.png            (content/newtab/widgets/game/assets/icon.png)
+    content/newtab/widgets/game/assets/game.json           (content/newtab/widgets/game/assets/game.json)
+    content/newtab/widgets/game/assets/story.json          (content/newtab/widgets/game/assets/story.json)
+    content/newtab/widgets/game/assets/landscape.png       (content/newtab/widgets/game/assets/landscape.png)
+    content/newtab/widgets/game/assets/player.png          (content/newtab/widgets/game/assets/player.png)
+    content/newtab/widgets/game/assets/player.json         (content/newtab/widgets/game/assets/player.json)
 # Feature modules (see content/modules/README.md). jar.mn does not glob, so each
 # module file is listed explicitly:
     content/modules/index.json                 (content/modules/index.json)

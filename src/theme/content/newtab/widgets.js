@@ -78,11 +78,100 @@ function cthEsc(s) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+/* ------------------------------ shared UI kit ------------------------------
+ * Small controls for config panels, exposed as ctx.ui so every widget builds
+ * the same rows the same way. All createElement: on this system-principal page
+ * innerHTML sanitizes <input>/<button>/<select> out (see widgets/README.md). */
+const cthUi = {
+  /** A labelled row; `control` goes to the right of the text. */
+  row(text, control) {
+    const label = document.createElement("label");
+    label.className = "cw-ui-row";
+    const span = document.createElement("span"); span.className = "cw-ui-label"; span.textContent = text;
+    label.appendChild(span); label.appendChild(control);
+    return label;
+  },
+  /** A stacked group with a small caption above. */
+  field(text) {
+    const f = document.createElement("div"); f.className = "cw-ui-field";
+    const cap = document.createElement("div"); cap.className = "cw-ui-cap"; cap.textContent = text;
+    f.appendChild(cap);
+    return f;
+  },
+  checkRow(text, checked, onChange) {
+    const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!checked;
+    cb.addEventListener("change", () => onChange(cb.checked));
+    const label = document.createElement("label"); label.className = "cw-ui-row cw-ui-check";
+    label.appendChild(cb); label.appendChild(document.createTextNode(" " + text));
+    return label;
+  },
+  textRow(text, value, onChange, opts) {
+    const inp = document.createElement("input"); inp.type = (opts && opts.type) || "text"; inp.value = value == null ? "" : value;
+    if (opts && opts.placeholder) inp.placeholder = opts.placeholder;
+    inp.addEventListener("change", () => onChange(inp.value));
+    return cthUi.row(text, inp);
+  },
+  selectRow(text, options, value, onChange) {
+    const sel = document.createElement("select");
+    for (const o of options) { const opt = document.createElement("option"); opt.value = o.value; opt.textContent = o.label; if (String(o.value) === String(value)) opt.selected = true; sel.appendChild(opt); }
+    sel.addEventListener("change", () => onChange(sel.value));
+    return cthUi.row(text, sel);
+  },
+  rangeRow(text, o, onChange) {
+    const wrap = document.createElement("span"); wrap.className = "cw-ui-range";
+    const inp = document.createElement("input"); inp.type = "range"; inp.min = o.min; inp.max = o.max; inp.step = o.step || 1; inp.value = o.value;
+    const out = document.createElement("span"); out.className = "cw-ui-out"; out.textContent = o.value + (o.unit || "");
+    inp.addEventListener("input", () => { out.textContent = inp.value + (o.unit || ""); });
+    inp.addEventListener("change", () => onChange(+inp.value));
+    wrap.appendChild(inp); wrap.appendChild(out);
+    return cthUi.row(text, wrap);
+  },
+  /** Colour: native picker + hex text, kept in sync. onChange gets a valid hex. */
+  colorRow(text, value, onChange) {
+    const isHex = (v) => window.CthulhuThemes ? CthulhuThemes.color.isHex(v) : /^#[0-9a-f]{6}$/i.test(v);
+    let cur = isHex(value) ? value : "#ffffff";
+    const wrap = document.createElement("span"); wrap.className = "cw-ui-color";
+    const pick = document.createElement("input"); pick.type = "color"; pick.value = cur;
+    const hex = document.createElement("input"); hex.type = "text"; hex.className = "cw-ui-hex"; hex.value = cur; hex.spellcheck = false; hex.maxLength = 7;
+    const emit = (v) => { cur = v; pick.value = v; hex.value = v; onChange(v); };
+    pick.addEventListener("input", () => emit(pick.value));
+    hex.addEventListener("change", () => { let v = hex.value.trim(); if (v[0] !== "#") v = "#" + v; if (isHex(v)) emit(v.toLowerCase()); else hex.value = cur; });
+    wrap.appendChild(pick); wrap.appendChild(hex);
+    return cthUi.row(text, wrap);
+  },
+  /** Clickable preset chips. items: [{id, name, colors:[hex,...]}]. */
+  swatches(items, selectedId, onPick) {
+    const wrap = document.createElement("div"); wrap.className = "cw-ui-swatches";
+    for (const it of items) {
+      const b = document.createElement("button"); b.type = "button"; b.className = "cw-ui-swatch"; b.title = it.name || it.id;
+      if (it.id === selectedId) b.classList.add("on");
+      const cols = it.colors || [];
+      b.style.background = cols.length > 1 ? "linear-gradient(135deg, " + cols.join(", ") + ")" : (cols[0] || "transparent");
+      b.addEventListener("click", () => { for (const x of wrap.children) x.classList.toggle("on", x === b); onPick(it); });
+      wrap.appendChild(b);
+    }
+    return wrap;
+  },
+  button(text, onClick, opts) {
+    const b = document.createElement("button"); b.type = "button";
+    b.className = opts && opts.primary ? "cw-cfg-save" : "cw-ui-btn";
+    b.textContent = text; b.addEventListener("click", onClick);
+    return b;
+  },
+  /** Transient message, bottom-centre. */
+  toast(text) {
+    let t = document.getElementById("cthulhu-toast");
+    if (!t) { t = document.createElement("div"); t.id = "cthulhu-toast"; document.body.appendChild(t); }
+    t.textContent = text; t.classList.add("show");
+    clearTimeout(t._timer); t._timer = setTimeout(() => t.classList.remove("show"), 1600);
+  },
+};
+
 /* ----------------------------------- app ----------------------------------- */
 window.CthulhuHome = (function () {
   const BASE = "chrome://cthulhu/content/newtab/widgets/";
-  const CATEGORY_ORDER = ["utility", "aesthetic"];
-  const CATEGORY_LABEL = { utility: "Utility", aesthetic: "Aesthetic" };
+  const CATEGORY_ORDER = ["utility", "aesthetic", "play"];
+  const CATEGORY_LABEL = { utility: "Utility", aesthetic: "Aesthetic", play: "Play" };
   const DEFAULT_LAYOUT = [
     { widget: "clock", x: 0, y: 0, w: 3, h: 2, config: {} },
     { widget: "moon", x: 3, y: 0, w: 2, h: 2, config: {} },
@@ -215,6 +304,8 @@ window.CthulhuHome = (function () {
       onCleanup(fn) { instance.cleanups.push(fn); },
       assetUrl(path) { return BASE + instance.id + "/assets/" + path; },
       esc: cthEsc,
+      theme: window.CthulhuThemes, // browser-wide theme engine (content/themes.js)
+      ui: cthUi,                   // shared config-panel controls (see widgets/README.md)
       pickImage: pickImage, // opens the recent-files/clipboard image picker -> data URL
       openConfig: () => openConfig(instance.el), // let a widget open its own config
       closeConfig: () => { const m = document.querySelector(".cthulhu-config-modal"); if (m) m.remove(); },
@@ -283,7 +374,11 @@ window.CthulhuHome = (function () {
     const body = document.createElement("div");
     body.className = "cthulhu-widget-body";
     content.appendChild(body);
-    content.appendChild(buildTools(el, def));
+    // The hover tools go on the ITEM (el), outside the content's overflow:
+    // hidden, so they can straddle the top border and never cover a widget's
+    // own top-right controls (the calendar's Mine / refresh / + used to sit
+    // exactly under them). See .cthulhu-widget-tools in newtab.css.
+    el.appendChild(buildTools(el, def));
     const instance = {
       id: type, def, el, cleanups: [],
       config: config || JSON.parse(JSON.stringify(def.defaultConfig || {})),
@@ -369,14 +464,31 @@ window.CthulhuHome = (function () {
       for (const def of defsIn) {
         const item = document.createElement("div");
         item.className = "cthulhu-palette-item";
-        const dot = document.createElement("span"); dot.className = "cthulhu-palette-dot";
+        item.appendChild(paletteIcon(def));
         const name = document.createElement("span"); name.className = "cthulhu-palette-name"; name.textContent = def.name || def.id;
-        item.appendChild(dot); item.appendChild(name);
+        item.appendChild(name);
         setupPaletteDrag(item, def);
         section.appendChild(item);
       }
       list.appendChild(section);
     }
+  }
+
+  /* ART SLOT: every widget's palette icon is widgets/<id>/assets/icon.png
+   * (16x16, drawn 1:1, pixelated) -- or whatever `icon` names in its
+   * definition. A missing file falls back to the accent dot, so a new widget
+   * works before it has art. */
+  function paletteIcon(def) {
+    const img = document.createElement("img");
+    img.className = "cthulhu-palette-icon";
+    img.alt = "";
+    img.draggable = false;
+    img.src = BASE + def.id + "/assets/" + (def.icon || "icon.png");
+    img.addEventListener("error", () => {
+      const dot = document.createElement("span"); dot.className = "cthulhu-palette-dot";
+      img.replaceWith(dot);
+    }, { once: true });
+    return img;
   }
 
   /* Drag a palette item onto the grid. Custom pointer-drag (GridStack's own
@@ -388,7 +500,8 @@ window.CthulhuHome = (function () {
       e.preventDefault();
       const ghost = document.createElement("div");
       ghost.className = "cthulhu-drag-ghost";
-      ghost.textContent = def.name || def.id;
+      ghost.appendChild(paletteIcon(def));
+      ghost.appendChild(document.createTextNode(def.name || def.id));
       document.body.appendChild(ghost);
       const move = (ev) => { ghost.style.left = ev.clientX + "px"; ghost.style.top = ev.clientY + "px"; };
       move(e);

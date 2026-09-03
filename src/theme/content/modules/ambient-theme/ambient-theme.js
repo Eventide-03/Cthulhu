@@ -5,24 +5,27 @@
 /* =============================================================================
  * Ambient theme module.
  *
- * Rethemes the browser from two locally-computed / cheaply-fetched inputs by
- * SWAPPING the A2 theme variables (via attributes consumed by ambient-theme.css)
- * and selecting art frames — never by hardcoding colors:
- *   1. time of day  -> local sunrise/sunset (solar formula, no API) -> dawn/day/dusk/night
- *   2. weather       -> Open-Meteo current weather_code -> clear/cloudy/rain/snow/storm
+ * Applies the browser-wide theme to this window and, when the theme is
+ * "ambient", layers the weather on top:
  *
- * Moon phase used to be a third input here; it now lives in the home-page moon
- * widget, which draws from the shared strip at content/newtab/assets/moon.png.
+ *   palette  -> content/themes.js (window.CthulhuThemes): reads the pref
+ *               `cthulhu.theme`, picks a preset or the time-of-day band
+ *               (dawn/day/dusk/night, local solar formula, no API), and swaps
+ *               the A2 tokens. The Theme widget on the home page writes the
+ *               pref; the engine keeps every window and page in step.
+ *   weather  -> Open-Meteo current weather_code -> clear/cloudy/rain/snow/storm
+ *               as an attribute on :root (ambient-theme.css derives colour
+ *               tweaks from the CURRENT tokens) plus a rain/snow overlay drawn
+ *               by the sprite helper. Only in ambient mode; only if
+ *               cthulhu.ambient.weather.enabled.
  *
- * Location: user pref (cthulhu.ambient.latitude / .longitude) first; optional
- * geolocation (cthulhu.ambient.geolocation=true) as a fallback.
+ * Location: pref (cthulhu.ambient.latitude / .longitude) first; optional
+ * geolocation (cthulhu.ambient.geolocation=true) as a fallback, whose result is
+ * written to those same prefs so the home page computes the same band.
  *
- * PRIVACY: weather is the only part of this module that touches the network.
- * Setting cthulhu.ambient.weather.enabled=false skips the Open-Meteo request
- * entirely, so no coordinates ever leave the machine; time-of-day theming keeps
- * working because sunrise/sunset is computed locally from a solar formula, with
- * no API call. See PRIVACY.md.
- * Runs in the browser-window scope; uses the A4 sprite helper (window.CthulhuSprite).
+ * PRIVACY: weather is the only part that touches the network. Setting
+ * cthulhu.ambient.weather.enabled=false skips the Open-Meteo request entirely,
+ * so no coordinates ever leave the machine. See PRIVACY.md.
  * ============================================================================= */
 (function () {
   "use strict";
@@ -30,85 +33,39 @@
   const doc = win.document;
   const ID = "ambient-theme";
   const ASSET = "chrome://cthulhu/content/modules/ambient-theme/assets/";
-  const RAD = Math.PI / 180;
+  const T = win.CthulhuThemes;
+  if (!T) { console.error("[Cthulhu:" + ID + "] themes.js not loaded"); return; }
 
-  const TIME_REFRESH_MS = 5 * 60 * 1000;    // re-evaluate the time band
-  const WEATHER_REFRESH_MS = 30 * 60 * 1000; // refresh weather
-  const DEFAULT_LOC = { lat: 40.7128, lng: -74.006 }; // placeholder (set the prefs!)
-
-  // Pinned to "night" (theme.css night palette) until real hex codes are
-  // given for the theme -- flip to false to restore the dynamic time-of-day
-  // + weather system below exactly as it was; nothing else needs to change.
-  const LOCKED_NIGHT = true;
-
-  // --- prefs ----------------------------------------------------------------
+  const WEATHER_REFRESH_MS = 30 * 60 * 1000;
   const P = Services.prefs;
   const getStr = (n, d) => { try { return P.getStringPref(n, d); } catch (e) { return d; } };
   const getBool = (n, d) => { try { return P.getBoolPref(n, d); } catch (e) { return d; } };
-  const getNum = (n) => { const v = parseFloat(getStr(n, "")); return isFinite(v) ? v : null; };
-
-  function getLocation() {
-    const lat = getNum("cthulhu.ambient.latitude");
-    const lng = getNum("cthulhu.ambient.longitude");
-    if (lat !== null && lng !== null) return Promise.resolve({ lat, lng });
-    if (getBool("cthulhu.ambient.geolocation", false) && win.navigator.geolocation) {
-      return new Promise(res => {
-        try {
-          win.navigator.geolocation.getCurrentPosition(
-            p => res({ lat: p.coords.latitude, lng: p.coords.longitude }),
-            () => res(DEFAULT_LOC),
-            { timeout: 5000, maximumAge: 3600000 }
-          );
-        } catch (e) { res(DEFAULT_LOC); }
-      });
-    }
-    return Promise.resolve(DEFAULT_LOC);
-  }
-
-  // --- 1. solar: sunrise/sunset (standard "sunrise equation") ----------------
-  function sunTimes(lat, lng, date) {
-    // Anchor the day number at the location's LOCAL solar noon (derived from the
-    // longitude offset), not `now`'s UTC day. Otherwise a western-hemisphere
-    // evening that has crossed 00:00 UTC rounds to the next solar day and the
-    // sunrise/sunset it returns belong to the wrong day (e.g. 21:00 EDT would
-    // classify as night instead of dusk).
-    const offMs = (lng / 15) * 3600000;
-    const local = new Date(date.getTime() + offMs);
-    const anchor = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(),
-                            local.getUTCDate(), 12, 0, 0) - offMs;
-    const jd = anchor / 86400000 + 2440587.5;                 // Unix ms -> Julian Date
-    const n = Math.round(jd - 2451545.0 + 0.0008);            // days since J2000
-    const Jstar = n - lng / 360;                              // mean solar noon
-    const M = ((357.5291 + 0.98560028 * Jstar) % 360) * RAD;  // solar mean anomaly
-    const C = (1.9148 * Math.sin(M) + 0.02 * Math.sin(2 * M) + 0.0003 * Math.sin(3 * M)) * RAD;
-    const lambda = ((M + C) % (2 * Math.PI)) + (180 + 102.9372) * RAD; // ecliptic longitude
-    const Jtransit = 2451545.0 + Jstar + 0.0053 * Math.sin(M) - 0.0069 * Math.sin(2 * lambda);
-    const delta = Math.asin(Math.sin(lambda) * Math.sin(23.44 * RAD)); // declination
-    const latR = lat * RAD;
-    const cosW = (Math.sin(-0.833 * RAD) - Math.sin(latR) * Math.sin(delta)) /
-      (Math.cos(latR) * Math.cos(delta));
-    if (cosW > 1) return { polar: "night" };   // sun stays down
-    if (cosW < -1) return { polar: "day" };     // sun stays up
-    const w = Math.acos(cosW) / (2 * Math.PI); // fraction of a day
-    const toDate = J => new Date((J - 2440587.5) * 86400000);
-    return { sunrise: toDate(Jtransit - w), sunset: toDate(Jtransit + w) };
-  }
-
-  function timeBand(now, sun) {
-    if (sun.polar) return sun.polar; // polar day/night
-    const t = now.getTime(), rise = sun.sunrise.getTime(), set = sun.sunset.getTime(), H = 3600000;
-    if (t >= rise - H && t < rise + H) return "dawn";
-    if (t >= set - H && t < set + H) return "dusk";
-    if (t >= rise + H && t < set - H) return "day";
-    return "night";
-  }
-
-  // --- 2. weather (Open-Meteo, cached in a pref, graceful offline) -----------
-  // Read through a function rather than caching the value, so flipping the pref
-  // in about:config takes effect on the next refresh tick without a restart.
   const WEATHER_PREF = "cthulhu.ambient.weather.enabled";
   const weatherEnabled = () => getBool(WEATHER_PREF, true);
 
+  // --- palette: hand the window to the engine ---------------------------------
+  T.watch(doc);
+
+  // --- location: optional geolocation, persisted so every consumer agrees ----
+  function resolveLocation() {
+    const has = getStr("cthulhu.ambient.latitude", "") && getStr("cthulhu.ambient.longitude", "");
+    if (has || !getBool("cthulhu.ambient.geolocation", false) || !win.navigator.geolocation) return;
+    try {
+      win.navigator.geolocation.getCurrentPosition(
+        (p) => {
+          try {
+            P.setStringPref("cthulhu.ambient.latitude", String(p.coords.latitude));
+            P.setStringPref("cthulhu.ambient.longitude", String(p.coords.longitude));
+            T.apply(doc);
+          } catch (e) {}
+        },
+        () => {},
+        { timeout: 5000, maximumAge: 3600000 }
+      );
+    } catch (e) {}
+  }
+
+  // --- weather (Open-Meteo, cached in a pref, graceful offline) --------------
   function weatherGroup(code) {
     if (code === 0 || code === 1) return "clear";
     if (code === 2 || code === 3 || code === 45 || code === 48) return "cloudy";
@@ -124,23 +81,18 @@
       if (cached && win.Date.now() - cached.ts < WEATHER_REFRESH_MS) return cached.group;
     } catch (e) {}
     try {
-      const url = "https://api.open-meteo.com/v1/forecast?latitude=" + lat +
-        "&longitude=" + lng + "&current=weather_code";
+      const url = "https://api.open-meteo.com/v1/forecast?latitude=" + lat + "&longitude=" + lng + "&current=weather_code";
       const r = await win.fetch(url);
       if (!r.ok) throw new Error("HTTP " + r.status);
       const group = weatherGroup((await r.json()).current.weather_code);
       try { P.setStringPref(CACHE, JSON.stringify({ group, ts: win.Date.now() })); } catch (e) {}
       return group;
     } catch (e) {
-      console.warn("[Cthulhu:" + ID + "] weather offline; using time-of-day only:", e.message);
+      console.warn("[Cthulhu:" + ID + "] weather offline; time-of-day only:", e.message);
       try { const c = JSON.parse(getStr(CACHE, "null")); if (c) return c.group; } catch (e2) {}
-      return null; // graceful: no weather variant/overlay
+      return null;
     }
   }
-
-  // --- DOM: weather overlay -------------------------------------------------
-  // (The sun/moon celestial element was removed — the moon is now a home-page
-  // widget instead. Time-of-day still drives the palette + weather overlays.)
   function updateOverlay(group) {
     const want = group === "rain" || group === "snow" || group === "storm";
     let el = doc.getElementById("cthulhu-ambient-overlay");
@@ -150,53 +102,30 @@
     if (el.dataset.weather !== sprite && win.CthulhuSprite) {
       el.dataset.weather = sprite;
       win.CthulhuSprite.fromAseprite(el, ASSET + sprite + ".json", { mode: "css" })
-        // The helper sizes the element to one frame; clear that so the overlay
-        // stays full-window and the animation scrolls the tiled rain texture.
         .then(() => { el.style.width = ""; el.style.height = ""; })
-        .catch(e => console.warn("[Cthulhu:" + ID + "] overlay art missing (" + sprite + "):", e.message));
+        .catch((e) => console.warn("[Cthulhu:" + ID + "] overlay art missing (" + sprite + "):", e.message));
     }
   }
-
-  // --- apply ----------------------------------------------------------------
-  let loc = DEFAULT_LOC;
-  function applyTime() {
-    const now = new Date();
-    const band = timeBand(now, sunTimes(loc.lat, loc.lng, now));
-    doc.documentElement.setAttribute("cthulhu-ambient-time", band);
-    return band;
+  function clearWeather() {
+    doc.documentElement.removeAttribute("cthulhu-ambient-weather");
+    updateOverlay(null);
   }
   async function applyWeather() {
-    if (!weatherEnabled()) {
-      // No request, no coordinates transmitted. Drop any stale weather styling
-      // so the UI falls back cleanly to time-of-day only.
-      doc.documentElement.removeAttribute("cthulhu-ambient-weather");
-      updateOverlay(null);
-      return null;
-    }
+    if (T.current() !== T.AMBIENT || !weatherEnabled()) { clearWeather(); return; }
+    const loc = T.location();
     const group = await weather(loc.lat, loc.lng);
-    if (group) { doc.documentElement.setAttribute("cthulhu-ambient-weather", group); }
-    else { doc.documentElement.removeAttribute("cthulhu-ambient-weather"); }
+    if (group) doc.documentElement.setAttribute("cthulhu-ambient-weather", group);
+    else doc.documentElement.removeAttribute("cthulhu-ambient-weather");
     updateOverlay(group);
-    return group;
   }
 
   // --- init -----------------------------------------------------------------
-  if (LOCKED_NIGHT) {
-    doc.documentElement.setAttribute("cthulhu-ambient-time", "night");
-    console.log("[Cthulhu:" + ID + "] locked to night (time-of-day/weather disabled)");
-  } else {
-    (async () => {
-      try {
-        loc = await getLocation();
-        applyTime();
-        await applyWeather();
-        win.setInterval(applyTime, TIME_REFRESH_MS);
-        win.setInterval(applyWeather, WEATHER_REFRESH_MS);
-        console.log("[Cthulhu:" + ID + "] active @", loc.lat.toFixed(2), loc.lng.toFixed(2),
-          weatherEnabled() ? "(weather on)" : "(weather off -- time-of-day only, no network)");
-      } catch (e) {
-        console.error("[Cthulhu:" + ID + "] init failed:", e);
-      }
-    })();
-  }
+  resolveLocation();
+  applyWeather();
+  const timer = win.setInterval(applyWeather, WEATHER_REFRESH_MS);
+  const onTheme = () => applyWeather(); // entering/leaving ambient mode
+  doc.addEventListener("cthulhu-theme-change", onTheme);
+  win.addEventListener("unload", () => { win.clearInterval(timer); doc.removeEventListener("cthulhu-theme-change", onTheme); }, { once: true });
+  console.log("[Cthulhu:" + ID + "] theme:", T.current(), T.current() === T.AMBIENT ? "(band " + T.band() + ")" : "",
+    weatherEnabled() ? "" : "(weather off)");
 })();

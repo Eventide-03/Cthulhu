@@ -1,0 +1,34 @@
+{
+  "chapters": [
+    {
+      "id": "arrival",
+      "title": "Arrival",
+      "when": { "day": 0 },
+      "lines": [
+        "Something small is waiting on the path.",
+        "It looks up at you. It does not run.",
+        "You could give it a name."
+      ],
+      "sets": ["met"]
+    },
+    {
+      "id": "second-morning",
+      "title": "Second morning",
+      "when": { "day": 1, "flag": "met" },
+      "lines": [
+        "It is still here.",
+        "The hills look further away than yesterday."
+      ],
+      "sets": ["stayed"]
+    },
+    {
+      "id": "the-road",
+      "title": "The road",
+      "when": { "day": 3, "flag": "stayed" },
+      "lines": [
+        "The path bends toward the trees.",
+        "Neither of you has walked that way yet."
+      ]
+    }
+  ]
+}

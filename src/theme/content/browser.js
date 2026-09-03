@@ -60,6 +60,12 @@
       "chrome://cthulhu/content/sprite.js",
       window
     );
+    // Theme engine (window.CthulhuThemes): the ambient-theme module applies it
+    // to this window and keeps it in sync with the cthulhu.theme pref.
+    Services.scriptloader.loadSubScript(
+      "chrome://cthulhu/content/themes.js",
+      window
+    );
     Services.scriptloader.loadSubScript(
       "chrome://cthulhu/content/loader.js",
       window

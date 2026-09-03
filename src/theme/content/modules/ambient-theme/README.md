@@ -1,5 +1,13 @@
 # ambient-theme
 
+> **Palettes moved.** Every palette — night / dawn / day / dusk and the other
+> presets — now lives in `content/themes.js` (`window.CthulhuThemes`), which
+> applies the pref `cthulhu.theme` to every window *and* the home page. This
+> module applies that engine to the browser window and adds the **weather**
+> layer on top when the theme is `"ambient"`. The Theme widget on the home page
+> is the UI for choosing. The sections below describe the ambient inputs; the
+> hex values quoted are now in `themes.js`, not `ambient-theme.css`.
+
 Rethemes the browser from three **locally-computed** (or cheaply-fetched) inputs.
 It never hardcodes a color: `ambient-theme.js` only sets **attributes on `:root`**,
 and `ambient-theme.css` re-assigns the **A2 theme variables** (from `theme.css`) per
