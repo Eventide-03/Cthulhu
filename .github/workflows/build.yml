@@ -219,6 +219,15 @@ jobs:
           # Home button, no tab-drag pinning, updates aimed at Mozilla, and the
           # chrome package dropped from the installer.
           git -C engine init -q
+          # ...and give it one commit. `mach bootstrap` now recognises engine/
+          # as a git checkout and calls `git log -1 --format=%ct` on it to warn
+          # about stale revisions; in a repo with no commits that exits 128 and
+          # takes the whole build with it. An empty commit is enough -- git
+          # apply patches the WORKING TREE and does not need the tree tracked
+          # (verified: init + empty commit applies patches and satisfies
+          # mach bootstrap). -c keeps the identity out of global config.
+          git -C engine -c user.email=ci@localhost -c user.name=ci \
+            commit -q --allow-empty -m "vendored Firefox source"
           surfer import
           # Backstop, deliberately CONTENT-based: `git apply --check` would
           # itself be skipped in the broken configuration and report success.
@@ -463,6 +472,15 @@ jobs:
           # Home button, no tab-drag pinning, updates aimed at Mozilla, and the
           # chrome package dropped from the installer.
           git -C engine init -q
+          # ...and give it one commit. `mach bootstrap` now recognises engine/
+          # as a git checkout and calls `git log -1 --format=%ct` on it to warn
+          # about stale revisions; in a repo with no commits that exits 128 and
+          # takes the whole build with it. An empty commit is enough -- git
+          # apply patches the WORKING TREE and does not need the tree tracked
+          # (verified: init + empty commit applies patches and satisfies
+          # mach bootstrap). -c keeps the identity out of global config.
+          git -C engine -c user.email=ci@localhost -c user.name=ci \
+            commit -q --allow-empty -m "vendored Firefox source"
           surfer import
           # Backstop, deliberately CONTENT-based: `git apply --check` would
           # itself be skipped in the broken configuration and report success.
@@ -895,6 +913,15 @@ jobs:
           # Home button, no tab-drag pinning, updates aimed at Mozilla, and the
           # chrome package dropped from the installer.
           git -C engine init -q
+          # ...and give it one commit. `mach bootstrap` now recognises engine/
+          # as a git checkout and calls `git log -1 --format=%ct` on it to warn
+          # about stale revisions; in a repo with no commits that exits 128 and
+          # takes the whole build with it. An empty commit is enough -- git
+          # apply patches the WORKING TREE and does not need the tree tracked
+          # (verified: init + empty commit applies patches and satisfies
+          # mach bootstrap). -c keeps the identity out of global config.
+          git -C engine -c user.email=ci@localhost -c user.name=ci \
+            commit -q --allow-empty -m "vendored Firefox source"
           ./node_modules/.bin/surfer import
           # Backstop, deliberately CONTENT-based: `git apply --check` would
           # itself be skipped in the broken configuration and report success.
