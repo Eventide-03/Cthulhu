@@ -1,3 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <updates>
+  <update type="minor" displayVersion="1.0.1" appVersion="1.0.1" platformVersion="153.0" buildID="20260905061632">
+    <patch type="complete" URL="https://github.com/Eventide-03/Cthulhu/releases/download/v1.0.1/Cthulhu-1.0.1-windows-x64.complete.mar" hashFunction="sha512" hashValue="7d8389bbdbbeb00bd431eb5b1eeef7fcc44a10a5101e4bba410831964126cae4da49ee9e32dbc3c48f0f447b76fb6f80c68c73ea8d8790bcb620a7f09f5fdb89" size="95261273"/>
+  </update>
 </updates>
