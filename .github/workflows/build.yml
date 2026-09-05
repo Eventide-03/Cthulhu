@@ -195,7 +195,34 @@ jobs:
         run: surfer download
 
       - name: Apply patches
-        run: surfer import
+        run: |
+          set -euo pipefail
+          # engine/ MUST be its own git repository before Surfer imports.
+          #
+          # Surfer applies our source patches with `git apply` run from
+          # cwd=engine/. git only applies paths that live under the directory it
+          # is run from, RELATIVE TO THE REPOSITORY ROOT -- and if engine/ is not
+          # itself a repo, that root is this checkout, so every patch path
+          # (browser/..., moz.build, ...) resolves outside engine/ and is
+          # skipped. Reproduced exactly:
+          #
+          #   $ cd outer/engine && git apply ../p.patch
+          #   Skipped patch 'browser/target.txt'.
+          #   $ echo $?
+          #   0
+          #
+          # Exit 0, nothing changed, and Surfer still prints
+          # "[FINISH] Apply <patch>" for every one. A dev machine happens to
+          # have engine/.git (so patches apply and everything works), which is
+          # why this never showed up locally -- and why v1.0.0 and v1.0.1
+          # shipped with NONE of the 11 patches: Firefox View instead of the
+          # Home button, no tab-drag pinning, updates aimed at Mozilla, and the
+          # chrome package dropped from the installer.
+          git -C engine init -q
+          surfer import
+          # Backstop, deliberately CONTENT-based: `git apply --check` would
+          # itself be skipped in the broken configuration and report success.
+          python3 tools/verify-patches.py
 
       # Packaged in the SAME step that builds it, while its own ./mozconfig is
       # active -- mach reads target and objdir from that file. `mach package` is
@@ -412,7 +439,34 @@ jobs:
         run: surfer download
 
       - name: Apply patches
-        run: surfer import
+        run: |
+          set -euo pipefail
+          # engine/ MUST be its own git repository before Surfer imports.
+          #
+          # Surfer applies our source patches with `git apply` run from
+          # cwd=engine/. git only applies paths that live under the directory it
+          # is run from, RELATIVE TO THE REPOSITORY ROOT -- and if engine/ is not
+          # itself a repo, that root is this checkout, so every patch path
+          # (browser/..., moz.build, ...) resolves outside engine/ and is
+          # skipped. Reproduced exactly:
+          #
+          #   $ cd outer/engine && git apply ../p.patch
+          #   Skipped patch 'browser/target.txt'.
+          #   $ echo $?
+          #   0
+          #
+          # Exit 0, nothing changed, and Surfer still prints
+          # "[FINISH] Apply <patch>" for every one. A dev machine happens to
+          # have engine/.git (so patches apply and everything works), which is
+          # why this never showed up locally -- and why v1.0.0 and v1.0.1
+          # shipped with NONE of the 11 patches: Firefox View instead of the
+          # Home button, no tab-drag pinning, updates aimed at Mozilla, and the
+          # chrome package dropped from the installer.
+          git -C engine init -q
+          surfer import
+          # Backstop, deliberately CONTENT-based: `git apply --check` would
+          # itself be skipped in the broken configuration and report success.
+          python3 tools/verify-patches.py
 
       - uses: actions/download-artifact@v4
         with:
@@ -817,7 +871,34 @@ jobs:
           rm -f "$TMP/firefox-${FFVER}.source.tar"
 
       - name: Apply patches
-        run: ./node_modules/.bin/surfer import
+        run: |
+          set -euo pipefail
+          # engine/ MUST be its own git repository before Surfer imports.
+          #
+          # Surfer applies our source patches with `git apply` run from
+          # cwd=engine/. git only applies paths that live under the directory it
+          # is run from, RELATIVE TO THE REPOSITORY ROOT -- and if engine/ is not
+          # itself a repo, that root is this checkout, so every patch path
+          # (browser/..., moz.build, ...) resolves outside engine/ and is
+          # skipped. Reproduced exactly:
+          #
+          #   $ cd outer/engine && git apply ../p.patch
+          #   Skipped patch 'browser/target.txt'.
+          #   $ echo $?
+          #   0
+          #
+          # Exit 0, nothing changed, and Surfer still prints
+          # "[FINISH] Apply <patch>" for every one. A dev machine happens to
+          # have engine/.git (so patches apply and everything works), which is
+          # why this never showed up locally -- and why v1.0.0 and v1.0.1
+          # shipped with NONE of the 11 patches: Firefox View instead of the
+          # Home button, no tab-drag pinning, updates aimed at Mozilla, and the
+          # chrome package dropped from the installer.
+          git -C engine init -q
+          ./node_modules/.bin/surfer import
+          # Backstop, deliberately CONTENT-based: `git apply --check` would
+          # itself be skipped in the broken configuration and report success.
+          python3 tools/verify-patches.py
 
       # MozillaBuild is a HARD PREREQUISITE on Windows, not something bootstrap
       # can provide. build/mach_initialize.py runs
