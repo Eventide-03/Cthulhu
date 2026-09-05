@@ -70,6 +70,20 @@ ServerURL=@MOZ_CRASHREPORTER_URL@/submit?id=@MOZ_APP_ID@&version=@MOZ_APP_VERSIO
 #endif
 
 #if MOZ_UPDATER
+; THE HOST IS LITERAL ON PURPOSE -- do not restore @MOZ_APPUPDATE_HOST@.
+;
+; That placeholder expands from CONFIG["MOZ_APPUPDATE_HOST"], defaulting to
+; aus5.mozilla.org when the key is missing. Upstream never declares the
+; configure option, so the default always won and v1.0.0 shipped asking
+; Mozilla for its updates. Declaring the option (src/browser/moz-configure.patch)
+; populates CONFIG locally -- verified in substs -- but on the CI runners the
+; placeholder still expanded to aus5.mozilla.org across two full builds, and
+; the divergence was not reproducible locally. Rather than keep guessing at
+; 90 minutes a run, the URL no longer depends on that mechanism at all.
+;
+; SOURCE OF TRUTH is surfer.json's "updateHostname". If these two ever
+; disagree the build FAILS: both build jobs compare this file's baked URL
+; against surfer.json (see "GUARD: the update URL" in .github/workflows/build.yml).
 [AppUpdate]
-URL=https://@MOZ_APPUPDATE_HOST@/updates/%CHANNEL%/%BUILD_TARGET%/update.xml?product=%PRODUCT%&version=%VERSION%&buildid=%BUILD_ID%&os=%OS_VERSION%&locale=%LOCALE%
+URL=https://eventide-03.github.io/Cthulhu/updates/%CHANNEL%/%BUILD_TARGET%/update.xml?product=%PRODUCT%&version=%VERSION%&buildid=%BUILD_ID%&os=%OS_VERSION%&locale=%LOCALE%
 #endif
