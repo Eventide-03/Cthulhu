@@ -18,7 +18,7 @@
       "brandShortName": "Cthulhu",
       "brandFullName": "Cthulhu",
       "release": {
-        "displayVersion": "1.0.1"
+        "displayVersion": "1.0.2"
       }
     },
     "release": {
@@ -27,7 +27,7 @@
       "brandFullName": "Cthulhu",
       "backgroundColor": "#1a1025",
       "release": {
-        "displayVersion": "1.0.1"
+        "displayVersion": "1.0.2"
       }
     }
   },
