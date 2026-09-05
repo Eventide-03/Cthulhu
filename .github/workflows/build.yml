@@ -596,42 +596,20 @@ jobs:
           [ -n "$BUILDID" ] || { echo "::error::could not read BuildID"; exit 1; }
           echo "MAC_BUILDID=$BUILDID" >> "$GITHUB_ENV"
 
-          # GUARD: the update URL must point at OUR host.
+          # GUARD: a packaged build must actually CONTAIN Cthulhu.
           #
-          # build/moz.build defaults @MOZ_APPUPDATE_HOST@ to aus5.mozilla.org
-          # and only overrides it from CONFIG["MOZ_APPUPDATE_HOST"] -- which
-          # upstream never declares as a configure option, so a plain `export`
-          # in the mozconfig silently does nothing. v1.0.0 shipped asking
-          # MOZILLA for its updates: the signed MARs, these manifests and the
-          # endpoint-health watchdog were all bypassed and no install could
-          # ever have updated itself. browser/moz.configure now declares the
-          # option (src/browser/moz-configure.patch); this fails the build if
-          # that ever regresses, because the symptom is otherwise invisible --
-          # everything downstream keeps "working" and simply never gets asked.
-          # Read the host with sed, NOT node: $GITHUB_WORKSPACE on Windows is
-          # D:\a\Cthulhu\Cthulhu, and interpolating that into JS source makes
-          # \a and \C escape sequences, so node saw "D:aCthulhuCthulhu" and
-          # died. Same family as the RUNNER_TEMP backslash bug below. Convert
-          # to forward slashes (a no-op on macOS) and never hand a path to a
-          # language that re-parses backslashes.
+          # package-manifest.in is an ALLOWLIST -- `mach package` copies only
+          # the paths it names and says nothing about what it drops. v1.0.0 and
+          # the first v1.0.1 shipped on BOTH platforms with the entire
+          # chrome://cthulhu package and cthulhu.js silently missing: a
+          # rebranded Firefox with a white new tab, no widgets, no theme, no
+          # Home button, and Zen Browser's onboarding. A local `mach build`
+          # never runs the packager (it uses loose files under dist/bin), so
+          # development is blind to it -- it can only be caught here, on the
+          # packaged artifact. Also re-checks the AppUpdate host.
           WS=$(printf '%s' "$GITHUB_WORKSPACE" | tr '\\' '/')
-          EXPECTED_UPDATE_HOST=$(sed -n 's/.*"updateHostname"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$WS/surfer.json" | head -1)
-          # An empty value would make the *"$EXPECTED_UPDATE_HOST"* branch below
-          # match ANY url (the empty string is a substring of everything), so a
-          # parse failure would silently turn the guard off. Fail instead.
-          [ -n "$EXPECTED_UPDATE_HOST" ] || { echo "::error::could not read updateHostname from surfer.json"; exit 1; }
-          UPDATE_URL=$(sed -n 's/^URL=//p' "$UNIVERSAL_APP/Contents/Resources/application.ini" | head -1)
-          echo "AppUpdate URL: $UPDATE_URL"
-          case "$UPDATE_URL" in
-            *aus5.mozilla.org*|"")
-              echo "::error::application.ini points at '$UPDATE_URL' -- expected ${EXPECTED_UPDATE_HOST}. Updates would go to Mozilla, not us."
-              exit 1 ;;
-            *"${EXPECTED_UPDATE_HOST}"*)
-              echo "OK: updates resolve to ${EXPECTED_UPDATE_HOST}" ;;
-            *)
-              echo "::error::unexpected AppUpdate URL '$UPDATE_URL' (wanted ${EXPECTED_UPDATE_HOST})"
-              exit 1 ;;
-          esac
+          python3 "$WS/tools/verify-package.py" "$UNIVERSAL_APP/Contents/Resources" --surfer "$WS/surfer.json"
+
 
 
           OUT="$GITHUB_WORKSPACE/${APP_NAME}-${VERSION}-macos-universal.complete.mar"
@@ -1080,42 +1058,20 @@ jobs:
           [ -n "$BUILDID" ] || { echo "::error::could not read BuildID"; exit 1; }
           echo "WIN_BUILDID=$BUILDID" >> "$GITHUB_ENV"
 
-          # GUARD: the update URL must point at OUR host.
+          # GUARD: a packaged build must actually CONTAIN Cthulhu.
           #
-          # build/moz.build defaults @MOZ_APPUPDATE_HOST@ to aus5.mozilla.org
-          # and only overrides it from CONFIG["MOZ_APPUPDATE_HOST"] -- which
-          # upstream never declares as a configure option, so a plain `export`
-          # in the mozconfig silently does nothing. v1.0.0 shipped asking
-          # MOZILLA for its updates: the signed MARs, these manifests and the
-          # endpoint-health watchdog were all bypassed and no install could
-          # ever have updated itself. browser/moz.configure now declares the
-          # option (src/browser/moz-configure.patch); this fails the build if
-          # that ever regresses, because the symptom is otherwise invisible --
-          # everything downstream keeps "working" and simply never gets asked.
-          # Read the host with sed, NOT node: $GITHUB_WORKSPACE on Windows is
-          # D:\a\Cthulhu\Cthulhu, and interpolating that into JS source makes
-          # \a and \C escape sequences, so node saw "D:aCthulhuCthulhu" and
-          # died. Same family as the RUNNER_TEMP backslash bug below. Convert
-          # to forward slashes (a no-op on macOS) and never hand a path to a
-          # language that re-parses backslashes.
+          # package-manifest.in is an ALLOWLIST -- `mach package` copies only
+          # the paths it names and says nothing about what it drops. v1.0.0 and
+          # the first v1.0.1 shipped on BOTH platforms with the entire
+          # chrome://cthulhu package and cthulhu.js silently missing: a
+          # rebranded Firefox with a white new tab, no widgets, no theme, no
+          # Home button, and Zen Browser's onboarding. A local `mach build`
+          # never runs the packager (it uses loose files under dist/bin), so
+          # development is blind to it -- it can only be caught here, on the
+          # packaged artifact. Also re-checks the AppUpdate host.
           WS=$(printf '%s' "$GITHUB_WORKSPACE" | tr '\\' '/')
-          EXPECTED_UPDATE_HOST=$(sed -n 's/.*"updateHostname"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$WS/surfer.json" | head -1)
-          # An empty value would make the *"$EXPECTED_UPDATE_HOST"* branch below
-          # match ANY url (the empty string is a substring of everything), so a
-          # parse failure would silently turn the guard off. Fail instead.
-          [ -n "$EXPECTED_UPDATE_HOST" ] || { echo "::error::could not read updateHostname from surfer.json"; exit 1; }
-          UPDATE_URL=$(sed -n 's/^URL=//p' "$APPDIR/application.ini" | head -1)
-          echo "AppUpdate URL: $UPDATE_URL"
-          case "$UPDATE_URL" in
-            *aus5.mozilla.org*|"")
-              echo "::error::application.ini points at '$UPDATE_URL' -- expected ${EXPECTED_UPDATE_HOST}. Updates would go to Mozilla, not us."
-              exit 1 ;;
-            *"${EXPECTED_UPDATE_HOST}"*)
-              echo "OK: updates resolve to ${EXPECTED_UPDATE_HOST}" ;;
-            *)
-              echo "::error::unexpected AppUpdate URL '$UPDATE_URL' (wanted ${EXPECTED_UPDATE_HOST})"
-              exit 1 ;;
-          esac
+          python3 "$WS/tools/verify-package.py" "$APPDIR" --surfer "$WS/surfer.json"
+
 
 
           OUT="$GITHUB_WORKSPACE/${APP_NAME}-${VERSION}-windows-x64.complete.mar"
