@@ -1,8 +1,7 @@
 diff --git a/browser/moz.configure b/browser/moz.configure
-index 3ea3d88b93604f09067acbc4d26be5e8d4fda91b..3977a33afc59568d0b8e0b95d8c86d0c2f2a9666 100644
 --- a/browser/moz.configure
 +++ b/browser/moz.configure
-@@ -11,8 +11,20 @@ imply_option("MOZ_NORMANDY", True)
+@@ -11,13 +11,65 @@ imply_option("MOZ_NORMANDY", True)
  imply_option("MOZ_PROFILE_MIGRATOR", True)
  
  
@@ -24,3 +23,48 @@ index 3ea3d88b93604f09067acbc4d26be5e8d4fda91b..3977a33afc59568d0b8e0b95d8c86d0c
  # Include the DevTools client, not just the server (which is the default)
  imply_option("MOZ_DEVTOOLS", "all")
  imply_option("BROWSER_CHROME_URL", "chrome://browser/content/browser.xhtml")
+ 
+ 
++# Cthulhu: make MOZ_APPUPDATE_HOST a REAL configure option.
++#
++# build/moz.build already does the right thing with it:
++#
++#     appini_defines["MOZ_APPUPDATE_HOST"] = "aus5.mozilla.org"
++#     if CONFIG["MOZ_APPUPDATE_HOST"]:
++#         appini_defines["MOZ_APPUPDATE_HOST"] = CONFIG["MOZ_APPUPDATE_HOST"]
++#
++# but upstream never DECLARES the option anywhere in the tree, so
++# CONFIG["MOZ_APPUPDATE_HOST"] is always empty and the aus5.mozilla.org default
++# always wins. Surfer exports the variable from the generated mozconfig, and an
++# `export` in a mozconfig only reaches the build environment -- it does not
++# reach CONFIG[] without a declaration. The result was a browser whose
++# application.ini shipped
++#
++#     URL=https://aus5.mozilla.org/updates/...
++#
++# i.e. every install asked MOZILLA for its updates and never once asked us:
++# the signed MARs, the Pages manifests and the endpoint-health watchdog were
++# all bypassed, and no build could ever have updated itself.
++#
++# Declaring it here closes that gap, and keeps the value in one place (the
++# mozconfig) rather than hardcoding the host into the vendored
++# build/application.ini.in.
++option(
++    env="MOZ_APPUPDATE_HOST",
++    nargs=1,
++    help="Host (optionally with a path prefix) serving the update manifests",
++)
++
++
++@depends("MOZ_APPUPDATE_HOST")
++def moz_appupdate_host(value):
++    if value:
++        return value[0]
++
++
++set_config("MOZ_APPUPDATE_HOST", moz_appupdate_host)
++
++
+ with only_when(target_has_linux_kernel & compile_environment):
+     option(env="MOZ_NO_PIE_COMPAT", help="Enable non-PIE wrapper")
+ 

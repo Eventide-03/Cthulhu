@@ -6,9 +6,11 @@
 #   Cthulhu-<version>-macos-universal.dmg
 #   Cthulhu-<version>-windows-x64.exe
 #
-# STATUS: the Windows job is `continue-on-error` on purpose -- Windows has not
-# been validated yet (post-Phase-8 shakedown), and a Windows failure must not
-# block a Mac release. Remove that line once Windows is known good.
+# STATUS: Windows is a first-class release target. `continue-on-error` was
+# removed once the Windows job was verified end to end (signed 83 MB installer,
+# MAR accepted by the baked-in certificate): a release whose whole purpose is a
+# Windows build must not quietly publish a macOS-only release instead. If the
+# Windows job fails, the release job does not run and nothing is published.
 
 name: Build
 
@@ -594,6 +596,33 @@ jobs:
           [ -n "$BUILDID" ] || { echo "::error::could not read BuildID"; exit 1; }
           echo "MAC_BUILDID=$BUILDID" >> "$GITHUB_ENV"
 
+          # GUARD: the update URL must point at OUR host.
+          #
+          # build/moz.build defaults @MOZ_APPUPDATE_HOST@ to aus5.mozilla.org
+          # and only overrides it from CONFIG["MOZ_APPUPDATE_HOST"] -- which
+          # upstream never declares as a configure option, so a plain `export`
+          # in the mozconfig silently does nothing. v1.0.0 shipped asking
+          # MOZILLA for its updates: the signed MARs, these manifests and the
+          # endpoint-health watchdog were all bypassed and no install could
+          # ever have updated itself. browser/moz.configure now declares the
+          # option (src/browser/moz-configure.patch); this fails the build if
+          # that ever regresses, because the symptom is otherwise invisible --
+          # everything downstream keeps "working" and simply never gets asked.
+          EXPECTED_UPDATE_HOST=$(node -p "require('$GITHUB_WORKSPACE/surfer.json').updateHostname")
+          UPDATE_URL=$(sed -n 's/^URL=//p' "$UNIVERSAL_APP/Contents/Resources/application.ini" | head -1)
+          echo "AppUpdate URL: $UPDATE_URL"
+          case "$UPDATE_URL" in
+            *aus5.mozilla.org*|"")
+              echo "::error::application.ini points at '$UPDATE_URL' -- expected ${EXPECTED_UPDATE_HOST}. Updates would go to Mozilla, not us."
+              exit 1 ;;
+            *"${EXPECTED_UPDATE_HOST}"*)
+              echo "OK: updates resolve to ${EXPECTED_UPDATE_HOST}" ;;
+            *)
+              echo "::error::unexpected AppUpdate URL '$UPDATE_URL' (wanted ${EXPECTED_UPDATE_HOST})"
+              exit 1 ;;
+          esac
+
+
           OUT="$GITHUB_WORKSPACE/${APP_NAME}-${VERSION}-macos-universal.complete.mar"
           (cd "$GITHUB_WORKSPACE/engine" && \
             MAR="$MAR_BIN" \
@@ -644,7 +673,6 @@ jobs:
     name: Windows x64
     runs-on: windows-latest
     timeout-minutes: 360
-    continue-on-error: true
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.windows }}
     defaults:
       run:
@@ -1041,6 +1069,33 @@ jobs:
           [ -n "$BUILDID" ] || { echo "::error::could not read BuildID"; exit 1; }
           echo "WIN_BUILDID=$BUILDID" >> "$GITHUB_ENV"
 
+          # GUARD: the update URL must point at OUR host.
+          #
+          # build/moz.build defaults @MOZ_APPUPDATE_HOST@ to aus5.mozilla.org
+          # and only overrides it from CONFIG["MOZ_APPUPDATE_HOST"] -- which
+          # upstream never declares as a configure option, so a plain `export`
+          # in the mozconfig silently does nothing. v1.0.0 shipped asking
+          # MOZILLA for its updates: the signed MARs, these manifests and the
+          # endpoint-health watchdog were all bypassed and no install could
+          # ever have updated itself. browser/moz.configure now declares the
+          # option (src/browser/moz-configure.patch); this fails the build if
+          # that ever regresses, because the symptom is otherwise invisible --
+          # everything downstream keeps "working" and simply never gets asked.
+          EXPECTED_UPDATE_HOST=$(node -p "require('$GITHUB_WORKSPACE/surfer.json').updateHostname")
+          UPDATE_URL=$(sed -n 's/^URL=//p' "$APPDIR/application.ini" | head -1)
+          echo "AppUpdate URL: $UPDATE_URL"
+          case "$UPDATE_URL" in
+            *aus5.mozilla.org*|"")
+              echo "::error::application.ini points at '$UPDATE_URL' -- expected ${EXPECTED_UPDATE_HOST}. Updates would go to Mozilla, not us."
+              exit 1 ;;
+            *"${EXPECTED_UPDATE_HOST}"*)
+              echo "OK: updates resolve to ${EXPECTED_UPDATE_HOST}" ;;
+            *)
+              echo "::error::unexpected AppUpdate URL '$UPDATE_URL' (wanted ${EXPECTED_UPDATE_HOST})"
+              exit 1 ;;
+          esac
+
+
           OUT="$GITHUB_WORKSPACE/${APP_NAME}-${VERSION}-windows-x64.complete.mar"
           MAR="$PWD/$OBJ/dist/host/bin/mar" \
           MOZ_PRODUCT_VERSION="$VERSION" \
@@ -1093,10 +1148,9 @@ jobs:
   # ===========================================================================
   # Release -- tags only
   #
-  # `windows` is continue-on-error, so `needs` sees it as successful even when
-  # it failed. The Windows asset is therefore downloaded best-effort and the
-  # release body says so if it is missing, rather than failing the release and
-  # blocking a perfectly good Mac build.
+  # Both build jobs must succeed to get here (neither is continue-on-error), so
+  # both assets exist. The best-effort downloads and the "not produced" branch
+  # in the notes are kept as a belt-and-braces fallback only.
   # ===========================================================================
   release:
     name: Release
