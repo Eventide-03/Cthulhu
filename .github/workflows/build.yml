@@ -608,7 +608,18 @@ jobs:
           # option (src/browser/moz-configure.patch); this fails the build if
           # that ever regresses, because the symptom is otherwise invisible --
           # everything downstream keeps "working" and simply never gets asked.
-          EXPECTED_UPDATE_HOST=$(node -p "require('$GITHUB_WORKSPACE/surfer.json').updateHostname")
+          # Read the host with sed, NOT node: $GITHUB_WORKSPACE on Windows is
+          # D:\a\Cthulhu\Cthulhu, and interpolating that into JS source makes
+          # \a and \C escape sequences, so node saw "D:aCthulhuCthulhu" and
+          # died. Same family as the RUNNER_TEMP backslash bug below. Convert
+          # to forward slashes (a no-op on macOS) and never hand a path to a
+          # language that re-parses backslashes.
+          WS=$(printf '%s' "$GITHUB_WORKSPACE" | tr '\\' '/')
+          EXPECTED_UPDATE_HOST=$(sed -n 's/.*"updateHostname"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$WS/surfer.json" | head -1)
+          # An empty value would make the *"$EXPECTED_UPDATE_HOST"* branch below
+          # match ANY url (the empty string is a substring of everything), so a
+          # parse failure would silently turn the guard off. Fail instead.
+          [ -n "$EXPECTED_UPDATE_HOST" ] || { echo "::error::could not read updateHostname from surfer.json"; exit 1; }
           UPDATE_URL=$(sed -n 's/^URL=//p' "$UNIVERSAL_APP/Contents/Resources/application.ini" | head -1)
           echo "AppUpdate URL: $UPDATE_URL"
           case "$UPDATE_URL" in
@@ -1081,7 +1092,18 @@ jobs:
           # option (src/browser/moz-configure.patch); this fails the build if
           # that ever regresses, because the symptom is otherwise invisible --
           # everything downstream keeps "working" and simply never gets asked.
-          EXPECTED_UPDATE_HOST=$(node -p "require('$GITHUB_WORKSPACE/surfer.json').updateHostname")
+          # Read the host with sed, NOT node: $GITHUB_WORKSPACE on Windows is
+          # D:\a\Cthulhu\Cthulhu, and interpolating that into JS source makes
+          # \a and \C escape sequences, so node saw "D:aCthulhuCthulhu" and
+          # died. Same family as the RUNNER_TEMP backslash bug below. Convert
+          # to forward slashes (a no-op on macOS) and never hand a path to a
+          # language that re-parses backslashes.
+          WS=$(printf '%s' "$GITHUB_WORKSPACE" | tr '\\' '/')
+          EXPECTED_UPDATE_HOST=$(sed -n 's/.*"updateHostname"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$WS/surfer.json" | head -1)
+          # An empty value would make the *"$EXPECTED_UPDATE_HOST"* branch below
+          # match ANY url (the empty string is a substring of everything), so a
+          # parse failure would silently turn the guard off. Fail instead.
+          [ -n "$EXPECTED_UPDATE_HOST" ] || { echo "::error::could not read updateHostname from surfer.json"; exit 1; }
           UPDATE_URL=$(sed -n 's/^URL=//p' "$APPDIR/application.ini" | head -1)
           echo "AppUpdate URL: $UPDATE_URL"
           case "$UPDATE_URL" in
