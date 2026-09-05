@@ -219,19 +219,19 @@ jobs:
           # Home button, no tab-drag pinning, updates aimed at Mozilla, and the
           # chrome package dropped from the installer.
           git -C engine init -q
-          # ...and give it one commit. `mach bootstrap` now recognises engine/
-          # as a git checkout and calls `git log -1 --format=%ct` on it to warn
-          # about stale revisions; in a repo with no commits that exits 128 and
-          # takes the whole build with it. An empty commit is enough -- git
-          # apply patches the WORKING TREE and does not need the tree tracked
-          # (verified: init + empty commit applies patches and satisfies
-          # mach bootstrap). -c keeps the identity out of global config.
-          git -C engine -c user.email=ci@localhost -c user.name=ci \
-            commit -q --allow-empty -m "vendored Firefox source"
           surfer import
           # Backstop, deliberately CONTENT-based: `git apply --check` would
           # itself be skipped in the broken configuration and report success.
           python3 tools/verify-patches.py
+          # ...then take the repo away again. It is needed ONLY for the import.
+          # Leaving it changes what `mach bootstrap` thinks it is looking at:
+          # current_firefox_checkout() returns "SOURCE" for a plain tree but
+          # "git" once .git exists, and on that branch bootstrap decided the
+          # system was already ready and installed NOTHING -- 0 toolchain
+          # artifacts instead of 23, so the build then died with
+          # "Cannot find cbindgen". Removing it restores byte-for-byte the
+          # environment every earlier build had, with the patches now applied.
+          rm -rf engine/.git
 
       # Packaged in the SAME step that builds it, while its own ./mozconfig is
       # active -- mach reads target and objdir from that file. `mach package` is
@@ -472,19 +472,19 @@ jobs:
           # Home button, no tab-drag pinning, updates aimed at Mozilla, and the
           # chrome package dropped from the installer.
           git -C engine init -q
-          # ...and give it one commit. `mach bootstrap` now recognises engine/
-          # as a git checkout and calls `git log -1 --format=%ct` on it to warn
-          # about stale revisions; in a repo with no commits that exits 128 and
-          # takes the whole build with it. An empty commit is enough -- git
-          # apply patches the WORKING TREE and does not need the tree tracked
-          # (verified: init + empty commit applies patches and satisfies
-          # mach bootstrap). -c keeps the identity out of global config.
-          git -C engine -c user.email=ci@localhost -c user.name=ci \
-            commit -q --allow-empty -m "vendored Firefox source"
           surfer import
           # Backstop, deliberately CONTENT-based: `git apply --check` would
           # itself be skipped in the broken configuration and report success.
           python3 tools/verify-patches.py
+          # ...then take the repo away again. It is needed ONLY for the import.
+          # Leaving it changes what `mach bootstrap` thinks it is looking at:
+          # current_firefox_checkout() returns "SOURCE" for a plain tree but
+          # "git" once .git exists, and on that branch bootstrap decided the
+          # system was already ready and installed NOTHING -- 0 toolchain
+          # artifacts instead of 23, so the build then died with
+          # "Cannot find cbindgen". Removing it restores byte-for-byte the
+          # environment every earlier build had, with the patches now applied.
+          rm -rf engine/.git
 
       - uses: actions/download-artifact@v4
         with:
@@ -913,19 +913,19 @@ jobs:
           # Home button, no tab-drag pinning, updates aimed at Mozilla, and the
           # chrome package dropped from the installer.
           git -C engine init -q
-          # ...and give it one commit. `mach bootstrap` now recognises engine/
-          # as a git checkout and calls `git log -1 --format=%ct` on it to warn
-          # about stale revisions; in a repo with no commits that exits 128 and
-          # takes the whole build with it. An empty commit is enough -- git
-          # apply patches the WORKING TREE and does not need the tree tracked
-          # (verified: init + empty commit applies patches and satisfies
-          # mach bootstrap). -c keeps the identity out of global config.
-          git -C engine -c user.email=ci@localhost -c user.name=ci \
-            commit -q --allow-empty -m "vendored Firefox source"
           ./node_modules/.bin/surfer import
           # Backstop, deliberately CONTENT-based: `git apply --check` would
           # itself be skipped in the broken configuration and report success.
           python3 tools/verify-patches.py
+          # ...then take the repo away again. It is needed ONLY for the import.
+          # Leaving it changes what `mach bootstrap` thinks it is looking at:
+          # current_firefox_checkout() returns "SOURCE" for a plain tree but
+          # "git" once .git exists, and on that branch bootstrap decided the
+          # system was already ready and installed NOTHING -- 0 toolchain
+          # artifacts instead of 23, so the build then died with
+          # "Cannot find cbindgen". Removing it restores byte-for-byte the
+          # environment every earlier build had, with the patches now applied.
+          rm -rf engine/.git
 
       # MozillaBuild is a HARD PREREQUISITE on Windows, not something bootstrap
       # can provide. build/mach_initialize.py runs
