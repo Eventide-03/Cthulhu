@@ -1371,14 +1371,50 @@ jobs:
       - name: Commit manifests to Pages
         run: |
           set -euo pipefail
+          BRANCH="${{ github.event.repository.default_branch }}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/updates docs/whatsnew
-          if git diff --cached --quiet; then
+
+          # Exactly the files the previous step wrote travel to the branch --
+          # nothing else from this checkout does.
+          CHANGED=$(git status --porcelain=v1 -uall -- docs/updates docs/whatsnew | awk '{ print $NF }')
+          if [ -z "$CHANGED" ]; then
             echo "No manifest changes to commit."
             exit 0
           fi
-          git commit -m "Publish update manifests for ${GITHUB_REF_NAME}"
-          # The tag build may be behind main; push explicitly to the branch.
-          git push origin HEAD:${{ github.event.repository.default_branch }}
-          echo "Manifests published to Pages."
+          STAGE=$(mktemp -d)
+          for f in $CHANGED; do
+            mkdir -p "$STAGE/$(dirname "$f")"
+            cp "$f" "$STAGE/$f"
+          done
+
+          # NEVER push this checkout. The job runs on the TAG's commit, and a tag
+          # is not necessarily an ancestor of the branch: v1.0.4 was tagged, main
+          # was then rebased, and `git push HEAD:main` from the tag was rejected
+          # as non-fast-forward. By that point the MARs were already public, so
+          # every client kept being offered 1.0.3 until the manifests were
+          # regenerated and pushed by hand. So build the commit on the branch's
+          # LIVE tip instead, and if the branch moves while we work, rebuild on
+          # its new tip and try again.
+          for attempt in 1 2 3 4 5; do
+            git fetch -q origin "$BRANCH"
+            git checkout -q --force -B publish-manifests "origin/$BRANCH"
+            for f in $CHANGED; do
+              mkdir -p "$(dirname "$f")"
+              cp "$STAGE/$f" "$f"
+            done
+            git add -- docs/updates docs/whatsnew
+            if git diff --cached --quiet; then
+              echo "Manifests already up to date on $BRANCH."
+              exit 0
+            fi
+            git commit -q -m "Publish update manifests for ${GITHUB_REF_NAME}"
+            if git push origin "publish-manifests:$BRANCH"; then
+              echo "Manifests published to Pages."
+              exit 0
+            fi
+            echo "Push rejected (attempt $attempt): $BRANCH moved underneath us; rebuilding on its new tip."
+            sleep 5
+          done
+          echo "::error::Could not publish the update manifests to $BRANCH after 5 attempts."
+          exit 1
