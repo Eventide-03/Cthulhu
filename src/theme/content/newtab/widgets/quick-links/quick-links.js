@@ -23,20 +23,53 @@ function _cthNormalizeUrl(v) {
   return "https://" + v;
 }
 
+// FAVICON SOURCES, MOST PRIVATE FIRST.
+//
+// The site's OWN icon is tried first. It is the one party that already knows
+// you are interested in it -- this is your own link, one click from a visit --
+// so asking it directly means no third party learns the domain at all. This
+// page holds the system principal, so the cross-origin fetch is not subject to
+// CORS and simply works.
+//
+// DuckDuckGo is the fallback, for the many sites that serve no /favicon.ico.
+// Google's s2 service used to be FIRST in this list, which handed Google the
+// domain list of every quick link, folder entry and side panel. It is gone.
+//
+// Set cthulhu.favicons.remote=false to drop the fallback as well, so nothing
+// but the site itself is ever contacted.
+//
+// Each fetch is capped: with the site itself first, one slow or dead host would
+// otherwise stall its tile's icon indefinitely.
+// NOTE: widget scripts are plain <script> elements sharing ONE global
+// lexical scope (widgets.js loadWidgetScripts), so a top-level const
+// declared under the same name in two widgets is a SyntaxError that
+// kills the second script. Hence the per-widget prefix.
+const _CTH_QL_FAVICON_TIMEOUT_MS = 3000;
+function _cthFaviconSources(host) {
+  const own = "https://" + host + "/favicon.ico";
+  let remote = true;
+  try {
+    if (typeof Services !== "undefined" && Services.prefs) {
+      remote = Services.prefs.getBoolPref("cthulhu.favicons.remote", true);
+    }
+  } catch (e) {}
+  if (!remote) return [own];
+  return [own, "https://icons.duckduckgo.com/ip3/" + encodeURIComponent(host) + ".ico"];
+}
 const _cthFaviconCache = Object.create(null); // host -> dataURL (session cache)
 
 async function _cthFetchFavicon(host) {
   if (_cthFaviconCache[host]) return _cthFaviconCache[host];
-  const sources = [
-    "https://www.google.com/s2/favicons?domain=" + encodeURIComponent(host) + "&sz=64",
-    "https://icons.duckduckgo.com/ip3/" + encodeURIComponent(host) + ".ico",
-    "https://" + host + "/favicon.ico",
-  ];
+  const sources = _cthFaviconSources(host);
   for (const u of sources) {
     try {
-      const r = await fetch(u);
+      const r = await fetch(u, { signal: AbortSignal.timeout(_CTH_QL_FAVICON_TIMEOUT_MS) });
       if (!r.ok) continue;
       const blob = await r.blob();
+      // A site that answers /favicon.ico with an HTML error page AND a 200
+      // status would otherwise be inlined as a "broken image" data URL.
+      // Only matters now that the site itself is tried first.
+      if (/^text\/html/i.test(blob.type)) continue;
       if (blob.size < 80) continue; // skip empty / 1x1 placeholders
       const dataUrl = await new Promise((res) => {
         const fr = new FileReader();

@@ -31,14 +31,14 @@ There is no server that belongs to this project collecting anything about you.
 
 | # | Endpoint | When | Off switch |
 | --- | --- | --- | --- |
-| 1 | `www.google.com` → `icons.duckduckgo.com` | Homepage quick-links, folder widget, side panels | ⚠️ none yet |
+| 1 | The linked site itself, then `icons.duckduckgo.com` | Homepage quick-links, folder widget, side panels | `cthulhu.favicons.remote=false` |
 | 2 | `api.open-meteo.com` | Ambient weather theming | `cthulhu.ambient.weather.enabled=false` |
 | 3 | Google Calendar / OAuth | Only if you connect a calendar | Don't connect / Disconnect |
-| 4 | Update endpoint | Update checks | `app.update.auto=false` |
+| 4 | `eventide-03.github.io` → `github.com` | Update check at every startup, then periodically | `DisableAppUpdate` policy |
 | 5 | Your feature-request relay | Only when you submit a request | Don't use the feature |
-| 6 | `github.com` | After an update, and About-dialog links | `startup.homepage_override_url=""` |
+| 6 | `eventide-03.github.io`, `github.com` | After an update, and About-dialog links | `startup.homepage_override_url=""` |
 
-### 1. Favicon lookups — ⚠️ Google first, then DuckDuckGo
+### 1. Favicon lookups — the site itself, then DuckDuckGo
 
 **Sent:** the **domain name** of each link — e.g. `github.com`. Not the full URL,
 not the path, and no identifier for you beyond your IP address and the normal
@@ -46,29 +46,37 @@ headers any request carries.
 
 **To whom, in this order:**
 
-1. `https://www.google.com/s2/favicons?domain=<host>&sz=64` — **tried first**
-2. `https://icons.duckduckgo.com/ip3/<host>.ico` — only if Google fails
-3. `https://<host>/favicon.ico` — only if both fail
+1. `https://<host>/favicon.ico` — **the linked site itself, tried first**
+2. `https://icons.duckduckgo.com/ip3/<host>.ico` — only if the site has none
+3. Otherwise the widget keeps its placeholder icon
+
+**Why the site first:** it is the one party that already knows you are
+interested in it. This is *your* quick link, one click away from a visit, so
+asking it directly means **no third party learns the domain at all**. Sites that
+serve no `/favicon.ico` fall through to DuckDuckGo, which is a favicon proxy that
+does not profile requests.
 
 **Why:** to show a real icon on each tile instead of a placeholder.
 
 **Where:** the **quick-links widget**, the **folder widget**, and the **side
 panels** — three separate call sites, all using the same order.
 
-> **Be aware:** because Google is the first source, **Google normally receives the
-> domain list of your quick links, folders, and side panels** — not DuckDuckGo.
-> Results are cached per session, so it is one request per host per browser
-> session, not one per page load.
+> **Changed in 1.0.5.** Google's `s2/favicons` service used to be **first** in
+> that list, which meant **Google normally received the domain list of your
+> quick links, folders and side panels**. It has been removed outright. If you
+> are reading this against an older build, that is what it did.
 
-**How to turn it off:** there is **no preference for this yet.** Current
-workarounds:
+Results are cached per session, so it is one request per host per browser
+session, not one per page load. Each attempt is capped at 3 seconds so a slow or
+dead host cannot stall its tile.
+
+**How to turn it off:** set **`cthulhu.favicons.remote = false`** in
+`about:config`. Step 2 then disappears and nothing but the linked site itself is
+ever contacted. Also still true:
 
 - Set a **custom image** on a quick link (stored as a `data:` URL) — that path
   skips the network fetch entirely.
 - Remove the quick-links / folder widgets and the side panels you don't use.
-
-*A pref to disable remote favicon lookups (falling back to placeholders, or to
-the site's own `/favicon.ico` only) would close this gap and is worth adding.*
 
 ### 2. Weather — `api.open-meteo.com`
 
@@ -136,34 +144,62 @@ one and has no shared credential.
 **How to turn it off:** never connect, or use **⚙ → Disconnect**, which drops the
 stored tokens.
 
-### 4. Update checks — ⚠️ currently points at Mozilla
+### 4. Update checks — `eventide-03.github.io`
 
-**What would be sent** — the update URL template embeds a detailed system
-fingerprint:
+**Sent:** a request for one static XML file, and nothing else:
 
 ```
-…/update/6/%PRODUCT%/%VERSION%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%SYSTEM_CAPABILITIES%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/update.xml
+https://eventide-03.github.io/Cthulhu/updates/release/<BUILD_TARGET>/update.xml
 ```
 
-That is: product name, version, build ID, OS and CPU architecture, locale,
-update channel, OS version, distribution — and `%SYSTEM_CAPABILITIES%`, which
-expands to **`ISET:<cpu-instruction-set>,MEM:<memory-in-MB>`**.
+`<BUILD_TARGET>` is your operating system and processor architecture — for
+example `WINNT_x86_64-msvc-x64` or `Darwin_aarch64-gcc3`. It is in the path
+because it **selects the file**: a Windows machine must not be offered a macOS
+update. Beyond that, only your IP address and the headers any HTTPS request
+carries. GitHub host the file, so GitHub see those.
 
-> **Known issue — the current build is configured to send this to
-> `aus5.mozilla.org`, Mozilla's update service.** The intended endpoint is this
-> project's own host, but the branding step that rewrites the URL has never run,
-> so the compiled-in default survived. The updater is enabled
-> (`--enable-updater`), so a build in this state would contact Mozilla on its
-> update check. **This should be fixed before any public release.**
->
-> The intended replacement is
-> `https://<update-host>/updates/browser/%BUILD_TARGET%/%CHANNEL%/update.xml`,
-> which sends only platform and channel. The configured host is still the
-> `localhost:7648` placeholder, so **there is no working update service yet** —
-> see [SECURITY.md](SECURITY.md).
+**What is deliberately NOT sent.** Firefox's stock update URL carries a detailed
+fingerprint — exact version, a 14-digit build timestamp, exact OS build number,
+locale, distribution, and `%SYSTEM_CAPABILITIES%`, which expands to
+`ISET:<cpu-instruction-set>,MEM:<memory-in-MB>`. Cthulhu sends none of it.
 
-**How to turn it off:** set `app.update.auto = false`, and
-`app.update.background.scheduling.enabled = false`, in `about:config`.
+Earlier builds moved those fields into the query string, where GitHub Pages
+ignores them. **They were removed outright in 1.0.5**: a parameter that nobody
+can read is not a feature, it is a fingerprint. Pages serves a static file and
+gives this project no request log, so nothing was ever gained by sending them.
+
+This works because **the version comparison happens on your machine**. The
+manifest always advertises the newest release, and your browser decides locally
+whether that is newer than what it is running. The server is never told what you
+have installed.
+
+**When:** at every startup, and every 6 hours while the browser stays open. On
+Windows there may additionally be a scheduled task that checks roughly every
+7 hours while the browser is closed; it is only registered if you installed
+Cthulhu for all users as an administrator.
+
+**Not anonymous.** This is an ordinary request, so a cookie for
+`eventide-03.github.io` would be attached if one existed. GitHub Pages does not
+set cookies on static sites, so in practice there is none — but the request is
+not specially isolated, and this document would rather say so.
+
+**Downloading** an update then fetches the package from
+`github.com/Eventide-03/Cthulhu/releases/…`, which necessarily tells GitHub
+which version you are moving to.
+
+**How to turn it off.** `app.update.auto = false` stops updates from being
+**downloaded** automatically; it does **not** stop the check. The only complete
+off switch is the enterprise policy, which needs a `policies.json` file beside
+the application:
+
+```json
+{ "policies": { "DisableAppUpdate": true } }
+```
+
+Narrower options, in `about:config`: `app.update.checkInstallTime = false`
+disables the startup check only, and
+`app.update.background.scheduling.enabled = false` disables the Windows
+scheduled task only.
 
 ### 5. Feature-request relay — only on explicit submission
 
@@ -192,10 +228,13 @@ refuse to send at all. Removing the `feature-request` module
 (`cthulhu.module.feature-request.enabled = false`) hides the toolbar button
 entirely.
 
-### 6. Release notes and post-update page — `github.com`
+### 6. Release notes and post-update page
 
-**Sent:** an ordinary page request to this project's GitHub releases page. No
-identifier beyond your IP and normal headers.
+**Sent:** an ordinary page request. The post-update "what's new" tab loads
+`eventide-03.github.io/Cthulhu/whatsnew/<version>/`, which does tell GitHub the
+version you just updated to. The About-dialog and update-prompt links go to this
+project's releases page on `github.com`. No identifier beyond your IP and normal
+headers.
 
 **When:** after an update completes (a "what's new" tab), and if you click the
 release-notes link in the About dialog or an update prompt.

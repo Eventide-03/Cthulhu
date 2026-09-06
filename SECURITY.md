@@ -87,10 +87,16 @@ to already have local access to your machine or profile.
 
 ## Things you should know
 
-- **Builds are not notarized on macOS** and are currently ad-hoc signed. macOS
-  Gatekeeper will warn. Only install builds you obtained from a source you trust.
-- **There is no working auto-update pipeline yet.** Do not assume this browser
-  will update itself; check for new releases manually. See PRIVACY.md for the
-  current state of the update endpoint.
+- **Windows builds are deliberately unsigned.** This project does not pay for a
+  code-signing certificate, so SmartScreen shows "Windows protected your PC";
+  continuing requires **More info → Run anyway**. Only install builds you
+  obtained from a source you trust.
+- **macOS builds are signed and notarized**, and the .dmg is stapled, so
+  Gatekeeper opens them without a warning. A build produced without the signing
+  secrets is neither, and says so in its job log.
+- **Auto-update works.** Releases are published as signed MAR archives whose
+  signature is verified against a certificate compiled into the updater, and the
+  browser checks for one at every startup. See [PRIVACY.md](PRIVACY.md) §4 for
+  exactly what that check sends and how to disable it.
 - Cthulhu removes telemetry and data collection. See **[PRIVACY.md](PRIVACY.md)**
   for exactly what it does and does not send.

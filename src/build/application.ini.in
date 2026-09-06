@@ -9,13 +9,40 @@
 ; RE-SYNC THIS FILE ON EVERY FIREFOX ESR REBASE. It is a full copy of upstream's
 ; build/application.ini.in with exactly one line changed (the [AppUpdate] URL).
 ;
-; WHY THE PARAMS ARE IN THE QUERY STRING, NOT THE PATH:
-; Firefox's stock URL puts %VERSION%, %BUILD_ID% and %OS_VERSION% in the PATH.
-; Those vary per client, so a static file host would need a file for every
-; combination -- impossible. GitHub Pages ignores the query string and serves
-; the file addressed by the path, so keeping only %CHANNEL% and %BUILD_TARGET%
-; in the path yields a finite set of manifests while every standard parameter is
-; still transmitted (and visible in Pages' request logs, if ever enabled).
+; WHY THE URL CARRIES NOTHING BUT CHANNEL AND BUILD TARGET:
+; Firefox's stock URL puts %VERSION%, %BUILD_ID%, %OS_VERSION%, %LOCALE% and
+; %SYSTEM_CAPABILITIES% (which expands to the CPU instruction set and the
+; installed RAM) into the PATH. Those vary per client, so a static file host
+; would need a file for every combination -- impossible. An earlier version of
+; this file moved them into the QUERY STRING, which fixed that: GitHub Pages
+; addresses the file by path and ignores the query.
+;
+; But "ignores" cuts both ways. Nothing we can act on ever reaches us from those
+; parameters -- Pages serves a static file and gives us no request log -- so
+; they were pure fingerprint: a precise version, a 14-digit build timestamp and
+; an exact OS build number, handed to GitHub next to the client's IP address on
+; every check. They are gone.
+;
+; What remains is the minimum that has to be there, because it SELECTS THE FILE:
+;   %CHANNEL%       -- "release"; constant across every shipped build
+;   %BUILD_TARGET%  -- e.g. WINNT_x86_64-msvc-x64; OS + architecture, and the
+;                      thing that decides which MAR the client is offered
+; The client compares the advertised version against its own LOCALLY, so the
+; server never needs to be told what version is running. See the docstring in
+; tools/update-manifests/generate.py.
+;
+; Firefox appends "?force=1" itself on a user-initiated check (About dialog) and
+; handles the missing "?" correctly -- see UpdateService.sys.mjs, getUpdateURL.
+;
+; VERIFYING A CHANGE TO THIS LINE: the browser does NOT read this file at
+; runtime. The preprocessed application.ini is turned into
+; obj/build/application.ini.h, compiled in as gAppData->updateURL, and served to
+; JS as Services.appinfo.updateURL (nsAppRunner.cpp). `mach build faster`
+; regenerates the .ini and the .h but does not relink, so a locally running
+; build keeps reporting the OLD url until a full build. Check
+; obj/build/application.ini.h, not the running app. CI always does a full build,
+; and tools/verify-package.py re-reads the packaged application.ini -- the same
+; file the header is generated from, so the two cannot disagree.
 ; ---------------------------------------------------------------------------
 #ifdef MOZ_BUILD_APP_IS_BROWSER
 ; This file is not used. If you modify it and want the application to use
@@ -85,5 +112,5 @@ ServerURL=@MOZ_CRASHREPORTER_URL@/submit?id=@MOZ_APP_ID@&version=@MOZ_APP_VERSIO
 ; disagree the build FAILS: both build jobs compare this file's baked URL
 ; against surfer.json (see "GUARD: the update URL" in .github/workflows/build.yml).
 [AppUpdate]
-URL=https://eventide-03.github.io/Cthulhu/updates/%CHANNEL%/%BUILD_TARGET%/update.xml?product=%PRODUCT%&version=%VERSION%&buildid=%BUILD_ID%&os=%OS_VERSION%&locale=%LOCALE%
+URL=https://eventide-03.github.io/Cthulhu/updates/%CHANNEL%/%BUILD_TARGET%/update.xml
 #endif

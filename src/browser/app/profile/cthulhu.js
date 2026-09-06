@@ -94,6 +94,24 @@ pref("extensions.unifiedExtensions.button.always_visible", false);
 // would rather ship weather theming as opt-in.
 pref("cthulhu.ambient.weather.enabled", true);
 
+// -- Favicons --
+// Quick links, folder entries and side-panel toggles show each site's real
+// icon. The icon is fetched and inlined, and the fetch order is deliberately
+// the most private one that still works:
+//
+//   1. https://<host>/favicon.ico   -- the site itself, which already knows you
+//                                      are interested in it; no third party
+//   2. icons.duckduckgo.com          -- fallback, for hosts serving no icon
+//
+// Until 1.0.5 Google's s2 favicon service was tried FIRST, which meant Google
+// normally received the domain list of every quick link, folder and side panel.
+// It has been removed entirely.
+//
+// Set this to false and step 2 goes away too: nothing but the site itself is
+// ever contacted, and hosts without an icon fall back to the placeholder.
+// Documented in PRIVACY.md.
+pref("cthulhu.favicons.remote", true);
+
 // -- Theme --
 // The browser-wide palette (content/themes.js): a preset id, or "ambient" to
 // follow the time of day. "night" is what the chrome shipped locked to before
@@ -139,8 +157,22 @@ pref("app.update.background.scheduling.enabled", true);
 // defines it per branding -- 63 for official/release, 2 for nightly -- but the
 // branding directory Surfer generates omits it entirely, so getIntPref threw
 // NS_ERROR_UNEXPECTED at BrowserGlue.sys.mjs:445 on every startup and the
-// check never ran. 63 matches our release channel.
-pref("app.update.checkInstallTime.days", 63);
+// check never ran.
+//
+// ZERO, so the gate always passes and EVERY startup checks.
+//
+// This is not a new code path. BrowserGlue._checkForOldBuildUpdates() already
+// runs once per session, from _onFirstWindowLoaded; the threshold only decides
+// whether it does anything. At 63 a build had to age for two months before its
+// first startup check, and until then the only checks came from the 6-hourly
+// background timer -- which is fine for Mozilla, whose interval exists to
+// spread hundreds of millions of clients across their own servers. Our manifest
+// is a static file on a CDN, so there is no load to spread, and the sooner a
+// security fix reaches the handful of people running this, the better.
+//
+// The check is dispatched to idle and does not block startup. It does not
+// replace the background timer; a browser left running all day still uses it.
+pref("app.update.checkInstallTime.days", 0);
 
 // -- Feature-request relay --
 // The PUBLIC URL of the Cloudflare Worker that forwards feature requests to
