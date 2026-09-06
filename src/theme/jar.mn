@@ -86,15 +86,14 @@ cthulhu.jar:
 # theme widget (browser-wide palette picker; presets live in content/themes.js):
     content/newtab/widgets/theme/theme.js                  (content/newtab/widgets/theme/theme.js)
     content/newtab/widgets/theme/assets/icon.png           (content/newtab/widgets/theme/assets/icon.png)
-# studio widgets: palette / reference board / deadlines
+# studio widgets: palette / reference board
     content/newtab/widgets/palette/palette.js              (content/newtab/widgets/palette/palette.js)
     content/newtab/widgets/palette/assets/icon.png         (content/newtab/widgets/palette/assets/icon.png)
     content/newtab/widgets/refboard/refboard.js            (content/newtab/widgets/refboard/refboard.js)
     content/newtab/widgets/refboard/assets/icon.png        (content/newtab/widgets/refboard/assets/icon.png)
-    content/newtab/widgets/deadlines/deadlines.js          (content/newtab/widgets/deadlines/deadlines.js)
-    content/newtab/widgets/deadlines/assets/icon.png       (content/newtab/widgets/deadlines/assets/icon.png)
-# minigame widget (ART SLOTS: landscape.png, player.png+json; data: game.json,
-# story.json -- see the widget's README):
+# minigame widget -- PARKED: packaged but not in widgets/index.json, so it does
+# not load. Add "game" back to index.json to re-enable. (ART SLOTS:
+# landscape.png, player.png+json; data: game.json, story.json -- see its README.)
     content/newtab/widgets/game/game.js                    (content/newtab/widgets/game/game.js)
     content/newtab/widgets/game/assets/icon.png            (content/newtab/widgets/game/assets/icon.png)
     content/newtab/widgets/game/assets/game.json           (content/newtab/widgets/game/assets/game.json)
