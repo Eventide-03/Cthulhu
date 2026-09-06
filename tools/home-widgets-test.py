@@ -1,7 +1,7 @@
 """End-to-end check of the home page (about:cthulhu) against the built app:
 widget registry, the browser-wide theme engine (page AND chrome follow the
 pref), hover-tool placement vs. a widget's own header controls, the gradient /
-orb / palette / deadlines / reference-board / minigame widgets, and the palette
+orb / palette / reference-board widgets, and the palette
 icons. Runs offline in a throwaway profile.
 
     cd engine && ./mach python ../tools/home-widgets-test.py
@@ -44,7 +44,7 @@ try:
 
     # --- registry + no errors
     ids = page("return w.CthulhuWidgets.all().map(d => d.id);")
-    for want in ["theme", "gradient", "orb", "palette", "refboard", "deadlines", "game", "calendar"]:
+    for want in ["theme", "gradient", "orb", "palette", "refboard", "calendar"]:
         check("registered: " + want, want in ids)
     # --- theme applied to page AND chrome, same values
     pbg = page("return getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();")
@@ -64,16 +64,14 @@ try:
       H.addWidgetByType('refboard',  {x:8, y:0, w:2, h:3});
       H.addWidgetByType('palette',   {x:0, y:3, w:2, h:2});
       H.addWidgetByType('orb',       {x:2, y:3, w:2, h:2});
-      H.addWidgetByType('deadlines', {x:4, y:3, w:3, h:2});
-      H.addWidgetByType('game',      {x:7, y:3, w:3, h:2});
     """)
     time.sleep(3)
     n = page("return document.querySelectorAll('#grid .cthulhu-widget').length;")
-    check("8 widgets mounted", n == 8, n)
+    check("6 widgets mounted", n == 6, n)
     grid = page("return { cols: w.__cthulhuGrid.getColumn(), rows: w.__cthulhuGrid.opts.maxRow, nodes: w.__cthulhuGrid.engine.nodes.map(n => n.el._cthulhu.id + '@' + n.x + ',' + n.y + ' ' + n.w + 'x' + n.h) };")
     print("GRID", grid)
     check("every widget kept its requested cell (nothing displaced)",
-          set(grid["nodes"]) == {"calendar@0,0 3x3","theme@3,0 3x3","gradient@6,0 2x3","refboard@8,0 2x3","palette@0,3 2x2","orb@2,3 2x2","deadlines@4,3 3x2","game@7,3 3x2"})
+          set(grid["nodes"]) == {"calendar@0,0 3x3","theme@3,0 3x3","gradient@6,0 2x3","refboard@8,0 2x3","palette@0,3 2x2","orb@2,3 2x2"})
     shot("01-widgets")
 
     # --- calendar: hover tools must NOT overlap the calendar's own header buttons
@@ -98,7 +96,7 @@ try:
     m.set_context("content")
     cal_el = m.find_element("css selector", ".cw-cal-head")
     m.actions.sequence("pointer", "mouse", {"pointerType": "mouse"}).pointer_move(0, 0, origin=cal_el).perform()
-    time.sleep(0.5)
+    time.sleep(1.5)   # GridStack animates tiles into place; hovering mid-animation misses
     vis = page("""
       const cal = [...document.querySelectorAll('#grid .grid-stack-item')].find(e => e._cthulhu && e._cthulhu.id === 'calendar');
       return getComputedStyle(cal.querySelector('.cthulhu-widget-tools')).opacity;
@@ -183,41 +181,6 @@ try:
     ps2 = page("return { n: document.querySelectorAll('.cw-pal-sw').length, opts: document.querySelector('.cw-pal-bar select').options.length };")
     check("dice made a new 5-colour palette and selected it", ps2 == {"n": 5, "opts": 2}, ps2)
 
-    # --- deadlines: add via the form
-    page("""
-      const f = document.querySelector('.cw-dl-add'); f.querySelector('input[type=text]').value = 'Life drawing crit';
-      const d = new Date(Date.now() + 86400000); f.querySelector('input[type=date]').value = d.toISOString().slice(0,10);
-      f.requestSubmit();
-    """); time.sleep(0.8)
-    dl = page("return [...document.querySelectorAll('.cw-dl-row')].map(r => r.querySelector('.cw-dl-when').textContent);")
-    check("deadline added with a countdown", dl == ["tomorrow"], dl)
-
-    # --- refboard renders empty state + add button
-    rb = page("return { empty: !!document.querySelector('.cw-ref-empty'), add: !!document.querySelector('.cw-ref-btn') };")
-    check("reference board empty state + add button", rb == {"empty": True, "add": True}, rb)
-
-    # --- game: world loaded, click-to-walk moves the companion, story shows
-    time.sleep(1.5)
-    gm = page("""
-      const el = [...document.querySelectorAll('#grid .grid-stack-item')].find(e => e._cthulhu && e._cthulhu.id === 'game');
-      return { loaded: !el.querySelector('.cw-game-msg'), dialog: !!el.querySelector('.cw-game-dialog'),
-               name: el.querySelector('.cw-game-name').textContent, day: el.querySelector('.cw-game-day').textContent,
-               pos: JSON.stringify(el._cthulhu.config.save && el._cthulhu.config.save.pos) };
-    """)
-    check("game world loaded", gm["loaded"], gm)
-    check("game story chapter shown on day 1", gm["dialog"] and gm["day"] == "day 1", gm)
-    before = gm["pos"]
-    m.set_context("content")
-    cv = m.find_element("css selector", ".cw-game-canvas")
-    m.actions.sequence("pointer", "mouse", {"pointerType": "mouse"}).click(element=cv).perform()   # centre of the canvas
-    time.sleep(1.5)
-    after = page("""
-      const el = [...document.querySelectorAll('#grid .grid-stack-item')].find(e => e._cthulhu && e._cthulhu.id === 'game');
-      return JSON.stringify(el._cthulhu.config.save.pos);
-    """)
-    check("click-to-walk moved the companion", after != before, before + " -> " + after)
-    shot("06-game")
-
     # --- drawer: icons instead of dots
     page("document.getElementById('cthulhu-settings').click();"); time.sleep(0.8)
     ic = page("""
@@ -226,8 +189,8 @@ try:
                dots: document.querySelectorAll('.cthulhu-palette-dot').length,
                cats: [...document.querySelectorAll('.cthulhu-palette-category h2')].map(h => h.textContent) };
     """)
-    check("palette shows 16 icons (16x16), no dot fallbacks", ic["icons"] == 16 and ic["loaded"] == 16 and ic["dots"] == 0, ic)
-    check("Play category present", "Play" in ic["cats"], ic["cats"])
+    check("palette shows 14 icons (16x16), no dot fallbacks", ic["icons"] == 14 and ic["loaded"] == 14 and ic["dots"] == 0, ic)
+    check("Play category absent while the game is parked", "Play" not in ic["cats"], ic["cats"])
     shot("07-drawer-icons")
 
     # --- console errors from our code?

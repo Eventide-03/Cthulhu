@@ -1,5 +1,9 @@
 # Minigame widget
 
+> **Parked.** The files are packaged but `"game"` is not in
+> `widgets/index.json`, so the widget does not load or appear in the drawer.
+> Add it back to that list to re-enable it -- nothing else changes.
+
 A pocket world: a landscape, a companion that wanders it, three needs that
 drain in real time, and a story that unlocks by the day. It is deliberately a
 **scaffold** — every visual is a placeholder and every rule is data — so the

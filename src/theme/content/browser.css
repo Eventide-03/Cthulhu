@@ -14,6 +14,82 @@
  * (!important so we win over Firefox's own toolbar rules.)
  * ============================================================================= */
 
+/* =============================================================================
+ * Colour scheme: the chrome follows the CTHULHU theme, never the OS.
+ *
+ * Firefox paints almost every chrome surface with light-dark() -- the selected
+ * tab is literally
+ *     --tab-background-color-selected: light-dark(var(--color-white), rgba(106,106,120,.7))
+ * -- and resolves it from the chrome's color-scheme, which browser-shared.css
+ * sets to `light dark`, i.e. "whatever the OS says". On a Mac in dark mode
+ * that happens to agree with our dark palette, so nothing looked wrong. On a
+ * light-mode Windows box it does not: the bookmarks bar and the selected tab
+ * came out white, unselected tabs vanished, and the minimise/restore caption
+ * glyphs (font glyphs with color: inherit) were black on our dark bar --
+ * invisible until close got its red hover.
+ *
+ * So: pin the scheme to the theme. Dark for every dark preset, light for the
+ * light ones (the theme engine flags those on :root). With that, every
+ * light-dark() in the chrome resolves the right way on every OS.
+ *
+ * Then, rather than leave the surfaces at Firefox's dark defaults (its
+ * bookmarks bar is rgb(43,42,51), not our --bg-elevated), feed Firefox's own
+ * design tokens from our palette, and paint the concrete elements as well in
+ * case a token is renamed upstream. !important throughout: see the divider
+ * note below for why plain declarations lose to Firefox's own rules here.
+ * ============================================================================= */
+:root,
+#navigator-toolbox {
+  color-scheme: dark !important;
+}
+:root[cthulhu-theme-light],
+:root[cthulhu-theme-light] #navigator-toolbox {
+  color-scheme: light !important;
+}
+
+:root {
+  --toolbox-background-color: var(--bg) !important;
+  --toolbar-background-color: var(--bg-elevated) !important;
+  --toolbar-text-color: var(--fg) !important;
+  --tab-background-color-selected: var(--surface-hover) !important;
+  --toolbar-field-background-color: var(--surface) !important;
+  --toolbar-field-color: var(--fg) !important;
+  --toolbar-field-text-color: var(--fg) !important;
+  --urlbar-box-text-color: var(--fg) !important;
+  --toolbarbutton-icon-fill: var(--fg) !important;
+}
+
+/* The concrete surfaces. Text colour on the toolbox is what the toolbar icons
+ * (currentColor fills) and the Windows caption glyphs inherit. */
+#navigator-toolbox,
+#TabsToolbar,
+#PersonalToolbar,
+.titlebar-buttonbox,
+.titlebar-button {
+  color: var(--fg) !important;
+}
+#PersonalToolbar {
+  background-color: var(--bg-elevated) !important;
+}
+.tab-background[selected],
+.tab-background[multiselected],
+.tabbrowser-tab[selected] > .tab-stack > .tab-background,
+.tabbrowser-tab[multiselected] > .tab-stack > .tab-background {
+  background-color: var(--surface-hover) !important;
+}
+.tabbrowser-tab[selected],
+.tabbrowser-tab[multiselected] {
+  color: var(--fg) !important;
+}
+#urlbar-input,
+#urlbar-input::placeholder,
+#searchbar .searchbar-textbox {
+  color: var(--fg) !important;
+}
+#urlbar-input::placeholder {
+  opacity: 0.6;
+}
+
 /* The whole toolbar area sits on the app background... */
 #navigator-toolbox {
   background-color: var(--bg) !important;
