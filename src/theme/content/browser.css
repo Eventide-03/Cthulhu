@@ -41,10 +41,22 @@
 :root,
 #navigator-toolbox {
   color-scheme: dark !important;
+  /* SEPARATE from color-scheme, and easy to miss. global-shared.css defines
+   *     --toolbar-color-scheme: light dark;
+   * i.e. "ask the OS" -- and tab.tokens.css derives the SELECTED TAB from it:
+   *     --tab-selected-color-scheme: var(--toolbar-color-scheme);
+   *     --tab-selected-textcolor: light-dark(rgb(21,20,26), var(--color-white));
+   * The selected tab then sets `color-scheme: var(--tab-selected-color-scheme)`
+   * ON ITSELF, so that light-dark() resolves against the OS no matter what
+   * :root says. On a light-mode Windows box that made the ACTIVE tab's label
+   * black on our dark strip while every other tab stayed correct. Pinning
+   * color-scheme alone does not fix it; this variable has to be pinned too. */
+  --toolbar-color-scheme: dark !important;
 }
 :root[cthulhu-theme-light],
 :root[cthulhu-theme-light] #navigator-toolbox {
   color-scheme: light !important;
+  --toolbar-color-scheme: light !important;
 }
 
 :root {
@@ -57,6 +69,25 @@
   --toolbar-field-text-color: var(--fg) !important;
   --urlbar-box-text-color: var(--fg) !important;
   --toolbarbutton-icon-fill: var(--fg) !important;
+
+  /* Tab tokens, fed from the palette rather than left to upstream's defaults.
+   *
+   * --tab-selected-textcolor is belt-and-braces with --toolbar-color-scheme
+   * above: even if a future upstream stops deriving it from the toolbar scheme,
+   * the active tab's label stays our foreground.
+   *
+   * The outlines are the "white line round the tab on hover". Upstream leaves
+   * --tab-hover-outline-color transparent normally, but turns it into
+   * `currentColor` under @media (prefers-contrast) and `SelectedItem` under
+   * forced-colors -- and since #TabsToolbar's colour is our near-white --fg,
+   * currentColor IS white. Naming a themed colour makes the hover outline the
+   * same subtle line as every other border in the browser, in every one of
+   * those modes. */
+  --tab-selected-textcolor: var(--fg) !important;
+  --tab-hover-outline-color: var(--border) !important;
+  --tab-selected-outline-color: var(--border) !important;
+  --tab-outline-color: transparent !important;
+  --tab-background-color-hover: var(--surface) !important;
 }
 
 /* The concrete surfaces. Text colour on the toolbox is what the toolbar icons
