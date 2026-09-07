@@ -174,36 +174,37 @@ CthulhuWidgets.register({
     pollMinutes: 5,
   },
   css: `
-    .cw-cal { display:flex; flex-direction:column; height:100%; gap:4px; overflow:hidden; font-family:var(--font-pixel); }
+    .cw-cal { display:flex; flex-direction:column; height:100%; gap:4px; overflow:hidden;
+              font-family:var(--font-pixel); font-size:1.05em; }
     .cw-cal-head { display:flex; align-items:center; gap:4px; flex:none; }
-    .cw-cal-title { font-size:1em; color:var(--fg); margin-inline-end:auto; white-space:nowrap;
+    .cw-cal-title { font-size:1.1em; color:var(--fg); margin-inline-end:auto; white-space:nowrap;
                     overflow:hidden; text-overflow:ellipsis; min-width:0; }
     .cw-cal-hbtn {
       flex:none; border:1px solid var(--border); background:var(--surface); color:var(--fg);
-      border-radius:5px; cursor:pointer; font-family:var(--font-pixel); font-size:10px;
-      padding:3px 6px; line-height:1;
+      border-radius:5px; cursor:pointer; font-family:var(--font-pixel); font-size:12px;
+      padding:4px 7px; line-height:1;
     }
     .cw-cal-hbtn:hover { border-color:var(--accent); }
     .cw-cal-hbtn.mode { color:var(--accent); }
 
     .cw-cal-dows { display:grid; grid-template-columns:repeat(7, minmax(0,1fr)); flex:none; }
-    .cw-cal-dow { font-size:.62em; color:var(--fg-muted); text-align:center; padding:1px 0; }
+    .cw-cal-dow { font-size:.8em; color:var(--fg-muted); text-align:center; padding:2px 0; }
     .cw-cal-month { flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; display:flex; flex-direction:column;
                     border-top:1px solid var(--border); }
     .cw-cal-week { display:grid; grid-template-columns:repeat(7, minmax(0,1fr)); flex:1 0 auto;
-                   min-height:48px; border-bottom:1px solid var(--border); position:relative; }
+                   min-height:56px; border-bottom:1px solid var(--border); position:relative; }
     .cw-cal-day { position:relative; min-width:0; border-right:1px solid var(--border); padding:2px 3px;
                   display:flex; flex-direction:column; }
     .cw-cal-day:nth-child(7) { border-right:none; }
     .cw-cal-day.other .cw-cal-num { color:var(--fg-muted); opacity:.55; }
     .cw-cal-day.drop { background:color-mix(in srgb, var(--accent) 14%, transparent); }
-    .cw-cal-num { align-self:flex-end; font-size:.7em; color:var(--fg); line-height:1; min-width:1.5em;
-                  text-align:center; padding:2px 1px; border-radius:999px; }
+    .cw-cal-num { align-self:flex-end; font-size:.88em; color:var(--fg); line-height:1; min-width:1.6em;
+                  text-align:center; padding:3px 2px; border-radius:999px; }
     .cw-cal-day.today .cw-cal-num { background:var(--accent); color:var(--fg-on-accent); }
     .cw-cal-add {
-      position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:4px; padding:0;
+      position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:4px; padding:0;
       border:1px solid var(--border); background:var(--surface); color:var(--fg-muted);
-      font-size:12px; line-height:1; cursor:pointer; opacity:0; transition:opacity .12s;
+      font-size:13px; line-height:1; cursor:pointer; opacity:0; transition:opacity .12s;
     }
     .cw-cal-day:hover .cw-cal-add, .cw-cal-add:focus-visible { opacity:1; }
     .cw-cal-add:hover { color:var(--accent); border-color:var(--accent); }
@@ -212,11 +213,11 @@ CthulhuWidgets.register({
      * columns; a bar that continues into the next/previous week loses the
      * rounded corner on that side. */
     .cw-cal-ev {
-      position:relative; z-index:1; margin:1px 2px; height:34px; box-sizing:border-box; min-width:0;
+      position:relative; z-index:1; margin:1px 2px; height:40px; box-sizing:border-box; min-width:0;
       display:flex; flex-direction:column; justify-content:center; gap:1px; padding:2px 3px 2px 5px;
       border-radius:5px; background:var(--bg-elevated); border:1px solid var(--border);
       border-left:3px solid var(--kind, var(--fg-muted));
-      color:var(--fg); font-size:.72em; cursor:grab; user-select:none; overflow:hidden;
+      color:var(--fg); font-size:.88em; cursor:grab; user-select:none; overflow:hidden;
     }
     .cw-cal-ev-main { display:flex; align-items:center; gap:4px; min-width:0; }
     .cw-cal-ev-sub { display:flex; align-items:center; gap:4px; min-width:0; min-height:1.3em; }
@@ -246,11 +247,11 @@ CthulhuWidgets.register({
       border:1px solid var(--accent); border-radius:4px; color:var(--fg); font-family:var(--font-pixel);
       font-size:inherit; outline:none;
     }
-    .cw-cal-new { position:relative; z-index:3; margin:1px 2px; height:34px; font-size:.72em; align-self:center; }
+    .cw-cal-new { position:relative; z-index:3; margin:1px 2px; height:40px; font-size:.88em; align-self:center; }
 
-    .cw-cal-foot { flex:none; font-size:.72em; color:var(--fg-muted); line-height:1.3; }
+    .cw-cal-foot { flex:none; font-size:.86em; color:var(--fg-muted); line-height:1.35; }
     .cw-cal-foot:empty { display:none; }
-    .cw-cal-foot.err { color:var(--notify); word-break:break-word; }
+    .cw-cal-foot.err { color:var(--notify); word-break:break-word; font-size:.9em; }
     .cw-cal-foot b { color:var(--fg); font-weight:normal; }
   `,
 
@@ -411,7 +412,7 @@ CthulhuWidgets.register({
         }
         const creatingHere = creating && cthDayDiff(weekStart, creating.ymd) >= 0 && cthDayDiff(weekStart, creating.ymd) <= 6;
         const L = lanes.length + (creatingHere ? 1 : 0);
-        week.style.gridTemplateRows = "18px" + (L ? " repeat(" + L + ", 36px)" : "") + " minmax(6px, 1fr)";
+        week.style.gridTemplateRows = "20px" + (L ? " repeat(" + L + ", 42px)" : "") + " minmax(8px, 1fr)";
 
         for (let c = 0; c < 7; c++) {
           const ymd = cthAddDays(weekStart, c);
@@ -767,7 +768,17 @@ CthulhuWidgets.register({
         connected = true;
         if (manual) setFoot("Refreshing…");
         try {
-          if (!myEmail) myEmail = await GCal.getMyEmail();
+          // Attribution is a nicety; events are the point. getMyEmail needs
+          // the calendarlist scope, and letting it throw here meant one
+          // missing scope produced an empty board rather than a board with
+          // everything marked "mine".
+          if (!myEmail) {
+            try {
+              myEmail = await GCal.getMyEmail();
+            } catch (e) {
+              console.warn("[Cthulhu:calendar] no attribution:", e.message);
+            }
+          }
           const { start, endExcl } = visibleRange();
           const events = await GCal.listEvents(ctx.config.calendarId || "primary", start, endExcl);
           if (disposed) return;
@@ -775,7 +786,7 @@ CthulhuWidgets.register({
           setFoot("");
           paint();
         } catch (e) {
-          if (!disposed) setFoot(ctx.esc(e.message), true);
+          if (!disposed) setFoot(ctx.esc(e.message) + " — open <b>⚙</b> to reconnect.", true);
         }
       } finally {
         loading = false;

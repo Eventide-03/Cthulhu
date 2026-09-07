@@ -145,8 +145,16 @@ window.CthulhuGCal = (function () {
                   settle.reject(new Error("Google returned: " + params.get("error")));
                   return;
                 }
-                respond(transport, "Connected",
-                  "Cthulhu is now linked to your Google Calendar. You can close this tab.");
+                // NOT "connected" -- all that has happened is that Google
+                // redirected back with a code. The code still has to be
+                // exchanged for tokens, which can fail (wrong secret, app not
+                // published, no refresh token returned). Saying "connected"
+                // here made a failed exchange look like a success: the tab
+                // said it worked, the widget stayed empty, and nothing
+                // explained why.
+                respond(transport, "Almost done",
+                  "Authorisation received. Finishing in Cthulhu -- check the " +
+                  "calendar widget's settings for the result. You can close this tab.");
                 close();
                 settle.resolve({ code: params.get("code"), state: params.get("state") });
               } catch (e) {
@@ -242,7 +250,10 @@ window.CthulhuGCal = (function () {
     });
     if (!tok.refresh_token && !auth.refreshToken) {
       // Without one we'd silently stop working in an hour with no way back.
-      throw new Error("Google did not return a refresh token -- try disconnecting and connecting again");
+      throw new Error(
+        "Google did not return a refresh token. Disconnect and connect again; " +
+        "if it keeps happening, remove Cthulhu at myaccount.google.com/permissions " +
+        "and retry, which forces a fresh grant.");
     }
   }
 
@@ -254,12 +265,27 @@ window.CthulhuGCal = (function () {
     if (auth.accessToken && auth.expiresAt && Date.now() < auth.expiresAt - 60000) {
       return auth.accessToken;
     }
-    const tok = await postForm(TOKEN_URL, {
-      refresh_token: auth.refreshToken,
-      client_id: auth.clientId,
-      ...(auth.clientSecret ? { client_secret: auth.clientSecret } : {}),
-      grant_type: "refresh_token",
-    });
+    let tok;
+    try {
+      tok = await postForm(TOKEN_URL, {
+        refresh_token: auth.refreshToken,
+        client_id: auth.clientId,
+        ...(auth.clientSecret ? { client_secret: auth.clientSecret } : {}),
+        grant_type: "refresh_token",
+      });
+    } catch (e) {
+      // By far the most common cause, and the message Google returns for it
+      // ("invalid_grant") explains nothing: a project left on the Testing
+      // audience expires refresh tokens after seven days. Publishing it stops
+      // this recurring every week.
+      if (/invalid_grant/i.test(e.message || "")) {
+        throw new Error(
+          "Google rejected the saved sign-in (invalid_grant). This is usually a " +
+          "project still on the Testing audience, where refresh tokens expire " +
+          "after 7 days -- publish it under Audience, then Connect again.");
+      }
+      throw e;
+    }
     await saveAuth({
       ...auth,
       accessToken: tok.access_token,
