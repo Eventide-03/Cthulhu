@@ -111,11 +111,145 @@ const cthUi = {
     inp.addEventListener("change", () => onChange(inp.value));
     return cthUi.row(text, inp);
   },
-  selectRow(text, options, value, onChange) {
-    const sel = document.createElement("select");
-    for (const o of options) { const opt = document.createElement("option"); opt.value = o.value; opt.textContent = o.label; if (String(o.value) === String(value)) opt.selected = true; sel.appendChild(opt); }
-    sel.addEventListener("change", () => onChange(sel.value));
-    return cthUi.row(text, sel);
+  /* A one-of-many chooser, built from BUTTONS rather than a native <select>.
+   *
+   * WHY NOT <select>: about:cthulhu holds the system principal in the parent
+   * process, and a select's menu is a chrome-level popup the page only reaches
+   * through the ContentSelectDropdown actor pair. The popup opens and
+   * highlights, but the choice never comes back to the page as a `change`
+   * event -- so picking anything silently did nothing. Setting .value from
+   * script worked fine, which is what made it so confusing to track down.
+   * Buttons are a plain DOM click with no actor round trip.
+   *
+   * Short lists sit inline next to the label as chips; long ones (many
+   * entries, or long labels) stack under a caption instead, because chips with
+   * calendar-length names wrap into an unreadable mess. Pass {stack:true} to
+   * force stacking -- worth doing when the options are filled in later and you
+   * don't want the layout to jump when they arrive.
+   *
+   * onChange receives a STRING, matching what a <select> used to hand back, so
+   * existing callers that do `+v` keep working.
+   *
+   * Returns the row, with .setOptions(options, value) for lists that load late.
+   */
+  selectRow(text, options, value, onChange, opts) {
+    const group = document.createElement("div");
+    group.className = "cw-ui-choice";
+    const forceStack = !!(opts && opts.stack);
+    let buttons = [];
+
+    const paint = (val) => {
+      for (const b of buttons) b.classList.toggle("on", String(b.dataset.value) === String(val));
+    };
+    const build = (list, val) => {
+      group.textContent = "";
+      buttons = [];
+      const stack = forceStack || list.length > 4 ||
+        list.some((o) => String(o.label).length > 18);
+      group.classList.toggle("stack", stack);
+      for (const o of list) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "cw-ui-choice-btn";
+        b.dataset.value = String(o.value);
+        b.textContent = o.label;
+        b.title = o.title || o.label;
+        b.addEventListener("click", (e) => {
+          e.stopPropagation();
+          paint(o.value);
+          onChange(String(o.value));
+        });
+        buttons.push(b);
+        group.appendChild(b);
+      }
+      paint(val);
+    };
+    build(options, value);
+
+    // Stacked lists read better under a caption than squeezed beside a label.
+    const stacked = group.classList.contains("stack");
+    const row = stacked ? cthUi.field(text) : cthUi.row(text, group);
+    if (stacked) row.appendChild(group);
+    row.setOptions = (list, val) => build(list, val === undefined ? value : val);
+    row.setValue = (val) => paint(val);
+    return row;
+  },
+  /* A compact one-of-many chooser for places too narrow for a row of chips --
+   * a widget's own toolbar, say. Shows the current label; clicking opens a list
+   * in a body-appended popover, so a small tile cannot clip it. Same reason as
+   * selectRow for not using a native <select>: the popup's choice never gets
+   * back to this page. */
+  pickerButton(options, value, onChange, opts) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "cw-ui-picker" + ((opts && opts.className) ? " " + opts.className : "");
+    let list = options.slice();
+    let current = value;
+    const labelFor = (v) => {
+      const f = list.find((o) => String(o.value) === String(v));
+      return f ? f.label : (opts && opts.empty) || "—";
+    };
+    const paintBtn = () => {
+      btn.textContent = labelFor(current);
+      btn.title = btn.textContent;
+    };
+    paintBtn();
+
+    let pop = null;
+    const close = () => {
+      if (!pop) return;
+      pop.remove(); pop = null;
+      document.removeEventListener("pointerdown", onOutside, true);
+      window.removeEventListener("blur", close);
+    };
+    const onOutside = (e) => { if (pop && !pop.contains(e.target) && e.target !== btn) close(); };
+    const open = () => {
+      if (pop) { close(); return; }
+      pop = document.createElement("div");
+      pop.className = "cw-ui-picker-pop";
+      const group = document.createElement("div");
+      group.className = "cw-ui-choice stack";
+      for (const o of list) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "cw-ui-choice-btn" + (String(o.value) === String(current) ? " on" : "");
+        b.textContent = o.label;
+        b.title = o.label;
+        b.addEventListener("click", (e) => {
+          e.stopPropagation();
+          current = o.value;
+          paintBtn();
+          close();
+          onChange(String(o.value));
+        });
+        group.appendChild(b);
+      }
+      pop.appendChild(group);
+      document.body.appendChild(pop);
+      const r = btn.getBoundingClientRect();
+      const pr = pop.getBoundingClientRect();
+      let left = r.left;
+      let top = r.bottom + 4;
+      if (left + pr.width > window.innerWidth - 8) left = window.innerWidth - pr.width - 8;
+      if (top + pr.height > window.innerHeight - 8) top = Math.max(8, r.top - pr.height - 4);
+      pop.style.left = Math.max(8, left) + "px";
+      pop.style.top = top + "px";
+      document.addEventListener("pointerdown", onOutside, true);
+      window.addEventListener("blur", close);
+    };
+    // The tile is drag-enabled; don't let the press start a widget drag.
+    btn.setAttribute("data-cthulhu-nodrag", "");
+    btn.addEventListener("pointerdown", (e) => e.stopPropagation());
+    btn.addEventListener("click", (e) => { e.stopPropagation(); open(); });
+    btn.setOptions = (next, val) => {
+      list = next.slice();
+      if (val !== undefined) current = val;
+      paintBtn();
+      if (pop) { close(); open(); }
+    };
+    btn.setValue = (v) => { current = v; paintBtn(); };
+    btn.close = close;
+    return btn;
   },
   rangeRow(text, o, onChange) {
     const wrap = document.createElement("span"); wrap.className = "cw-ui-range";

@@ -828,27 +828,30 @@ CthulhuWidgets.register({
     secRow.appendChild(secInput);
     panel.appendChild(secRow);
 
-    const calRow = document.createElement("label");
-    calRow.textContent = "Calendar";
-    const calSelect = document.createElement("select");
-    const primaryOpt = document.createElement("option");
-    primaryOpt.value = "primary";
-    primaryOpt.textContent = "Primary";
-    calSelect.appendChild(primaryOpt);
-    calSelect.value = ctx.config.calendarId || "primary";
-    calRow.appendChild(calSelect);
+    /* These were native <select>s. On this page a select's menu is a
+     * chrome-level popup whose choice never comes back as a change event, so
+     * picking a calendar or a filter silently did nothing -- the same fault the
+     * pet picker had. ctx.ui.selectRow builds the same control out of buttons.
+     * The calendar list is forced to stack: it is filled in only once Google
+     * answers, and its names are long, so letting the layout decide would make
+     * it jump from chips to a list under the user. */
+    const save = (patch) => ctx.saveConfig({ ...ctx.config, ...patch }, { refresh: true });
+
+    const calRow = ctx.ui.selectRow(
+      "Calendar",
+      [{ value: "primary", label: "Primary" }],
+      ctx.config.calendarId || "primary",
+      (v) => save({ calendarId: v }),
+      { stack: true }
+    );
     panel.appendChild(calRow);
 
-    const modeRow = document.createElement("label");
-    modeRow.textContent = "Show";
-    const modeSelect = document.createElement("select");
-    for (const [v, label] of [["both", "Both"], ["me", "Mine only"], ["them", "Theirs only"]]) {
-      const o = document.createElement("option");
-      o.value = v; o.textContent = label;
-      modeSelect.appendChild(o);
-    }
-    modeSelect.value = ctx.config.mode || "both";
-    modeRow.appendChild(modeSelect);
+    const modeRow = ctx.ui.selectRow(
+      "Show",
+      [{ value: "both", label: "Both" }, { value: "me", label: "Mine" }, { value: "them", label: "Theirs" }],
+      ctx.config.mode || "both",
+      (v) => save({ mode: v })
+    );
     panel.appendChild(modeRow);
 
     const labelRow = document.createElement("label");
@@ -860,16 +863,12 @@ CthulhuWidgets.register({
     labelRow.appendChild(labelInput);
     panel.appendChild(labelRow);
 
-    const pollRow = document.createElement("label");
-    pollRow.textContent = "Refresh every";
-    const pollSelect = document.createElement("select");
-    for (const v of [5, 10, 15]) {
-      const o = document.createElement("option");
-      o.value = String(v); o.textContent = v + " minutes";
-      pollSelect.appendChild(o);
-    }
-    pollSelect.value = String(ctx.config.pollMinutes || 5);
-    pollRow.appendChild(pollSelect);
+    const pollRow = ctx.ui.selectRow(
+      "Refresh, min",
+      [5, 10, 15].map((v) => ({ value: v, label: String(v), title: "Every " + v + " minutes" })),
+      ctx.config.pollMinutes || 5,
+      (v) => save({ pollMinutes: parseInt(v, 10) })
+    );
     panel.appendChild(pollRow);
 
     const doneRow = document.createElement("label");
@@ -880,11 +879,7 @@ CthulhuWidgets.register({
     doneRow.appendChild(document.createTextNode(" Show completed items"));
     panel.appendChild(doneRow);
 
-    const save = (patch) => ctx.saveConfig({ ...ctx.config, ...patch }, { refresh: true });
-    calSelect.addEventListener("change", () => save({ calendarId: calSelect.value }));
-    modeSelect.addEventListener("change", () => save({ mode: modeSelect.value }));
     labelInput.addEventListener("change", () => save({ theirLabel: labelInput.value.trim() || "Theirs" }));
-    pollSelect.addEventListener("change", () => save({ pollMinutes: parseInt(pollSelect.value, 10) }));
     doneBox.addEventListener("change", () => save({ showCompleted: doneBox.checked }));
 
     const actions = document.createElement("div");
@@ -916,19 +911,14 @@ CthulhuWidgets.register({
         try {
           const cals = await GCal.listCalendars();
           const current = ctx.config.calendarId || "primary";
-          calSelect.innerHTML = "";
-          for (const c of cals) {
-            const o = document.createElement("option");
-            o.value = c.primary ? "primary" : c.id;
-            o.textContent = c.summary + (c.primary ? " (primary)" : "") + (c.canWrite ? "" : " — read only");
-            calSelect.appendChild(o);
-          }
-          if (![...calSelect.options].some((o) => o.value === current)) {
-            const o = document.createElement("option");
-            o.value = current; o.textContent = current;
-            calSelect.appendChild(o);
-          }
-          calSelect.value = current;
+          const items = cals.map((c) => ({
+            value: c.primary ? "primary" : c.id,
+            label: c.summary + (c.primary ? " (primary)" : "") + (c.canWrite ? "" : " — read only"),
+          }));
+          // Keep a configured calendar visible even if the account no longer
+          // lists it, so it can't silently look like something else is chosen.
+          if (!items.some((o) => o.value === current)) items.push({ value: current, label: current });
+          calRow.setOptions(items, current);
           const chosen = cals.find((c) => (c.primary ? "primary" : c.id) === current);
           if (chosen && !chosen.canWrite) {
             status.innerHTML += " — <b>read-only calendar</b>, so creating, moving and deleting will fail. " +

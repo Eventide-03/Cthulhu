@@ -488,6 +488,76 @@ body.cthulhu-drawer-open #grid.grid-stack {
   min-width: 0;
   width: auto;
 }
+/* One-of-many chooser (cthUi.selectRow). Buttons, not a native <select>:
+   a select's menu is a chrome-level popup this page cannot get a change event
+   back from -- see the note in widgets.js. */
+.cw-ui-choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+.cw-ui-choice.stack {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  max-height: 210px;
+  overflow-y: auto;
+}
+.cw-ui-choice-btn {
+  flex: none;
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+  font-family: var(--font-pixel);
+  font-size: 12px;
+  line-height: 1.3;
+  cursor: pointer;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cw-ui-choice-btn:hover { border-color: var(--accent); }
+.cw-ui-choice-btn.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+}
+.cw-ui-choice.stack > .cw-ui-choice-btn { width: 100%; box-sizing: border-box; }
+
+.cw-ui-picker {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--fg);
+  font-family: var(--font-pixel);
+  font-size: 11px;
+  line-height: 1.3;
+  cursor: pointer;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cw-ui-picker:hover { border-color: var(--accent); }
+.cw-ui-picker-pop {
+  position: fixed;
+  z-index: 2147483600;
+  min-width: 160px;
+  max-width: 280px;
+  padding: 6px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
 .cw-ui-field {
   display: flex;
   flex-direction: column;

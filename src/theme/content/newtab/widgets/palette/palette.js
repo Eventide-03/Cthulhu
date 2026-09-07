@@ -87,9 +87,13 @@
 
       const root = document.createElement("div"); root.className = "cw-pal";
       const bar = document.createElement("div"); bar.className = "cw-pal-bar";
-      const sel = document.createElement("select");
-      cfg().palettes.forEach((p, i) => { const o = document.createElement("option"); o.value = i; o.textContent = p.name || ("Palette " + (i + 1)); if (i === (cfg().current || 0)) o.selected = true; sel.appendChild(o); });
-      sel.addEventListener("change", () => save({ current: +sel.value }));
+      // Was a native <select>; its popup's choice never reached this page, so
+      // switching palettes did nothing. See cthUi.selectRow in widgets.js.
+      const sel = ctx.ui.pickerButton(
+        cfg().palettes.map((p, i) => ({ value: i, label: p.name || ("Palette " + (i + 1)) })),
+        cfg().current || 0,
+        (v) => save({ current: +v })
+      );
       bar.appendChild(sel);
       const btn = (txt, title, fn) => { const b = document.createElement("button"); b.type = "button"; b.className = "cw-pal-btn"; b.textContent = txt; b.title = title; b.addEventListener("click", fn); bar.appendChild(b); return b; };
       btn("+", "Add a colour", () => ctx.openConfig());

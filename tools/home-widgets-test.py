@@ -283,8 +283,24 @@ try:
     ps = page("return document.querySelectorAll('.cw-pal-sw').length;")
     check("palette shows 5 starter swatches", ps == 5, ps)
     page("[...document.querySelectorAll('.cw-pal-btn')].find(b => b.title.startsWith('Random')).click();"); time.sleep(0.8)
-    ps2 = page("return { n: document.querySelectorAll('.cw-pal-sw').length, opts: document.querySelector('.cw-pal-bar select').options.length };")
-    check("dice made a new 5-colour palette and selected it", ps2 == {"n": 5, "opts": 2}, ps2)
+    # the bar's palette chooser is a picker BUTTON now, not a <select>: on this
+    # page a select's popup never returns a change event, so switching palettes
+    # did nothing. Its label is the palette it would switch to.
+    ps2 = page("""
+      const b = document.querySelector('.cw-pal-bar .cw-ui-picker');
+      return { n: document.querySelectorAll('.cw-pal-sw').length,
+               picker: !!b, label: b ? b.textContent : null,
+               selects: document.querySelectorAll('.cw-pal-bar select').length };
+    """)
+    check("dice made a new 5-colour palette and selected it",
+          ps2["n"] == 5 and ps2["picker"] and ps2["selects"] == 0 and "Random" in (ps2["label"] or ""), ps2)
+    # and the chooser opens on a real click
+    picker = m.find_element("css selector", ".cw-pal-bar .cw-ui-picker")
+    m.actions.sequence("pointer", "mouse", {"pointerType": "mouse"}).pointer_move(0, 0, origin=picker).pointer_down().pointer_up().perform()
+    time.sleep(0.6)
+    popped = page("return document.querySelectorAll('.cw-ui-picker-pop .cw-ui-choice-btn').length;")
+    check("the palette chooser opens a list on a real click", popped == 2, popped)
+    page("const pp = document.querySelector('.cw-ui-picker-pop'); if (pp) pp.remove();")
 
     # --- pets: the new set, KIY's glitch, Rishi's button, integer scaling
     page("""
