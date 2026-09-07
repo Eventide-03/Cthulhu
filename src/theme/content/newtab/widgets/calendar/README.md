@@ -71,8 +71,8 @@ This part is easy to miss — it isn't a Cloud Console step.
    ```
    These genuinely don't overlap — per Google's API reference, `events.insert`
    does *not* accept a calendarlist scope, and `calendarList.list` does *not*
-   accept `calendar.events`. With only the first, the ⚙ calendar dropdown comes
-   up empty; with only the second, every create/complete/delete fails. Two
+   accept `calendar.events`. With only the first, the ⚙ calendar list comes
+   up empty; with only the second, every create/move/complete/delete fails. Two
    narrow scopes rather than the blanket `calendar` scope keeps this to
    "read my calendar list, read/write events" and nothing more.
 7. **Clients → Create client → Desktop app.** Copy the **client ID** and
@@ -93,7 +93,8 @@ attribution work.
 3. `calendar.events` is a sensitive scope, so an unverified app shows
    *"Google hasn't verified this app"* → **Advanced → Go to (your app)**. This
    is expected, not a failure.
-4. Back in ⚙, pick the shared calendar from the **Calendar** dropdown.
+4. Back in ⚙, pick the shared calendar from the **Calendar** list. (It only
+   fills in once you are connected — before that it just says *Primary*.)
 5. Optionally set **Their label** to the other person's name, so the mode chip
    reads e.g. "Sam" instead of "Theirs".
 
@@ -115,6 +116,15 @@ label, poll interval) live in the widget config.
 
 **Disconnect** (in ⚙) drops the tokens but keeps the client ID/secret, so
 reconnecting doesn't mean typing them again.
+
+## Nothing in ⚙ is a native dropdown
+
+Calendar, Show and Refresh are groups of buttons. On `about:cthulhu` a
+`<select>`'s menu is a chrome-level popup the page only reaches through the
+ContentSelectDropdown actor pair, and the choice never comes back as a `change`
+event — so picking anything silently did nothing. Setting `.value` from script
+worked, which is why it went unnoticed for a while. See `cthUi.selectRow` in
+`newtab/widgets.js`.
 
 ## How the sign-in actually completes
 
@@ -142,8 +152,8 @@ parent process (see `AboutCthulhu.sys.mjs`), which gives the page both
 ## Files
 
 ```
-calendar.js   widget: today's list, create/complete/delete, mode filter,
-              hover month grid, config UI
+calendar.js   widget: the month board (create / drag to move / drag an edge
+              to resize / rename / complete / delete), mode filter, config UI
 gcal.js       OAuth (PKCE + loopback redirect), token refresh, Calendar API
 ```
 
