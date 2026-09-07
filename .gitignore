@@ -37,3 +37,7 @@ MAR_SIGNING_DB_B64*
 # Cloudflare Worker local secrets -- never commit
 relay/.dev.vars
 .wrangler/
+
+# Python bytecode from running the test tools
+__pycache__/
+*.pyc
