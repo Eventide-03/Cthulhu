@@ -330,18 +330,45 @@ try:
     check("KIY cycles its frames rapidly", distinct >= 4, kiy["srcs"])
     check("KIY frames are not in numeric order", kiy["srcs"] != sorted(kiy["srcs"], key=lambda s: int(re.sub(r"\D", "", s) or 0)) , kiy["srcs"][:6])
     check("KIY's label flickers between KIY and gibberish", "KIY" in kiy["names"] and len(set(kiy["names"])) >= 3, kiy["names"][:8])
-    # the dropdown entry flickers too
+    # the picker: a list of real buttons, NOT a native <select>. A native select
+    # puts its menu in a chrome-level popup reached through the
+    # ContentSelectDropdown actor pair, and the pick never came back to the page
+    # as a change event -- so choosing a pet did nothing and it stayed on Random.
     page("[...document.querySelectorAll('#grid .grid-stack-item')].find(e => e._cthulhu && e._cthulhu.id === 'pet').querySelector('.cthulhu-widget-btn[title=\"Configure\"]').click();")
-    time.sleep(0.4)
-    opt = page("""
-      const o = [...document.querySelectorAll('.cthulhu-config-modal select option')].find(o => o.value === 'kiy');
-      return new Promise(res => { const seen = []; let n = 0; const iv = setInterval(() => { seen.push(o.textContent); if (++n >= 12) { clearInterval(iv); res(seen); } }, 90); });
+    time.sleep(0.5)
+    pick = page("""
+      const rows = [...document.querySelectorAll('.cw-pet-row')];
+      return { ids: rows.map(r => r.dataset.pet), tags: [...new Set(rows.map(r => r.tagName))],
+               selects: document.querySelectorAll('.cthulhu-config-modal select').length,
+               thumbs: rows.filter(r => r.querySelector('img')).length,
+               on: rows.filter(r => r.classList.contains('on')).map(r => r.dataset.pet) };
     """)
-    check("KIY's dropdown entry flickers", "KIY" in opt and len(set(opt)) >= 3, opt[:8])
+    check("picker is buttons, with no native <select> to get stuck in",
+          pick["selects"] == 0 and pick["tags"] == ["BUTTON"], pick)
+    check("a row per pet plus Random, each showing its art",
+          pick["ids"] == ["random","verity","kiy","rishi","cthulhu","voyeur","cat"] and pick["thumbs"] == 6, pick)
+    check("the configured pet is the highlighted row", pick["on"] == ["kiy"], pick["on"])
+    opt = page("""
+      const l = document.querySelector('.cw-pet-row[data-pet="kiy"] .cw-pet-rowname');
+      return new Promise(res => { const seen = []; let n = 0; const iv = setInterval(() => { seen.push(l.textContent); if (++n >= 12) { clearInterval(iv); res(seen); } }, 90); });
+    """)
+    check("KIY's row in the picker flickers", "KIY" in opt and len(set(opt)) >= 3, opt[:8])
+    # a REAL mouse click on a row must select that pet -- the thing that was broken
+    row = m.find_element("css selector", '.cw-pet-row[data-pet="cthulhu"]')
+    m.actions.sequence("pointer", "mouse", {"pointerType": "mouse"}).pointer_move(0, 0, origin=row).pointer_down().pointer_up().perform()
+    time.sleep(1.2)
+    picked = page("""
+      const inst = [...document.querySelectorAll('#grid .grid-stack-item')].find(e => e._cthulhu && e._cthulhu.id === 'pet')._cthulhu;
+      const img = document.querySelector('.cw-pet-img[data-pet="cthulhu"]');
+      return { config: inst.config.pet, rendered: !!img,
+               on: [...document.querySelectorAll('.cw-pet-row.on')].map(r => r.dataset.pet) };
+    """)
+    check("a real click on a row selects that pet and renders it",
+          picked["config"] == "cthulhu" and picked["rendered"] and picked["on"] == ["cthulhu"], picked)
     page("const mm = document.querySelector('.cthulhu-config-modal'); if (mm) mm.remove();")
     time.sleep(0.3)
-    stopped = page("const o = [...document.querySelectorAll('option')].find(o => o.value === 'kiy'); return o ? 'still in DOM' : 'gone';")
-    check("closing the panel removes the flickering option (its timer stops itself)", stopped == "gone", stopped)
+    stopped = page("return document.querySelector('.cw-pet-row[data-pet=\"kiy\"]') ? 'still in DOM' : 'gone';")
+    check("closing the panel removes the flickering row (its timer stops itself)", stopped == "gone", stopped)
     # Rishi: a real button that opens the feature-request form
     hit = page("const b = document.querySelector('.cw-pet-hit'); return b ? { tag: b.tagName, hasRishi: !!b.querySelector('img[data-pet=\"rishi\"]'), title: b.title } : null;")
     check("Rishi is wrapped in a real <button>", hit and hit["tag"] == "BUTTON" and hit["hasRishi"], hit)

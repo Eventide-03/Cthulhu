@@ -194,6 +194,28 @@
       .cw-pet-name { color:var(--fg-muted); font-size:.85em; text-align:center; font-family:var(--font-pixel);
                      min-height:1.2em; font-variant-ligatures:none; }
       .cw-pet-empty { color:var(--fg-muted); font-size:.85em; text-align:center; padding:8px; }
+
+      /* Picker in the gear panel. A LIST OF BUTTONS, not a <select>.
+       *
+       * A native <select> puts its menu in a chrome-level popup that this page
+       * only reaches through the ContentSelectDropdown actor pair. That round
+       * trip is what stopped a pick from ever landing -- the popup opened, the
+       * chosen value never came back as a change event, so the pet stayed on
+       * Random. Plain buttons are a plain DOM click, and they let KIY's name
+       * flicker where you can actually see it: in the list itself, rather than
+       * only inside a popup that has to be held open. */
+      .cw-pet-list { display:flex; flex-direction:column; gap:4px; }
+      .cw-pet-row { display:flex; align-items:center; gap:8px; width:100%; text-align:left; padding:5px 6px;
+        border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--fg);
+        font-family:var(--font-pixel); font-size:.85em; cursor:pointer; }
+      .cw-pet-row:hover { border-color:var(--accent); }
+      .cw-pet-row.on { border-color:var(--accent); background:color-mix(in srgb, var(--accent) 14%, var(--surface)); }
+      .cw-pet-row img { flex:none; width:22px; height:22px; object-fit:contain; image-rendering:pixelated; }
+      .cw-pet-row .dot { flex:none; width:22px; height:22px; border-radius:5px; background:var(--bg-elevated);
+        border:1px solid var(--border); }
+      .cw-pet-rowname { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+        font-variant-ligatures:none; }
+      .cw-pet-note { color:var(--fg-muted); font-size:.78em; }
     `,
 
     render(el, ctx) {
@@ -300,16 +322,12 @@
     configUI(panel, ctx) {
       const cfg = ctx.config || {};
 
-      const petRow = document.createElement("label");
-      petRow.textContent = "Pet";
-      const select = document.createElement("select");
-      petRow.appendChild(select);
-      panel.appendChild(petRow);
+      const list = document.createElement("div");
+      list.className = "cw-pet-list";
+      panel.appendChild(list);
 
       const hint = document.createElement("div");
-      hint.className = "cw-pet-empty";
-      hint.style.textAlign = "start";
-      hint.style.padding = "0";
+      hint.className = "cw-pet-note";
       panel.appendChild(hint);
 
       const nameRow = document.createElement("label");
@@ -325,25 +343,49 @@
 
       loadPets(ctx).then((pets) => {
         const opts = [{ id: "random", name: "Random (new pet each tab)" }, ...pets];
-        for (const o of opts) {
-          const opt = document.createElement("option");
-          opt.value = o.id;
-          opt.textContent = o.name || o.id;
-          if ((cfg.pet || "random") === o.id) opt.selected = true;
-          select.appendChild(opt);
-          // The dropdown entry itself flickers. It stops on its own once the
-          // panel closes (the <option> is no longer connected).
-          if (o.mode === "glitch") glitchText(opt, o.name || o.id, 80);
-        }
-        const showHint = () => {
-          const p = pets.find((x) => x.id === select.value);
+        const rows = [];
+        const paint = () => {
+          const cur = (ctx.config && ctx.config.pet) || "random";
+          for (const r of rows) r.el.classList.toggle("on", r.id === cur);
+          const p = pets.find((x) => x.id === cur);
           hint.textContent = p && p.hint ? p.hint : "";
         };
-        showHint();
-        select.addEventListener("change", () => {
-          showHint();
-          ctx.saveConfig({ ...ctx.config, pet: select.value }, { refresh: true });
-        });
+        for (const o of opts) {
+          const row = document.createElement("button");
+          row.type = "button";
+          row.className = "cw-pet-row";
+          row.setAttribute("data-pet", o.id);
+
+          if (o.frames && o.frames.length) {
+            const img = document.createElement("img");
+            img.alt = "";
+            img.draggable = false;
+            img.src = ctx.assetUrl(o.frames[0]);
+            row.appendChild(img);
+          } else {
+            const dot = document.createElement("span");
+            dot.className = "dot";
+            row.appendChild(dot);
+          }
+
+          const label = document.createElement("span");
+          label.className = "cw-pet-rowname";
+          label.textContent = o.name || o.id;
+          row.appendChild(label);
+          // KIY's name is restless wherever it appears -- and here it is on
+          // screen the whole time the panel is open. The timer stops itself
+          // when the panel closes and the node leaves the document.
+          if (o.mode === "glitch") glitchText(label, o.name || o.id, 80);
+
+          row.addEventListener("click", (e) => {
+            e.stopPropagation();
+            ctx.saveConfig({ ...ctx.config, pet: o.id }, { refresh: true });
+            paint();
+          });
+          rows.push({ id: o.id, el: row });
+          list.appendChild(row);
+        }
+        paint();
       }).catch((e) => {
         const err = document.createElement("div");
         err.className = "cw-pet-empty";
