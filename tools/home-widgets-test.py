@@ -12,7 +12,7 @@ caps the height), so the "nothing displaced" check fails on a smaller screen
 rather than meaning anything is wrong.
 """
 
-import os, sys, time, base64, tempfile, json
+import os, sys, time, base64, tempfile, json, datetime, re
 from marionette_driver.marionette import Marionette
 BIN = os.path.join(os.getcwd(), "obj-aarch64-apple-darwin25.5.0", "dist", "Cthulhu.app", "Contents", "MacOS", "Cthulhu")
 SHOTS = os.environ.get("SHOTS", "")
@@ -90,7 +90,7 @@ try:
     check("tools straddle the top border (8px above, 12px below)",
           abs((r["contentTop"] - r["toolsTop"]) - 8) <= 1 and abs((r["toolsBottom"] - r["contentTop"]) - 12) <= 1,
           "top %.0f bottom %.0f content %.0f" % (r["toolsTop"], r["toolsBottom"], r["contentTop"]))
-    check("tools do not overlap the calendar's Mine/refresh/+ buttons", r["nBtns"] == 3 and not r["overlapsAny"],
+    check("tools do not overlap the calendar's mode/⟳/‹/Today/› buttons", r["nBtns"] == 5 and not r["overlapsAny"],
           "buttons=%d firstBtnTop=%s" % (r["nBtns"], r["firstBtnTop"]))
     # hover to show them in a screenshot
     m.set_context("content")
@@ -103,6 +103,111 @@ try:
     """)
     check("tools visible on hover", vis == "1", vis)
     shot("02-calendar-hover")
+
+    # --- calendar: the Notion-style month board, before any Google account
+    cal = page("""
+      const c = [...document.querySelectorAll('#grid .grid-stack-item')].find(e => e._cthulhu && e._cthulhu.id === 'calendar');
+      const today = c.querySelector('.cw-cal-day.today .cw-cal-num');
+      return { title: c.querySelector('.cw-cal-title').textContent,
+               dows: c.querySelectorAll('.cw-cal-dow').length,
+               weeks: c.querySelectorAll('.cw-cal-week').length,
+               days: c.querySelectorAll('.cw-cal-day').length,
+               adds: c.querySelectorAll('.cw-cal-add').length,
+               today: today ? today.textContent : null,
+               foot: c.querySelector('.cw-cal-foot').textContent };
+    """)
+    now = datetime.date.today()
+    check("board titled with the current month", re.match(r"^[A-Z][a-z]+ \d{4}$", cal["title"]) and str(now.year) in cal["title"], cal["title"])
+    check("7 weekday headers", cal["dows"] == 7, cal["dows"])
+    check("5-6 whole weeks, 7 days each, one + per day", cal["weeks"] in (5, 6) and cal["days"] == cal["weeks"] * 7 and cal["adds"] == cal["days"],
+          {k: cal[k] for k in ("weeks", "days", "adds")})
+    check("today is highlighted with its day number", cal["today"] == str(now.day), cal["today"])
+    check("board draws before Google is connected, and says how to connect", "⚙" in cal["foot"], cal["foot"])
+    # + without a connection must explain, not fail silently
+    page("""
+      const c = [...document.querySelectorAll('#grid .grid-stack-item')].find(e => e._cthulhu && e._cthulhu.id === 'calendar');
+      c.querySelector('.cw-cal-day.today .cw-cal-add').click();
+    """)
+    time.sleep(0.3)
+    t = page("const t = document.getElementById('cthulhu-toast'); return t ? t.textContent : '';")
+    check("+ while disconnected asks to connect", "Connect" in t, t)
+
+    # inject three items (no account needed) and check the board lays them out
+    first = now.replace(day=1)
+    a0 = first + datetime.timedelta(days=(6 - first.weekday()) % 7 + 1)   # first Monday on/after the 1st
+    a_first, a_last = a0, a0 + datetime.timedelta(days=2)                    # Mon..Wed, one bar
+    b_day = a0                                                               # timed, same Monday -> second lane
+    c_day = a0 + datetime.timedelta(days=9)                                  # next week Wednesday
+    laid = page("""
+      const [af, al, bd, cd] = arguments;
+      const c = [...document.querySelectorAll('#grid .grid-stack-item')].find(e => e._cthulhu && e._cthulhu.id === 'calendar');
+      const dbg = c.querySelector('.cw-cal')._cthCalDebug;
+      const exclusive = (ymd) => { const [y,m,d] = ymd.split('-').map(Number); const t = new Date(y, m-1, d+1); return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0'); };
+      dbg.inject([
+        { id:'A', summary:'three day bar', start:{date:af}, end:{date:exclusive(al)}, creator:{self:true},
+          extendedProperties:{shared:{cthulhuKind:'project'}} },
+        { id:'B', summary:'nine am', start:{dateTime:bd+'T09:00:00'}, end:{dateTime:bd+'T10:00:00'}, creator:{self:false, email:'them@example.invalid'},
+          extendedProperties:{shared:{cthulhuKind:'task'}} },
+        { id:'C', summary:'single', start:{date:cd}, end:{date:exclusive(cd)}, creator:{self:true} },
+      ]);
+      const seg = (id) => { const b = c.querySelector('.cw-cal-ev[data-event-id="'+id+'"]'); return b ? { col: b.style.gridColumn, row: b.style.gridRow, cls: b.className, week: [...c.querySelectorAll('.cw-cal-week')].indexOf(b.parentElement), pill: (b.querySelector('.cw-cal-pill')||{}).textContent || '', handles: b.querySelectorAll('.cw-cal-rz').length } : null; };
+      return { n: c.querySelectorAll('.cw-cal-ev').length, A: seg('A'), B: seg('B'), C: seg('C') };
+    """, a_first.isoformat(), a_last.isoformat(), b_day.isoformat(), c_day.isoformat())
+    print("BOARD", laid)
+    check("three injected items rendered as boxes", laid["n"] == 3, laid["n"])
+    check("A is ONE bar spanning three columns with both resize handles", laid["A"] and laid["A"]["col"] == "2 / 5" and laid["A"]["handles"] == 2 and "Project" == laid["A"]["pill"], laid["A"])
+    check("B (same day, timed, theirs) drops to the next lane and is dashed", laid["B"] and laid["B"]["row"] == "3" and "theirs" in laid["B"]["cls"], laid["B"])
+    check("C lands in the following week", laid["C"] and laid["C"]["week"] == laid["A"]["week"] + 1 and laid["C"]["row"] == "2", laid["C"])
+
+    # drag A with real pointer input. The grab lands on the bar's CENTRE (its
+    # middle day), so dropping on the day after its end moves it by TWO days --
+    # the grab offset is kept, exactly as in Notion. Without Google the patch
+    # then fails, so the board must show the optimistic move AND explain.
+    a_box = m.find_element("css selector", '.cw-cal-ev[data-event-id="A"]')
+    target = m.find_element("css selector", '.cw-cal-day[data-ymd="%s"]' % (a_last + datetime.timedelta(days=1)).isoformat())
+    m.actions.sequence("pointer", "mouse", {"pointerType": "mouse"}) \
+        .pointer_move(0, 0, origin=a_box).pointer_down() \
+        .pointer_move(20, 0, origin=a_box).pointer_move(0, 0, origin=target).pointer_up().perform()
+    time.sleep(0.6)
+    moved = page("""
+      const c = [...document.querySelectorAll('#grid .grid-stack-item')].find(e => e._cthulhu && e._cthulhu.id === 'calendar');
+      const a = c.querySelector('.cw-cal-ev[data-event-id="A"]');
+      const ev = c.querySelector('.cw-cal').__proto__ && null;
+      const evs = c.querySelector('.cw-cal')._cthCalDebug.events().find(e => e.id === 'A');
+      return { col: a ? a.style.gridColumn : null, start: evs.start.date, end: evs.end.date,
+               toast: (document.getElementById('cthulhu-toast') || {}).textContent || '' };
+    """)
+    print("MOVED", moved)
+    check("drag moved A by the grab offset (+2 days), still 3 long", moved["start"] == (a_first + datetime.timedelta(days=2)).isoformat()
+          and moved["end"] == (a_last + datetime.timedelta(days=3)).isoformat(), moved)
+    check("board shows the move optimistically", moved["col"] == "4 / 7", moved["col"])
+    check("and the failed Google patch is explained", "Could not move" in moved["toast"], moved["toast"])
+
+    # resize C by its right edge onto the next day
+    handle = m.find_element("css selector", '.cw-cal-ev[data-event-id="C"] .cw-cal-rz.r')
+    nxt = m.find_element("css selector", '.cw-cal-day[data-ymd="%s"]' % (c_day + datetime.timedelta(days=1)).isoformat())
+    m.actions.sequence("pointer", "mouse", {"pointerType": "mouse"}) \
+        .pointer_move(0, 0, origin=handle).pointer_down().pointer_move(15, 0, origin=handle).pointer_move(0, 0, origin=nxt).pointer_up().perform()
+    time.sleep(0.5)
+    rz = page("""
+      const c = [...document.querySelectorAll('#grid .grid-stack-item')].find(e => e._cthulhu && e._cthulhu.id === 'calendar');
+      const ev = c.querySelector('.cw-cal')._cthCalDebug.events().find(e => e.id === 'C');
+      const b = c.querySelector('.cw-cal-ev[data-event-id="C"]');
+      return { start: ev.start.date, end: ev.end.date, col: b ? b.style.gridColumn : null };
+    """)
+    check("edge drag grew C to two days", rz["start"] == c_day.isoformat() and rz["end"] == (c_day + datetime.timedelta(days=2)).isoformat(), rz)
+
+    # click (no movement) on a name -> inline rename box
+    title_el = m.find_element("css selector", '.cw-cal-ev[data-event-id="C"] .cw-cal-ev-title')
+    m.actions.sequence("pointer", "mouse", {"pointerType": "mouse"}).pointer_move(0, 0, origin=title_el).pointer_down().pointer_up().perform()
+    time.sleep(0.3)
+    ren = page("""
+      const i = document.querySelector('.cw-cal-ev[data-event-id="C"] .cw-cal-ev-title input');
+      return i ? { value: i.value, focused: document.activeElement === i } : null;
+    """)
+    check("click on a name opens an inline rename with the old name", ren and ren["value"] == "single" and ren["focused"], ren)
+    page("const i = document.querySelector('.cw-cal-ev-title input'); if (i) i.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}));")
+    shot("02b-calendar-board")
 
     # --- theme switching: page + chrome follow, favourites
     page("w.CthulhuThemes.setTheme('rose');"); time.sleep(0.6)
@@ -181,6 +286,77 @@ try:
     ps2 = page("return { n: document.querySelectorAll('.cw-pal-sw').length, opts: document.querySelector('.cw-pal-bar select').options.length };")
     check("dice made a new 5-colour palette and selected it", ps2 == {"n": 5, "opts": 2}, ps2)
 
+    # --- pets: the new set, KIY's glitch, Rishi's button, integer scaling
+    page("""
+      const H = w.CthulhuHome;
+      H.addWidgetByType('pet', {x:4, y:3, w:2, h:2, config:{pet:'kiy'}});
+      H.addWidgetByType('pet', {x:6, y:3, w:2, h:2, config:{pet:'rishi'}});
+      H.addWidgetByType('pet', {x:8, y:3, w:2, h:2, config:{pet:'cthulhu'}});
+    """)
+    time.sleep(2.5)
+    ids = page("return w.CthulhuWidgets.all().map(d => d.id);")
+    check("feature-request widget is gone from the registry", "feature-request" not in ids, ids)
+    pets = page("return fetch('chrome://cthulhu/content/newtab/widgets/pet/assets/pets.json').then(r => r.json()).then(l => l.map(p => p.id));")
+    check("pets.json lists exactly the new pets", pets == ["verity", "kiy", "rishi", "cthulhu", "voyeur", "cat"], pets)
+    sizes = page("""
+      return [...document.querySelectorAll('.cw-pet-img')].map(i => {
+        const st = i.closest('.cw-pet-stage').getBoundingClientRect(), r = i.getBoundingClientRect();
+        return { pet: i.dataset.pet, nat: i.naturalWidth + 'x' + i.naturalHeight, scale: +i.dataset.scale,
+                 css: Math.round(r.width) + 'x' + Math.round(r.height),
+                 integer: i.offsetWidth === i.naturalWidth * +i.dataset.scale && i.offsetHeight === i.naturalHeight * +i.dataset.scale,
+                 fits: i.offsetWidth <= st.width + 1 && i.offsetHeight <= st.height + 1,
+                 anim: getComputedStyle(i).animationName };
+      });
+    """)
+    print("PETS", sizes)
+    check("three pets rendered", len(sizes) == 3, len(sizes))
+    check("every pet scaled by an integer factor >= 1 and fits its stage", all(s["integer"] and s["scale"] >= 1 and s["fits"] for s in sizes), sizes)
+    check("different native sizes get different factors (art is not pre-scaled)", len({s["nat"] for s in sizes}) == 3, [s["nat"] for s in sizes])
+    check("a single-frame pet idles", any(s["pet"] == "cthulhu" and s["anim"] == "cw-pet-idle" for s in sizes))
+    # KIY: frames change, in a random order, and the name never sits still
+    kiy = page("""
+      const img = document.querySelector('.cw-pet-img[data-pet="kiy"]');
+      const name = img.closest('.cw-pet').querySelector('.cw-pet-name');
+      const srcs = [], names = [];
+      return new Promise(res => {
+        let n = 0;
+        const iv = setInterval(() => {
+          srcs.push(img.src.split('/').pop()); names.push(name.textContent);
+          if (++n >= 14) { clearInterval(iv); res({ srcs, names }); }
+        }, 95);
+      });
+    """)
+    distinct = len(set(kiy["srcs"]))
+    check("KIY cycles its frames rapidly", distinct >= 4, kiy["srcs"])
+    check("KIY frames are not in numeric order", kiy["srcs"] != sorted(kiy["srcs"], key=lambda s: int(re.sub(r"\D", "", s) or 0)) , kiy["srcs"][:6])
+    check("KIY's label flickers between KIY and gibberish", "KIY" in kiy["names"] and len(set(kiy["names"])) >= 3, kiy["names"][:8])
+    # the dropdown entry flickers too
+    page("[...document.querySelectorAll('#grid .grid-stack-item')].find(e => e._cthulhu && e._cthulhu.id === 'pet').querySelector('.cthulhu-widget-btn[title=\"Configure\"]').click();")
+    time.sleep(0.4)
+    opt = page("""
+      const o = [...document.querySelectorAll('.cthulhu-config-modal select option')].find(o => o.value === 'kiy');
+      return new Promise(res => { const seen = []; let n = 0; const iv = setInterval(() => { seen.push(o.textContent); if (++n >= 12) { clearInterval(iv); res(seen); } }, 90); });
+    """)
+    check("KIY's dropdown entry flickers", "KIY" in opt and len(set(opt)) >= 3, opt[:8])
+    page("const mm = document.querySelector('.cthulhu-config-modal'); if (mm) mm.remove();")
+    time.sleep(0.3)
+    stopped = page("const o = [...document.querySelectorAll('option')].find(o => o.value === 'kiy'); return o ? 'still in DOM' : 'gone';")
+    check("closing the panel removes the flickering option (its timer stops itself)", stopped == "gone", stopped)
+    # Rishi: a real button that opens the feature-request form
+    hit = page("const b = document.querySelector('.cw-pet-hit'); return b ? { tag: b.tagName, hasRishi: !!b.querySelector('img[data-pet=\"rishi\"]'), title: b.title } : null;")
+    check("Rishi is wrapped in a real <button>", hit and hit["tag"] == "BUTTON" and hit["hasRishi"], hit)
+    m.find_element("css selector", ".cw-pet-hit").click()
+    time.sleep(1.2)
+    rr = page("""
+      const mdl = document.querySelector('.cw-rr-modal');
+      return mdl ? { textarea: !!mdl.querySelector('textarea'), send: !!mdl.querySelector('.cw-rr-send'), title: mdl.querySelector('.cthulhu-config-title').textContent,
+                     focused: document.activeElement === mdl.querySelector('textarea') } : null;
+    """)
+    check("clicking Rishi opens the feature-request form (loaded on demand)", rr and rr["textarea"] and rr["send"] and rr["title"] == "Feature request" and rr["focused"], rr)
+    shot("08-rishi-request")
+    page("const mdl = document.querySelector('.cw-rr-modal'); if (mdl) mdl.remove();")
+    shot("09-pets")
+
     # --- drawer: icons instead of dots
     page("document.getElementById('cthulhu-settings').click();"); time.sleep(0.8)
     ic = page("""
@@ -189,7 +365,7 @@ try:
                dots: document.querySelectorAll('.cthulhu-palette-dot').length,
                cats: [...document.querySelectorAll('.cthulhu-palette-category h2')].map(h => h.textContent) };
     """)
-    check("palette shows 14 icons (16x16), no dot fallbacks", ic["icons"] == 14 and ic["loaded"] == 14 and ic["dots"] == 0, ic)
+    check("palette shows 13 icons (16x16), no dot fallbacks", ic["icons"] == 13 and ic["loaded"] == 13 and ic["dots"] == 0, ic)
     check("Play category absent while the game is parked", "Play" not in ic["cats"], ic["cats"])
     shot("07-drawer-icons")
 

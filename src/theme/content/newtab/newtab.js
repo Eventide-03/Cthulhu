@@ -45,7 +45,10 @@ window.addEventListener("hashchange", () => location.reload());
       // dragged to move the widget; a click still navigates (GridStack tells a
       // click from a drag by movement).
       // canvas: the minigame's world takes clicks and key focus itself.
-      draggable: { cancel: "input,textarea,select,button,[contenteditable],canvas" },
+      // [data-cthulhu-nodrag]: any element a widget marks this way -- the
+      // calendar's event boxes, which have their own drag -- never starts a
+      // tile drag. GridStack checks it with closest(), so children count.
+      draggable: { cancel: "input,textarea,select,button,[contenteditable],canvas,[data-cthulhu-nodrag]" },
     },
     el
   );

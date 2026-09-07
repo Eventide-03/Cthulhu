@@ -1,23 +1,34 @@
 # Calendar widget
 
-Built around a Google Calendar **shared between two people**. Shows what's on
-today, lets either person quick-create and tick things off, and filters by who
-created what.
+A Notion-style **month board** on top of a Google Calendar shared between two
+people. The whole month is a 7-column grid; every item is a box on its day, and
+an item that runs over several days is one bar across them.
 
-- **Mine / Theirs / Both** — click the mode chip in the header to cycle, or set
-  it in ⚙. Attribution comes from the event's creator.
-- **+** — quick-create a Task / Deadline / Event / Project with a date,
-  optional time + duration, and notes.
-- **✓ / ×** on each row — mark done (non-destructive) or delete (needs a second
-  click to confirm).
-- **⟳** — refresh immediately, rather than waiting for the poll.
+- **+ on a day** — hover a day, press its **+**, type a name, **Enter**. That's
+  a new all-day item on that day (tagged *Task*; the tag is just a pill, Google
+  has no notion of it). **Esc** cancels.
+- **Drag a box** to another day to move it. A timed item keeps its time of day,
+  so *Tuesday 9 am* dragged to Thursday is *Thursday 9 am*.
+- **Drag a box's left or right edge** to change when it starts or ends — that
+  is how a one-day item becomes a three-day bar, or back again.
+- **Click a box's name** to rename it in place.
+- **Hover a box** for **✓** (mark done — non-destructive, the box dims and
+  strikes through) and **×** (delete; needs a second click to confirm).
+- **Mine / Theirs / Both** — click the chip in the header to cycle, or set it
+  in ⚙. Attribution comes from the event's creator; in *Both*, the other
+  person's boxes have a dashed border.
+- **‹ Today ›** — move between months. **⟳** refreshes immediately rather than
+  waiting for the poll.
 - **Polls every 5–15 minutes** (⚙), so an edit made on your phone lands here on
   its own.
-- **Hover the widget** for the whole month, with a dot on every day that has
-  something on it — the dots follow the same Mine/Theirs/Both filter.
 
-The month grid is drawn locally from the system clock, so it still works before
-you connect anything — you just won't get event dots.
+Every edit goes straight to Google (as a partial update, so nothing else on the
+event is touched). The board updates optimistically first and reloads if Google
+says no, with the reason in a toast.
+
+The grid is drawn locally from the system clock, so it renders before you
+connect anything — you just won't have any boxes on it, and **+** will ask you
+to connect first.
 
 ## Why you supply your own Google client
 

@@ -35,7 +35,7 @@ There is no server that belongs to this project collecting anything about you.
 | 2 | `api.open-meteo.com` | Ambient weather theming | `cthulhu.ambient.weather.enabled=false` |
 | 3 | Google Calendar / OAuth | Only if you connect a calendar | Don't connect / Disconnect |
 | 4 | `eventide-03.github.io` → `github.com` | Update check at every startup, then periodically | `DisableAppUpdate` policy |
-| 5 | Your feature-request relay | Only when you submit a request | Don't use the feature |
+| 5 | Your feature-request relay | Only when you send one (toolbar button, or clicking the Rishi pet) | Don't use the feature |
 | 6 | `eventide-03.github.io`, `github.com` | After an update, and About-dialog links | `startup.homepage_override_url=""` |
 
 ### 1. Favicon lookups — the site itself, then DuckDuckGo

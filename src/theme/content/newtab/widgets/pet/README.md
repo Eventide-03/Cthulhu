@@ -1,51 +1,64 @@
 # Pet widget
 
-An idle-looping pixel pet. Pick a specific one, or leave it on **Random** —
-which re-rolls on every render: each new tab, each home-page refresh, and on a
-click on the tile.
+A looping pixel pet. Pick a specific one, or leave it on **Random** — which
+re-rolls on every render: each new tab, each home-page refresh, and on a click
+on the tile.
 
-## Art slots (drop your own; the bundled four are placeholders)
+## The pets
 
-Every pet is two files plus one line of manifest — the same drop-in convention
-the widget registry itself uses. Adding a pet never means editing `pet.js`:
+| id | frames | what it does |
+| --- | --- | --- |
+| `verity` | 1 | idles |
+| `kiy` | 12 | **glitches** — see below |
+| `rishi` | 1 | idles; **click him to send a feature request** |
+| `cthulhu` | 1 | idles |
+| `voyeur` | 1 | idles |
+| `cat` | 1 | idles |
 
-```
-assets/
-  <id>.png      horizontal strip: N frames of equal size, left to right
-  <id>.json     Aseprite-format sheet JSON (frame rects + per-frame durations;
-                `meta.image` names the PNG, resolved next to the JSON)
-  pets.json     [{ "id": "<id>", "name": "<Display Name>" }, ...]
-```
+## Art slots (drop your own)
 
-The bundled `cat` / `dog` / `frog` / `ghost` are crude 4-frame 32×32 strips
-(128×32) — flat shapes meant to be thrown away.
-
-**Frame size and count are read from each pet's own JSON**, so real art is free
-to use a different cell size or a longer animation without any code change. The
-sprite is scaled up 3× for display (`transform: scale(3)`, `image-rendering:
-pixelated`), so a 32×32 cell renders at 96×96 — draw at native pixel size, not
-pre-scaled.
-
-If you export from Aseprite, *File → Export Sprite Sheet* with **horizontal
-strip** layout and **JSON data** checked produces exactly this pair.
-
-### Minimal hand-written JSON
+Every pet is one entry in `assets/pets.json` plus its PNG frame(s) in
+`assets/`. Adding a pet never means editing `pet.js`:
 
 ```json
-{
-  "frames": {
-    "cat 0.aseprite": { "frame": { "x": 0,  "y": 0, "w": 32, "h": 32 }, "duration": 220 },
-    "cat 1.aseprite": { "frame": { "x": 32, "y": 0, "w": 32, "h": 32 }, "duration": 220 }
-  },
-  "meta": { "image": "cat.png", "format": "RGBA8888",
-            "size": { "w": 64, "h": 32 }, "scale": "1" }
-}
+{ "id": "cat", "name": "Cat", "frames": ["cat.png"] }
 ```
 
-`duration` is per frame in milliseconds; the sprite helper averages them into
-one playback rate (it drives a CSS `steps()` animation, so the strip plays at a
-single fps rather than honouring per-frame timing individually).
+- **`frames`** — one or more PNGs, each a single frame at **native pixel
+  size**. Frames can be any size; 16×24, 32×32, 56×62 and 64×64 all ship
+  today. The widget scales each pet up by an **integer** factor to fill the
+  tile (`image-rendering: pixelated`, so it stays crisp) and re-fits when the
+  tile is resized. Never pre-scale the art.
+- **`mode`** — omitted: one frame plays a gentle idle bob; several frames play
+  in order at `fps`. `"glitch"`: see below.
+- **`fps`** — playback rate for multi-frame pets (default 8; glitch default 11).
+- **`action`** — `"feature-request"` turns the sprite into a real button that
+  opens the feature-request form (`rishi-request.js`, loaded on first click).
+- **`hint`** — tooltip for an actionable pet; also shown under the ⚙ dropdown.
 
-A pet whose art fails to load falls back to showing its name with
-"(art missing)" rather than rendering an empty tile; a configured pet that's
-been deleted from `pets.json` falls back to a random one.
+Then add the new files to `theme/jar.mn` (it does not glob) and rebuild.
+
+## KIY — the King in Yellow
+
+Something spooky, on purpose:
+
+- Its twelve frames play in a **random order**, reshuffled every pass, so every
+  frame shows once per pass and none repeats back to back, with a pixel of
+  jitter thrown in.
+- Its **name never sits still**. Under the sprite and in the ⚙ dropdown, "KIY"
+  flickers into a few characters of gibberish — Greek, Cyrillic, Hebrew,
+  katakana, runes, block glyphs — and back, several times a second. It is
+  legible as a whole because the real name shows about two ticks in five.
+
+## Rishi — the feature-request box
+
+Rishi is wrapped in a real `<button>`. GridStack does not start a tile drag
+from a button, so a plain click reaches him — unlike the rest of a tile, where
+clicks have to be inferred from a drag that went nowhere (see
+`widgets/README.md`). Clicking him opens the same form the toolbar button does:
+message, optional name, sent to the relay in `relay/`. The former standalone
+feature-request widget is gone; this is where it lives now.
+
+A pet whose art fails to load shows its name rather than an empty tile; a
+configured pet that has been removed from `pets.json` falls back to a random
+one.

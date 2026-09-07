@@ -70,6 +70,14 @@ abused, rotate the webhook and tighten `limit`.
    ```
    Paste your Discord webhook URL when prompted.
 
+   > **The argument is the secret's NAME and must be exactly
+   > `DISCORD_WEBHOOK_URL`.** The URL goes in at the prompt, never on the
+   > command line. Putting the URL where the name goes creates a secret *named*
+   > after your webhook, the Worker finds nothing under the name it looks for,
+   > and every request comes back `503 Relay is not configured` — which is
+   > precisely what happened once. `wrangler secret list` shows names only, so
+   > it is a safe way to check what you have.
+
 5. Point the browser at it — set this pref default in
    `src/browser/app/profile/cthulhu.js` (or per-user in `about:config`):
    ```
