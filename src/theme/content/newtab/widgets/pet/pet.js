@@ -23,6 +23,9 @@
  *   action   "feature-request": the sprite becomes a real button that opens
  *            the feature-request form (rishi-request.js, loaded on demand).
  *   hint     tooltip for an actionable pet.
+ *   moodPref a pref name; its text is shown in a bubble ABOVE the sprite and
+ *            follows the pref live. Rishi's is set from the admin panel
+ *            (newtab/admin.js). Empty pref = no bubble.
  *
  * Everything lives inside this closure: widget scripts are plain <script>
  * elements sharing ONE global scope (see widgets.js loadWidgetScripts), so a
@@ -33,6 +36,21 @@
 
   const ASSET_BASE = "chrome://cthulhu/content/newtab/widgets/pet/";
   const MAX_SCALE = 8;
+  const MOOD_MAX = 60;
+
+  const prefs = () => (typeof Services !== "undefined" && Services.prefs) || null;
+  function getPref(name, d) {
+    try { return prefs().getStringPref(name, d); } catch (e) { return d; }
+  }
+  /** Watch a string pref; returns stop(). Used so a mood set in the admin panel
+   *  appears immediately, in every open tab, without a reload. */
+  function watchPref(name, fn) {
+    const P = prefs();
+    if (!P) return () => {};
+    const obs = { observe() { fn(getPref(name, "")); } };
+    try { P.addObserver(name, obs); } catch (e) { return () => {}; }
+    return () => { try { P.removeObserver(name, obs); } catch (e) {} };
+  }
 
   /* ------------------------------------------------------------------------
    * Glitch text: "KIY" <-> gibberish.
@@ -168,6 +186,92 @@
     return pets[Math.floor(Math.random() * pets.length)];
   }
 
+  /* ------------------------------------------------------------------------
+   * Admin section: Rishi's mood.
+   *
+   * Registered here rather than in admin.js so the control ships beside the
+   * thing it controls -- admin.js never needs editing to gain a section. It is
+   * a no-op if the admin panel isn't present.
+   *
+   * LOCAL ONLY: this writes a pref on this machine. It does not reach anyone
+   * else's copy, and it cannot without a server to hold the value plus a
+   * secret the user supplies -- a secret shipped in a public binary is not one.
+   * ---------------------------------------------------------------------- */
+  const MOOD_PREF = "cthulhu.pet.rishi.mood";
+  const MOOD_PRESETS = [
+    "building something",
+    "deep in the code",
+    "out of coffee",
+    "shipping it",
+    "back soon",
+    "do not perceive me",
+  ];
+  if (window.CthulhuAdmin) {
+    window.CthulhuAdmin.register({
+      id: "rishi-mood",
+      title: "Rishi's mood",
+      note: "Shown above Rishi in the Pet widget. Local to this machine.",
+      render(body, ctx) {
+        const input = document.createElement("input");
+        input.type = "text";
+        input.maxLength = String(MOOD_MAX);
+        input.placeholder = "What is Rishi up to?";
+        input.setAttribute("aria-label", "Rishi's mood");
+        input.value = getPref(MOOD_PREF, "");
+        body.appendChild(input);
+
+        const chips = document.createElement("div");
+        chips.className = "cw-ui-choice";
+        body.appendChild(chips);
+        const buttons = [];
+        // Highlight whichever preset IS the current mood, so a stale focus ring
+        // on the last one clicked can't imply a mood that is no longer set.
+        const paint = (v) => {
+          for (const b of buttons) b.classList.toggle("on", b.textContent === v);
+        };
+        const commit = (v) => {
+          input.value = v;
+          ctx.setPref(MOOD_PREF, v);
+          paint(v);
+        };
+        for (const m of MOOD_PRESETS) {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "cw-ui-choice-btn";
+          b.textContent = m;
+          b.addEventListener("click", (e) => { e.stopPropagation(); commit(m); });
+          buttons.push(b);
+          chips.appendChild(b);
+        }
+        paint(input.value);
+        input.addEventListener("input", () => paint(input.value));
+
+        const actions = document.createElement("div");
+        actions.style.cssText = "display:flex; gap:8px; flex-wrap:wrap;";
+        const setBtn = document.createElement("button");
+        setBtn.type = "button";
+        setBtn.className = "cw-cfg-save";
+        setBtn.textContent = "Set";
+        setBtn.addEventListener("click", (e) => { e.stopPropagation(); commit(input.value.trim()); });
+        const clearBtn = document.createElement("button");
+        clearBtn.type = "button";
+        clearBtn.className = "cw-cfg-save";
+        clearBtn.style.background = "var(--surface)";
+        clearBtn.style.color = "var(--fg)";
+        clearBtn.textContent = "Clear";
+        clearBtn.addEventListener("click", (e) => { e.stopPropagation(); commit(""); });
+        actions.appendChild(setBtn);
+        actions.appendChild(clearBtn);
+        body.appendChild(actions);
+
+        // Enter commits, so the panel can be driven from the keyboard alone.
+        input.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") { e.preventDefault(); commit(input.value.trim()); }
+        });
+      },
+    });
+  }
+
   CthulhuWidgets.register({
     id: "pet",
     category: "aesthetic",
@@ -191,6 +295,20 @@
       .cw-pet-hit { background:none; border:none; padding:0; margin:0; cursor:pointer; display:block; border-radius:8px; }
       .cw-pet-hit:hover .cw-pet-img { filter: drop-shadow(0 0 6px var(--accent)); }
       .cw-pet-hit:focus-visible { outline:2px solid var(--accent); outline-offset:4px; }
+      /* Mood bubble, above the sprite. Speech-bubble tail via a rotated
+         square so it needs no extra art. */
+      .cw-pet-mood {
+        position:relative; align-self:center; max-width:100%; margin-bottom:2px;
+        padding:4px 8px; border-radius:8px; background:var(--bg-elevated);
+        border:1px solid var(--border); color:var(--fg); font-family:var(--font-pixel);
+        font-size:.82em; line-height:1.3; text-align:center; overflow-wrap:anywhere;
+      }
+      .cw-pet-mood::after {
+        content:""; position:absolute; left:50%; bottom:-4px; width:6px; height:6px;
+        background:var(--bg-elevated); border-right:1px solid var(--border);
+        border-bottom:1px solid var(--border); transform:translateX(-50%) rotate(45deg);
+      }
+      .cw-pet-mood:empty { display:none; }
       .cw-pet-name { color:var(--fg-muted); font-size:.85em; text-align:center; font-family:var(--font-pixel);
                      min-height:1.2em; font-variant-ligatures:none; }
       .cw-pet-empty { color:var(--fg-muted); font-size:.85em; text-align:center; padding:8px; }
@@ -221,11 +339,13 @@
     render(el, ctx) {
       el.innerHTML =
         '<div class="cw-pet">' +
+          '<div class="cw-pet-mood"></div>' +
           '<div class="cw-pet-stage"></div>' +
           '<div class="cw-pet-name"></div>' +
         "</div>";
       const stage = el.querySelector(".cw-pet-stage");
       const nameEl = el.querySelector(".cw-pet-name");
+      const moodEl = el.querySelector(".cw-pet-mood");
 
       // The manifest fetch and the image load are async, so this render can be
       // torn down (widget removed, or re-rendered by a config change) while
@@ -266,6 +386,14 @@
           stops.push(glitchText(nameEl, name));
         } else {
           nameEl.textContent = name;
+        }
+
+        // Mood bubble, for a pet that has one. Follows the pref live, so
+        // setting it in the admin panel updates every open tab at once.
+        if (pet.moodPref) {
+          const paintMood = (v) => { moodEl.textContent = (v || "").slice(0, MOOD_MAX); };
+          paintMood(getPref(pet.moodPref, ""));
+          stops.push(watchPref(pet.moodPref, paintMood));
         }
 
         // Sprite.

@@ -94,13 +94,20 @@ try:
           "buttons=%d firstBtnTop=%s" % (r["nBtns"], r["firstBtnTop"]))
     # hover to show them in a screenshot
     m.set_context("content")
-    cal_el = m.find_element("css selector", ".cw-cal-head")
-    m.actions.sequence("pointer", "mouse", {"pointerType": "mouse"}).pointer_move(0, 0, origin=cal_el).perform()
-    time.sleep(1.5)   # GridStack animates tiles into place; hovering mid-animation misses
-    vis = page("""
-      const cal = [...document.querySelectorAll('#grid .grid-stack-item')].find(e => e._cthulhu && e._cthulhu.id === 'calendar');
-      return getComputedStyle(cal.querySelector('.cthulhu-widget-tools')).opacity;
-    """)
+    # GridStack animates tiles into place, and a hover landing mid-animation
+    # lands on the old position and misses. Sleeping and hoping flaked twice,
+    # so re-hover until it takes rather than guessing at a duration.
+    vis = "0"
+    for _ in range(6):
+        cal_el = m.find_element("css selector", ".cw-cal-head")
+        m.actions.sequence("pointer", "mouse", {"pointerType": "mouse"}).pointer_move(0, 0, origin=cal_el).perform()
+        time.sleep(0.7)
+        vis = page("""
+          const cal = [...document.querySelectorAll('#grid .grid-stack-item')].find(e => e._cthulhu && e._cthulhu.id === 'calendar');
+          return getComputedStyle(cal.querySelector('.cthulhu-widget-tools')).opacity;
+        """)
+        if vis == "1":
+            break
     check("tools visible on hover", vis == "1", vis)
     shot("02-calendar-hover")
 

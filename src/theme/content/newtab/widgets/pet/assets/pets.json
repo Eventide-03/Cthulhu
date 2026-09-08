@@ -4,7 +4,8 @@
     "frames": ["kiy1.png", "kiy2.png", "kiy3.png", "kiy4.png", "kiy5.png", "kiy6.png",
                "kiy7.png", "kiy8.png", "kiy9.png", "kiy10.png", "kiy11.png", "kiy12.png"] },
   { "id": "rishi",   "name": "Rishi",   "frames": ["rishi.png"], "action": "feature-request",
-    "hint": "Click Rishi to send a feature request" },
+    "hint": "Click Rishi to send a feature request",
+    "moodPref": "cthulhu.pet.rishi.mood" },
   { "id": "cthulhu", "name": "Cthulhu", "frames": ["cthulhu.png"] },
   { "id": "voyeur",  "name": "Voyeur",  "frames": ["voyeur.png"] },
   { "id": "cat",     "name": "Cat",     "frames": ["cat.png"] }

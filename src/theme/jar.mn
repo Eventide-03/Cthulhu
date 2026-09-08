@@ -28,6 +28,7 @@ cthulhu.jar:
     content/newtab/index.html               (content/newtab/index.html)
     content/newtab/newtab.css               (content/newtab/newtab.css)
     content/newtab/newtab.js                (content/newtab/newtab.js)
+    content/newtab/admin.js                 (content/newtab/admin.js)
     content/newtab/AboutCthulhu.sys.mjs     (content/newtab/AboutCthulhu.sys.mjs)
 # Browser-wide file picker (Opera-GX-style): a JSWindowActor (registration +
 # parent/child) that intercepts <input type=file> clicks in web content.

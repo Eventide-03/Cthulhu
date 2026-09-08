@@ -36,6 +36,9 @@
     <!-- engine, A4 sprite helper, widget system, then page bootstrap -->
     <script src="chrome://cthulhu/content/newtab/vendor/gridstack/gridstack-all.js"></script>
     <script src="chrome://cthulhu/content/sprite.js"></script>
+    <!-- admin panel registry: must load before the widgets that register
+         sections into it -->
+    <script src="chrome://cthulhu/content/newtab/admin.js"></script>
     <script src="chrome://cthulhu/content/newtab/widgets.js"></script>
     <script src="chrome://cthulhu/content/newtab/newtab.js"></script>
   </body>

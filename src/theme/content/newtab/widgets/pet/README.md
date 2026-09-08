@@ -59,6 +59,27 @@ clicks have to be inferred from a drag that went nowhere (see
 message, optional name, sent to the relay in `relay/`. The former standalone
 feature-request widget is gone; this is where it lives now.
 
+## Rishi's mood (admin panel)
+
+Rishi carries a `moodPref` in `pets.json`, so whatever that pref holds is drawn
+in a speech bubble **above** his sprite, and follows the pref live — set it and
+every open tab updates without a reload. Any pet can have one; only Rishi does.
+
+Set it in the **admin panel**: turn on `cthulhu.admin.enabled` in `about:config`
+and an *admin* button appears beside the widget-settings gear. The section
+offers six presets and a free-text field; **Clear** removes the bubble.
+
+The section is registered from `pet.js` rather than from `admin.js`, so the
+control ships beside the thing it controls and the panel never needs editing to
+gain one. See the header of `newtab/admin.js`.
+
+**It is local to your machine.** The admin gate is discoverability, not
+security — the source is public, so anyone can flip that pref for their own
+copy. That is fine while everything in the panel only affects the machine it
+runs on. A mood your *friend* could see would need a server to hold it plus a
+secret you supply, because anything shipped inside a public binary is
+extractable.
+
 A pet whose art fails to load shows its name rather than an empty tile; a
 configured pet that has been removed from `pets.json` falls back to a random
 one.

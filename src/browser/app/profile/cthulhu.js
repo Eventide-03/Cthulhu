@@ -112,6 +112,23 @@ pref("cthulhu.ambient.weather.enabled", true);
 // Documented in PRIVACY.md.
 pref("cthulhu.favicons.remote", true);
 
+// -- Admin panel (home page) --
+// Off by default. Turn it on and a small "admin" button appears next to the
+// widget-settings gear, opening a panel of developer-side controls
+// (newtab/admin.js).
+//
+// This is a DISCOVERABILITY gate, not a security boundary: the source is
+// public, so anyone can flip this for their own copy. That is fine while
+// everything in the panel is local to the machine it runs on. A control that
+// changed something for OTHER people could not be gated this way -- it would
+// need a secret the user supplies, since anything shipped in the binary is
+// extractable.
+pref("cthulhu.admin.enabled", false);
+
+// Rishi's mood: free text shown above his sprite in the Pet widget, set from
+// the admin panel. Empty means no bubble. Local to this machine.
+pref("cthulhu.pet.rishi.mood", "");
+
 // -- Theme --
 // The browser-wide palette (content/themes.js): a preset id, or "ambient" to
 // follow the time of day. "night" is what the chrome shipped locked to before
