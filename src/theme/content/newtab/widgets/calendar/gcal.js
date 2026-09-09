@@ -180,6 +180,40 @@ window.CthulhuGCal = (function () {
   }
 
   /* ------------------------------ token plumbing --------------------------- */
+  /**
+   * Google's token endpoint answers with terse codes that say nothing about
+   * what to change. Translate the ones this setup can actually produce.
+   * `redirect_uri_mismatch` is the big one: it almost always means the OAuth
+   * client was created as a "Web application" instead of a "Desktop app", and
+   * loopback redirects are only automatic for Desktop clients.
+   */
+  function explainTokenError(raw) {
+    const m = String(raw || "");
+    if (/redirect_uri_mismatch/i.test(m)) {
+      return "Google rejected the loopback address (redirect_uri_mismatch). Your " +
+        "OAuth client is almost certainly a \"Web application\" -- it has to be a " +
+        "\"Desktop app\", which is the only type Google lets use 127.0.0.1 on any " +
+        "port. Create a Desktop app client and paste its id and secret here.";
+    }
+    if (/invalid_client|unauthorized_client/i.test(m)) {
+      return "Google did not recognise the client (" + m + "). Check the client ID " +
+        "and secret are from the same Desktop app client, with no stray spaces.";
+    }
+    if (/access_denied/i.test(m)) {
+      return "Access was declined on the Google screen. If it warned the app is " +
+        "unverified, choose Advanced then \"Go to (your app)\".";
+    }
+    if (/invalid_grant/i.test(m)) {
+      return "Google rejected the authorisation (invalid_grant). Try Connect again; " +
+        "if it persists, the code expired before the exchange finished.";
+    }
+    if (/invalid_scope/i.test(m)) {
+      return "A requested scope is not enabled on the project (" + m + "). Add both " +
+        "calendar.events and calendar.calendarlist.readonly under Data Access.";
+    }
+    return m;
+  }
+
   async function postForm(url, fields) {
     const body = new URLSearchParams(fields).toString();
     const resp = await fetch(url, {
@@ -189,9 +223,15 @@ window.CthulhuGCal = (function () {
     });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) {
+      // Keep Google's own code in the text as well: it is what a search engine
+      // and the API console both key off.
+      const code = data.error || "";
+      const detail = data.error_description || code || "HTTP " + resp.status;
+      const explained = explainTokenError(code || detail);
       throw new Error(
-        (data.error_description || data.error || "HTTP " + resp.status) +
-        " (from Google's token endpoint)"
+        explained === (code || detail)
+          ? detail + " (from Google's token endpoint)"
+          : explained + "  [Google said: " + detail + "]"
       );
     }
     return data;

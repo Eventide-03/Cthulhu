@@ -815,6 +815,21 @@ CthulhuWidgets.register({
     status.textContent = "Checking…";
     panel.appendChild(status);
 
+    /* WHY THIS IS A SEPARATE ELEMENT: the reason a connect failed used to be
+     * written into `status`, and then the finally-block's paintStatus() wrote
+     * "Status: not connected" straight over it a moment later. The failure was
+     * therefore invisible -- the sign-in tab said authorisation was received,
+     * the panel said not connected, and nothing ever said why. paintStatus()
+     * never touches this line, so the reason survives. */
+    const errLine = document.createElement("div");
+    errLine.className = "cw-cal-foot err";
+    errLine.style.userSelect = "text";
+    panel.appendChild(errLine);
+    const showErr = (msg) => {
+      errLine.textContent = msg ? "Could not connect: " + msg : "";
+      if (msg) console.error("[Cthulhu:calendar] connect failed:", msg);
+    };
+
     const help = document.createElement("div");
     help.className = "cw-cal-foot";
     help.innerHTML =
@@ -953,6 +968,7 @@ CthulhuWidgets.register({
       connectBtn.addEventListener("click", async () => {
         if (await GCal.isConnected()) {
           await GCal.disconnect();
+          showErr("");
           await paintStatus();
           ctx.refresh();
           return;
@@ -961,15 +977,15 @@ CthulhuWidgets.register({
         connectBtn.disabled = true;
         connectBtn.textContent = "Waiting for Google…";
         status.innerHTML = "A Google sign-in tab has opened. Approve access there.";
+        showErr("");
         try {
           await GCal.connect();
-          status.innerHTML = "Status: <b>connected</b>";
           ctx.refresh();
         } catch (e) {
-          status.innerHTML = "Could not connect: " + ctx.esc(e.message);
+          showErr(e.message);
         } finally {
           connectBtn.disabled = false;
-          await paintStatus();
+          await paintStatus();  // safe now: it does not own the error line
         }
       });
     })();

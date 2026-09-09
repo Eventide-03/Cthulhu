@@ -117,6 +117,27 @@ label, poll interval) live in the widget config.
 **Disconnect** (in ⚙) drops the tokens but keeps the client ID/secret, so
 reconnecting doesn't mean typing them again.
 
+## If Connect doesn't stick
+
+The sign-in tab saying *"Authorisation received"* only means Google redirected
+back with a code. The code still has to be exchanged for tokens, and that
+exchange can fail — in which case ⚙ keeps saying **not connected**.
+
+The reason is printed under the status line. The common ones:
+
+| What it says | What to change |
+| --- | --- |
+| `redirect_uri_mismatch` | Your OAuth client is a **Web application**. It has to be a **Desktop app** — that is the only type Google lets use `127.0.0.1` on an arbitrary port. Make a Desktop app client and use its id and secret. |
+| `invalid_client` / `unauthorized_client` | The id and secret aren't from the same Desktop app client, or a stray space crept in. |
+| `invalid_grant` on a later refresh | The project is still on the **Testing** audience, where refresh tokens expire after 7 days. Publish it under Audience. |
+| `invalid_scope` | Add **both** scopes under Data Access. |
+| `access_denied` | The Google screen was declined. On the unverified-app warning, choose **Advanced → Go to (your app)**. |
+
+> That reason used to be invisible: it was written into the status line, and
+> then the status was repainted as "not connected" a moment later, wiping it.
+> The sign-in tab claimed success, the panel claimed failure, and nothing said
+> why. It now has its own line that the repaint never touches.
+
 ## Nothing in ⚙ is a native dropdown
 
 Calendar, Show and Refresh are groups of buttons. On `about:cthulhu` a
