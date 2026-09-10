@@ -236,14 +236,23 @@
 .cthulhu-player-slider:disabled {
   display: none;
 }
-/* ART SLOTS: every icon is a 16x16 PNG in assets/, drawn 1:1 and rendered at
- * 16 CSS px, pixelated. The play/pause button is a 30px round chip so the
- * primary action reads as such; the icon inside is still 16x16. */
+/* ART SLOTS: every icon is a PNG in assets/ shown at its OWN size, 1:1 and
+ * pixelated -- no fixed box, so a 23x17 skip stays 23x17 instead of being
+ * squashed into 16x16 (which would smear its pixels). One image pixel is one
+ * CSS pixel: a crisp 2x2 block on a Retina screen. The play/pause button is a
+ * 31px round chip so the primary action reads as such; odd, so the 17px-wide
+ * play and pause art centre on whole pixels. */
 .cthulhu-player-icon {
-  width: 16px;
-  height: 16px;
+  width: auto;
+  height: auto;
   image-rendering: pixelated;
   pointer-events: none;
+}
+/* Previous is the skip art mirrored -- one drawing, both directions. A flip
+ * about the image's own centre maps pixel edges onto pixel edges, so it stays
+ * as crisp as the original. */
+.cthulhu-player-icon.flip {
+  transform: scaleX(-1);
 }
 .cthulhu-player-ctrl {
   width: 26px;
@@ -261,8 +270,8 @@
   background: var(--surface-hover);
 }
 .cthulhu-player-ctrl.play {
-  width: 30px;
-  height: 30px;
+  width: 31px;
+  height: 31px;
   border-radius: 50%;
   border: 1px solid var(--border);
   background: var(--surface);

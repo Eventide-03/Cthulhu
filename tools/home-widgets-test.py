@@ -32,6 +32,11 @@ def shot(name):
 def page(js, *args):
     m.set_context("content")
     return m.execute_script("const w = window.wrappedJSObject || window; " + js, script_args=args)
+def shot_chrome(name):
+    if not SHOTS: return
+    m.set_context("chrome")
+    with open(os.path.join(SHOTS, name + ".png"), "wb") as f: f.write(base64.b64decode(m.screenshot(format="base64")))
+
 def chrome(js, *args):
     m.set_context("chrome")
     return m.execute_script(js, script_args=args)
@@ -728,15 +733,19 @@ try:
     check("clicking the speaker mutes the tab (icon swaps)", mu["muted"] and mu["attr"] and mu["icon"] == "mute.png", mu)
     chrome("document.querySelector('#cthulhu-player-panel .cthulhu-player-ctrl.mute').click();"); time.sleep(0.4)
     un = chrome("return { muted: window.__mediaTab.linkedBrowser.audioMuted, icon: document.querySelector('#cthulhu-player-panel .cthulhu-player-ctrl.mute img').src.split('/').pop() };")
-    check("and clicking again unmutes", not un["muted"] and un["icon"] == "volume.png", un)
+    check("and clicking again unmutes (full volume shows the three-arc speaker)", not un["muted"] and un["icon"] == "sound1.png", un)
     # volume: the slider is hidden until the speaker is hovered; moving it stores the level on the tab
     vol = chrome("""
       const s = document.querySelector('#cthulhu-player-panel .cthulhu-player-slider');
       const before = getComputedStyle(s).width;
-      s.value = '40'; s.dispatchEvent(new Event('input', { bubbles: true }));
-      return { hiddenWidth: before, stored: window.__mediaTab._cthulhuVolume, disabled: s.disabled };
+      const speaker = () => document.querySelector('#cthulhu-player-panel .cthulhu-player-ctrl.mute img').src.split('/').pop();
+      const at = (v) => { s.value = String(v); s.dispatchEvent(new Event('input', { bubbles: true })); return speaker(); };
+      const icons = { 90: at(90), 20: at(20), 0: at(0), 40: at(40) }; // ends on 40, which the actor check below reads
+      return { hiddenWidth: before, stored: window.__mediaTab._cthulhuVolume, disabled: s.disabled, icons };
     """)
     check("the volume slider is collapsed until hovered and stores the level on the tab", vol["hiddenWidth"] == "0px" and vol["stored"] == 0.4 and not vol["disabled"], vol)
+    check("the speaker shows the level: 3 arcs loud, 2 middling, 1 quiet, mute at 0",
+          vol["icons"] == {"90": "sound1.png", "40": "sound2.png", "20": "sound3.png", "0": "mute.png"}, vol["icons"])
     time.sleep(0.8)
     # the content side (the actor setting <audio>.volume). Informational on the dev bundle: a child
     # actor cannot be loaded from the bundle's symlinks by the sandboxed content process (see the
@@ -757,6 +766,17 @@ try:
         check("the page's <audio> volume follows the slider (actor)", True)
     else:
         print("INFO the page's <audio> volume is", applied, "-- the volume actor did not reach content on this dev bundle (symlinked child module; shipped builds carry it in omni.ja)")
+    sz = chrome("""
+      const q = (s) => document.querySelector('#cthulhu-player-panel ' + s);
+      const box = (s) => { const i = q(s + ' img'); const r = i.getBoundingClientRect(); return [r.width, r.height, i.naturalWidth, i.naturalHeight]; };
+      return { skip: box('.cthulhu-player-ctrl.next'), prev: box('.cthulhu-player-ctrl.prev'), play: box('.cthulhu-player-ctrl.play'),
+               speaker: box('.cthulhu-player-ctrl.mute'), close: box('.cthulhu-player-close'),
+               prevFlip: getComputedStyle(q('.cthulhu-player-ctrl.prev img')).transform, nextFlip: getComputedStyle(q('.cthulhu-player-ctrl.next img')).transform };
+    """)
+    check("icons are shown at their drawn size, 1:1 (skip 23x17, not squashed into 16x16) and previous is skip mirrored",
+          all(v[0] == v[2] and v[1] == v[3] and v[0] > 0 for v in (sz["skip"], sz["prev"], sz["play"], sz["speaker"], sz["close"]))
+          and sz["skip"][:2] == [23, 17] and sz["prevFlip"].startswith("matrix(-1") and sz["nextFlip"] == "none", sz)
+    shot_chrome("11-player")
     chrome("document.getElementById('cthulhu-player-panel').hidePopup();")
 
     # --- chrome: the player is there, the side panels and the feature-request button are gone
@@ -772,7 +792,8 @@ try:
     check("Now Playing squircle present; Discord/Instagram/Apple Music toggles, sidebar and feature-request button gone",
           ch["np"] and ch["toggles"] == 0 and not ch["sidepanels"] and not ch["fr"], ch)
     check("player is title/artist, close, elapsed+total, prev/play/next/mute with PNG icon slots, no browse or search",
-          ch["panel"] and ch["icons"] in (["close.png", "prev.png", "play.png", "next.png", "volume.png"], ["close.png", "prev.png", "pause.png", "next.png", "volume.png"]) and ch["times"] == 2 and ch["close"] and ch["rec"] == 0, ch)
+          ch["panel"] and ch["icons"][:4] in (["close.png", "skip.png", "play.png", "skip.png"], ["close.png", "skip.png", "pause.png", "skip.png"])
+          and ch["icons"][4] in ("sound1.png", "sound2.png", "sound3.png", "mute.png") and ch["times"] == 2 and ch["close"] and ch["rec"] == 0, ch)
     check("loaded chrome modules", set(ch["modules"]) == {"cursors", "ambient-theme", "now-playing", "compact-mode"}, ch["modules"])
 
     # --- vertical tabs: the Home tab appears as a pinned tab with the house; compact mode hides the strip

@@ -37,9 +37,10 @@
  * control can set the element's volume again afterwards, and a Web Audio
  * player (no media element) is untouched.
  *
- * ART SLOTS: assets/prev.png, play.png, pause.png, next.png, volume.png,
- * mute.png, close.png -- each 16x16, drawn 1:1 (rendered at 16 CSS px,
- * pixelated). Overwrite in place.
+ * ART SLOTS (assets/): play, pause, skip (previous is skip mirrored), sound1 /
+ * sound2 / sound3 (the speaker at three levels), mute, close. Each is drawn at
+ * whatever size it was drawn and shown 1:1, pixelated -- nothing is scaled to
+ * a fixed box. Overwrite in place.
  *
  * Runs in the browser-window scope (see loader.js).
  * ============================================================================= */
@@ -48,6 +49,11 @@
   const ID = "now-playing";
   const ASSET = "chrome://cthulhu/content/modules/now-playing/assets/";
   const PROGRESS_TICK_MS = 1000;
+  /* The speaker's art for a volume level. Going by the drawings, sound1 is the
+   * full three-arc speaker and sound3 the one-arc one, so loud is sound1.
+   * Thirds of the range; 0 (or muted) is the mute art. */
+  const speakerIcon = (level) =>
+    level <= 0 ? "mute" : level > 2 / 3 ? "sound1" : level > 1 / 3 ? "sound2" : "sound3";
   const JITTER_S = 2; // a backwards move smaller than this is noise, not a seek
 
   const win = window;
@@ -271,9 +277,9 @@
     const card = doc.createElement("div");
     card.className = "cthulhu-player-card" + (opts && opts.docked ? " docked" : "");
 
-    const icon = (name) => {
+    const icon = (name, cls) => {
       const img = doc.createElement("img");
-      img.className = "cthulhu-player-icon";
+      img.className = "cthulhu-player-icon" + (cls ? " " + cls : "");
       img.src = ASSET + name + ".png";
       img.alt = "";
       img.draggable = false;
@@ -349,21 +355,22 @@
       if (e.buttons & 1) seekAt(e.clientX);
     });
 
-    // Transport. Each button holds a 16x16 icon slot; play/pause swap theirs.
+    // Transport. Each button holds one icon slot; play/pause swap theirs, the
+    // speaker shows the level (speakerIcon), and previous is skip mirrored.
     const controls = doc.createElement("div");
     controls.className = "cthulhu-player-controls";
-    const mk = (cls, title, iconName) => {
+    const mk = (cls, title, iconName, iconCls) => {
       const b = doc.createElement("button");
       b.type = "button";
       b.className = "cthulhu-player-ctrl " + cls;
       b.title = title;
-      b.appendChild(icon(iconName));
+      b.appendChild(icon(iconName, iconCls));
       return b;
     };
-    const prevBtn = mk("prev", "Previous", "prev");
+    const prevBtn = mk("prev", "Previous", "skip", "flip");
     const playBtn = mk("play", "Play/Pause", "play");
-    const nextBtn = mk("next", "Next", "next");
-    const muteBtn = mk("mute", "Mute", "volume");
+    const nextBtn = mk("next", "Next", "skip");
+    const muteBtn = mk("mute", "Mute", speakerIcon(1));
 
     // Speaker + slider. The slider is collapsed to nothing and slides out
     // while the pointer is over the group (see .cthulhu-player-vol in CSS).
@@ -408,7 +415,7 @@
     function paintVolume(tab) {
       const muted = !!(tab && tab.linkedBrowser.audioMuted);
       const level = tab ? volume.get(tab) : 1;
-      setIcon(muteBtn, muted || level === 0 ? "mute" : "volume");
+      setIcon(muteBtn, speakerIcon(muted ? 0 : level));
       muteBtn.classList.toggle("muted", muted);
       const t = muted ? "Unmute" : "Mute";
       if (muteBtn.title !== t) muteBtn.title = t;

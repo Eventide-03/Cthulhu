@@ -78,18 +78,26 @@ flag rather than pretending to be a slider.
 
 ## Icons (art slots)
 
-| file | shows | size |
+| file | shows | drawn at |
 | --- | --- | --- |
-| `assets/prev.png` | previous track | 16×16 |
-| `assets/play.png` / `assets/pause.png` | the play/pause chip swaps between them | 16×16 |
-| `assets/next.png` | next track | 16×16 |
-| `assets/volume.png` / `assets/mute.png` | the mute button swaps between them | 16×16 |
+| `assets/play.png` / `assets/pause.png` | the play/pause chip swaps between them | 17×17 / 17×16 |
+| `assets/skip.png` | next track — and, **mirrored**, previous | 23×17 |
+| `assets/sound1.png` | speaker, volume above ⅔ (three arcs) | 16×16 |
+| `assets/sound2.png` | speaker, ⅓–⅔ (two arcs) | 16×16 |
+| `assets/sound3.png` | speaker, up to ⅓ (one arc) | 16×16 |
+| `assets/mute.png` | speaker, muted or at 0 | 16×16 |
 | `assets/close.png` | close, top-right | 16×16 |
 
-All drawn **1:1 at 16×16** and rendered at 16 CSS px with
-`image-rendering: pixelated` (a 2× display shows each pixel as a crisp 2×2
-block). Overwrite in place and rebuild — nothing else to edit. The shipped
-ones are placeholders from `tools/make-placeholder-art.mjs --only=player`.
+Every icon is shown at **its own size, 1:1**, with `image-rendering:
+pixelated` — nothing is scaled into a fixed box, so the sizes above are just
+what the current art happens to be, not a requirement; redraw at any size up
+to about 24×24 (the transport buttons are 26px, the play chip 31px). One image
+pixel is one CSS pixel, which a 2× display shows as a crisp 2×2 block.
+Overwrite in place and rebuild — nothing else to edit.
+
+The speaker picks its art by level in `speakerIcon()` (`now-playing.js`):
+going by the drawings, `sound1` is the fullest, so loud is `sound1`. Previous
+is `skip.png` with `transform: scaleX(-1)` — one drawing for both directions.
 
 ## Files
 
