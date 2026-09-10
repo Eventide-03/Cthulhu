@@ -33,6 +33,15 @@
  *
  * With horizontal tabs the pref is inert -- the tabs live in the toolbox. The
  * root carries [cthulhu-vertical-tabs] and, when active, [cthulhu-compact].
+ *
+ * ALSO HERE, because it is about the same strip: the sidebar launcher after
+ * vertical tabs are turned off again. Upstream sets sidebar.visibility to
+ * "always-show" when they go on and to "hide-sidebar" when they go off
+ * (SidebarManager.handleVerticalTabsPrefChange), and its "hide-sidebar" rule
+ * for horizontal tabs is "launcher visible initially" -- so a window that had
+ * the launcher hidden got it back, open, every time vertical tabs were tried
+ * and undone, to be closed by hand. This remembers whether the launcher was
+ * showing while the tabs were horizontal and puts it back that way.
  * ============================================================================= */
 (function () {
   "use strict";
@@ -215,10 +224,63 @@
     }
   }
 
+  /* ----------------------- the launcher, afterwards ------------------------ */
+  // Whether the launcher (the tool strip, <sidebar-main> with horizontal tabs)
+  // was showing the last time the tabs were horizontal. A pref, so a restart
+  // between turning vertical tabs on and off does not lose it. It is read off
+  // the container's own hidden attribute -- the one thing upstream's
+  // launcherVisible setter always writes -- whenever that changes while the
+  // tabs are horizontal, except during the moments after they go horizontal,
+  // when upstream is busy showing it "initially" and the answer is not the
+  // user's.
+  const LAUNCHER_PREF = "cthulhu.sidebar.launcherShownHorizontal";
+  let launcherSettleUntil = 0;
+  function rememberLauncher() {
+    if (getBool(VT_PREF, false) || Date.now() < launcherSettleUntil) return;
+    const c = container();
+    if (!c) return;
+    const shown = !c.hidden;
+    if (getBool(LAUNCHER_PREF, true) !== shown) {
+      try { Services.prefs.setBoolPref(LAUNCHER_PREF, shown); } catch (e) {}
+    }
+  }
+  function restoreLauncher() {
+    if (getBool(VT_PREF, false) || getBool(LAUNCHER_PREF, true)) return;
+    const sc = win.SidebarController;
+    const state = sc && sc._state;
+    if (!state || state.launcherVisible === false) return;
+    let vis = "";
+    try { vis = Services.prefs.getCharPref(VIS_PREF, ""); } catch (e) {}
+    if (vis !== "hide-sidebar") return; // in the other modes it cannot be hidden anyway
+    try {
+      state.updateVisibility(false);
+      sc.updateToolbarButton();
+    } catch (e) {
+      console.error("[Cthulhu:compact-mode] launcher:", e);
+    }
+  }
+  function onTabsHorizontalAgain() {
+    // Upstream's pref observers ran before this one and have already shown
+    // the launcher; its orientation work finishes on a later tick.
+    launcherSettleUntil = Date.now() + 1500;
+    win.setTimeout(restoreLauncher, 0);
+    win.setTimeout(restoreLauncher, 700);
+  }
+  function installLauncherMemory() {
+    const c = container();
+    if (!c || typeof MutationObserver !== "function") return;
+    const mo = new MutationObserver(rememberLauncher);
+    mo.observe(c, { attributes: true, attributeFilter: ["hidden"] });
+    win.addEventListener("unload", () => mo.disconnect(), { once: true });
+    // Session restore settles the launcher a little after load.
+    win.setTimeout(rememberLauncher, 3000);
+  }
+
   /* --------------------------------- boot ---------------------------------- */
   function install() {
     installHotZone();
     installKey();
+    installLauncherMemory();
     installMenuItem("sidebar-context-menu", "sidebar-context-menu-enable-vertical-tabs");
     installMenuItem("toolbar-context-menu", "toolbar-context-toggle-vertical-tabs");
     // Customize mode needs the toolbox in the normal flow.
@@ -230,11 +292,15 @@
     sync();
   }
   const observer = { observe() { sync(); } };
+  const vtObserver = { observe() { if (!getBool(VT_PREF, false)) onTabsHorizontalAgain(); sync(); } };
+  const visObserver = { observe() { rememberLauncher(); } };
   Services.prefs.addObserver(PREF, observer);
-  Services.prefs.addObserver(VT_PREF, observer);
+  Services.prefs.addObserver(VT_PREF, vtObserver);
+  Services.prefs.addObserver(VIS_PREF, visObserver);
   win.addEventListener("unload", () => {
     Services.prefs.removeObserver(PREF, observer);
-    Services.prefs.removeObserver(VT_PREF, observer);
+    Services.prefs.removeObserver(VT_PREF, vtObserver);
+    Services.prefs.removeObserver(VIS_PREF, visObserver);
   }, { once: true });
 
   if (doc.readyState === "complete") install();

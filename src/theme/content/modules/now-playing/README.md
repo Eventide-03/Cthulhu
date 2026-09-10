@@ -1,13 +1,14 @@
 # Now Playing
 
-A toolbar squircle (~135×25px, left of the extensions button) showing whatever
+A toolbar squircle (~180×30px, left of the extensions button) showing whatever
 media is playing in any tab, and a player card:
 
 ```
 [ Title                          × ]
 [ Artist                           ]
 [ 0:15 ━━━━━━━━━━━━━━━━━━━━ 3:53   ]
-[      |<    ||    >|    🔊 ━━━━   ]
+[        |<    ||    >|    🔊      ]     the four centred; the slider slides
+                                         out beside the speaker on hover
 ```
 
 Title and artist (click them to jump to the tab that is playing), a seekable
@@ -17,10 +18,17 @@ That is all it does. The former side-panels module — Discord / Instagram /
 Apple Music toggles, the embedded sidebar, the browse shortcuts and the search
 bar — is gone; this is what remained of it.
 
+A title that does not fit its line **scrolls now and then**: it holds for a
+few seconds, glides to its end, holds there, and comes back (a 16 s cycle; the
+text is a span the CSS slides by the measured overflow, `.marquee` in
+`now-playing.css`). Reduced motion keeps the ellipsis instead.
+
 The card lives in two places: a dropdown under the squircle, and — while
-compact mode is on — **docked at the bottom of the sidebar column**
-(`modules/compact-mode` asks for it via `window.CthulhuNowPlaying.dock()`),
-where the squircle is hidden.
+compact mode is on — **docked at the bottom of the sidebar column** as Zen's
+bar (`modules/compact-mode` asks for it via `window.CthulhuNowPlaying.dock()`),
+where the squircle is hidden. Docked, it is a dark rounded bar with the four
+controls spread across it and nothing else; put the pointer on it and the
+title, artist and progress bar unfold above them, and fold away when it leaves.
 
 ## Why it does not flicker
 
@@ -33,6 +41,20 @@ position event), the cards run their own 1 Hz clock for the bar with a 1 s
 linear transition so it glides, a displayed position never moves backwards
 by less than two seconds (that is jitter, not a seek), and nothing in the DOM
 is written unless its value changed.
+
+## Where the position comes from
+
+The controller's `positionstatechange` only fires when the **page** next calls
+`setPositionState` — so a track that was already playing when the player looked
+at its tab had no position at all until you sought or it moved to the next
+track, and the card said "live" for a whole song. Until a real position event
+arrives (and again whenever the metadata changes, and every 5 s while it is
+the only source), the tab is now asked, through the volume actor below, for
+the playing element's own `currentTime` / `duration` / `playbackRate` — which
+is what a page derives its position state from anyway. A real event always
+wins once it comes; a guessed one also lets the bar seek the element directly,
+since a page that sets no position state has no `seekto` handler either. A
+stream (infinite duration) still reads "live".
 
 ## Mute and volume, honestly
 
@@ -55,11 +77,12 @@ own volume control can set the element's volume again afterwards (the
 slider's next move sets it back), and a Web Audio player has no media element
 and is unaffected. Sliding up from zero un-mutes.
 
-On a **local dev bundle** the child module is a symlink out of the bundle,
-which the sandboxed content process cannot read — so the slider stores the
-level but the page does not follow until a packaged build (omni.ja), exactly
-like the file-picker child. The Marionette suite prints an INFO line for this
-rather than failing.
+On a **local dev bundle** the chrome tree is symlinks into `src/`, and the
+sandboxed content process cannot follow one out of the bundle — the child
+module would fail to load and the slider (and the position-from-the-element
+above) would silently do nothing. `tools/dev-actors.sh` copies the
+`*Child.sys.mjs` modules into the bundle as real files; `tools/dev-run.sh` and
+the tests run it, so a dev build behaves like a packaged one (omni.ja) here.
 
 ## How it reads what's playing
 

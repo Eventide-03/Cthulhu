@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* ===========================================================================
- * "Now Playing" toolbar squircle (~135x25px, left of the extensions button).
+ * "Now Playing" toolbar squircle (~180x30px, left of the extensions button).
  * A2 theme variables only.
  * ======================================================================== */
 .cthulhu-nowplaying-item {
@@ -12,17 +12,17 @@
   padding-inline: 2px;
 }
 .cthulhu-np-squircle {
-  width: 135px;
-  height: 25px;
+  width: 180px;
+  height: 30px;
   box-sizing: border-box;
-  padding: 3px 8px 4px;
+  padding: 3px 9px 4px;
   display: flex;
   flex-direction: column;
   justify-content: center;
   gap: 2px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: 10px; /* squircle-ish on a 25px-tall bar */
+  border-radius: 11px; /* squircle-ish on a 30px-tall bar */
   cursor: pointer;
   overflow: hidden;
   transition: border-color 0.15s ease;
@@ -45,16 +45,16 @@
   line-height: 1.1;
 }
 .cthulhu-np-title {
-  font-size: 9px;
+  font-size: 10px;
   color: var(--fg);
 }
 .cthulhu-np-artist {
-  font-size: 8px;
+  font-size: 9px;
   color: var(--fg-muted);
 }
 .cthulhu-np-track {
-  height: 2px;
-  border-radius: 1px;
+  height: 3px;
+  border-radius: 2px;
   background: var(--border);
   overflow: hidden;
   flex: none;
@@ -73,13 +73,42 @@
 }
 
 /* ===========================================================================
+ * A title wider than its line scrolls now and then. The text is a span inside
+ * the clipped line; now-playing.js measures the overflow into
+ * --cthulhu-marquee and adds .marquee, and this slides the span that far left
+ * and back: a long hold at the start, a slow glide to the end, a hold there,
+ * and a quick return. While it scrolls the ellipsis would chop the moving
+ * text, so the clip is plain. Reduced motion keeps the ellipsis and no glide.
+ * ======================================================================== */
+.cthulhu-marquee-text {
+  display: inline-block;
+  white-space: nowrap;
+  vertical-align: top;
+}
+.marquee {
+  text-overflow: clip;
+}
+.marquee > .cthulhu-marquee-text {
+  animation: cthulhu-marquee 16s ease-in-out infinite;
+}
+@keyframes cthulhu-marquee {
+  0%, 35%   { transform: translateX(0); }
+  70%, 88%  { transform: translateX(var(--cthulhu-marquee, 0px)); }
+  100%      { transform: translateX(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .marquee { text-overflow: ellipsis; }
+  .marquee > .cthulhu-marquee-text { animation: none; }
+}
+
+/* ===========================================================================
  * Dropdown player: a real XUL <panel type="arrow"> opened by clicking the
  * squircle (now-playing.js createPlayerDropdown()).
  *
  *   [ Title                          × ]
  *   [ Artist                           ]
  *   [ 0:15 ━━━━━━━━━━━━━━━━━━━━ 3:53   ]
- *   [      |<    ||    >|    🔊        ]
+ *   [        |<    ||    >|    🔊      ]     (the four centred as a group)
  * ======================================================================== */
 .cthulhu-player-card {
   width: 300px;
@@ -91,15 +120,6 @@
   background: var(--bg-elevated);
   font-family: var(--font-pixel);
   color: var(--fg);
-}
-/* Docked at the bottom of the sidebar in compact mode (compact-mode.js asks
- * now-playing.js to mount it). Same card, no fixed width, a rule above it. */
-.cthulhu-player-card.docked {
-  width: auto;
-  flex: none;
-  padding: 10px 12px 12px;
-  background: transparent;
-  border-top: 1px solid var(--border);
 }
 .cthulhu-player-head {
   display: flex;
@@ -172,10 +192,11 @@
 .cthulhu-player-time:last-child {
   text-align: right;
 }
+/* A bar thick enough to aim at: 8px, with a rounded fill. */
 .cthulhu-player-progress {
   flex: 1;
-  height: 4px;
-  border-radius: 2px;
+  height: 8px;
+  border-radius: 4px;
   background: var(--border);
   overflow: hidden;
   cursor: pointer;
@@ -184,6 +205,7 @@
 .cthulhu-player-progress-fill {
   height: 100%;
   width: 0%;
+  border-radius: 4px;
   background: var(--accent);
   transition: width 1s linear;
 }
@@ -191,17 +213,14 @@
   transition: none; /* a seek shows at once */
 }
 
+/* The four controls are one group, centred on the card. The volume slider is
+ * positioned out of the flow beside the speaker, so its sliding out never
+ * moves a button. */
 .cthulhu-player-controls {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 18px;
-  /* Room on the right for the volume slider to slide out into, so the
-   * buttons never move when it appears. */
-  padding-inline-end: 56px;
-}
-.cthulhu-player-card.docked .cthulhu-player-controls {
-  gap: 12px;
 }
 /* Speaker + slider. The slider hangs off the speaker's right, collapsed to
  * nothing, and slides out while the pointer is over either of them (or the
@@ -279,10 +298,55 @@
 .cthulhu-player-ctrl.play:hover:not(:disabled) {
   border-color: var(--accent);
 }
+/* Disabled is dimmed, not gone: the art is dark blue on a dark theme, and at
+ * the old 0.35 it vanished into the card. */
 .cthulhu-player-ctrl:disabled {
   cursor: default;
-  opacity: 0.35;
+  opacity: 0.55;
 }
 .cthulhu-player-ctrl.muted {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+/* ===========================================================================
+ * Docked at the bottom of the sidebar column in compact mode (compact-mode.js
+ * asks now-playing.js to mount it): Zen's bar. A dark rounded bar holding the
+ * four controls spread across it, and nothing else until the pointer is over
+ * it (or something in it has focus) -- then the title, artist and progress
+ * unfold above the controls, and fold away again when it leaves.
+ * ======================================================================== */
+.cthulhu-player-card.docked {
+  width: auto;
+  flex: none;
+  margin: 6px 8px 8px;
+  padding: 6px 8px;
+  gap: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.cthulhu-player-card.docked .cthulhu-player-head,
+.cthulhu-player-card.docked .cthulhu-player-progress-row {
+  display: none;
+}
+.cthulhu-player-card.docked:is(:hover, :focus-within) .cthulhu-player-head,
+.cthulhu-player-card.docked:is(:hover, :focus-within) .cthulhu-player-progress-row {
+  display: flex;
+}
+.cthulhu-player-card.docked:is(:hover, :focus-within) {
+  padding-top: 8px;
+}
+.cthulhu-player-card.docked .cthulhu-player-progress {
+  height: 6px;
+  border-radius: 3px;
+}
+.cthulhu-player-card.docked .cthulhu-player-controls {
+  justify-content: space-evenly;
+  gap: 0;
+}
+/* At the bar's right edge the slider has no room on the speaker's right, so
+ * here it slides out on its left, over the bar. */
+.cthulhu-player-card.docked .cthulhu-player-slider {
+  left: auto;
+  right: calc(100% + 2px);
 }

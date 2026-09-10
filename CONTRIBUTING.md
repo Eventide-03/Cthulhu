@@ -90,7 +90,15 @@ bundle also keeps its own copied `XUL` and `browser.xhtml`, which `mach build`
 does not always re-copy, so a C++ or `.inc.xhtml` change can look unapplied.
 Create or refresh the one `surfer run` uses with
 `make -C engine/obj-*/browser/app repackage` (add `MOZ_MACBUNDLE_NAME=nightly.app`
-to refresh the other). JS files are symlinks into `engine/` and are always live.
+to refresh the other). JS, CSS and image files are symlinks into `engine/`
+(and on into `src/`), so an edit is on disk at once — but a **running** window
+keeps the scripts it loaded, and chrome images load on demand: rename or
+delete an asset while the app is up and the old code asks for a file that is
+gone (a player with blank buttons). Quit and relaunch with `tools/dev-run.sh`
+after pulling. One more symlink wrinkle: the sandboxed content process cannot
+follow a symlink out of the bundle, so a content-side actor module
+(`*Child.sys.mjs`) fails to load in a dev build; `tools/dev-actors.sh` copies
+those in as real files, and `dev-run.sh` and the tests call it.
 
 ## Secrets and where they live (names only — values never leave their vault)
 

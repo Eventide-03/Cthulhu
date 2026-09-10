@@ -49,6 +49,10 @@ if [ "$BUILD" = 1 ]; then
   (cd engine && ./mach build faster)
   echo "==> repackage"
   make -C "$OBJ/browser/app" repackage >/dev/null
+  # Content-side actor modules must be real files for the sandbox (see the
+  # script); the symlinks come back with every build, so this runs every time.
+  echo "==> content actors"
+  ./tools/dev-actors.sh
 fi
 
 [ -x "$APP/Contents/MacOS/Cthulhu" ] || { echo "No build at $APP -- run a full build first." >&2; exit 1; }

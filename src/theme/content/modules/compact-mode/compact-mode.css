@@ -86,6 +86,27 @@
   #navigator-toolbox #cthulhu-nowplaying {
     display: none !important;
   }
+  /* The sidebar toggle would hide the very strip this column is made of, and
+   * its row is wanted for the all-tabs button so that back / forward / reload
+   * / all-tabs make ONE row under the window buttons (Zen's first row) with
+   * the address bar as the second. */
+  #navigator-toolbox #sidebar-button {
+    display: none !important;
+  }
+  /* The address bar is a top-layer popover (upstream's <moz-urlbar
+   * popover="manual">, shown whenever it is in "breakout" mode, which is
+   * always in a normal window) and the top layer ignores an ancestor's
+   * translate: hiding the toolbox left the address bar sitting over the page
+   * at the column's open position. It is still the toolbox's descendant in
+   * the tree, so it can be slid by the column's width when the column is
+   * hidden, in step with it. transform rather than translate: upstream
+   * animates the popover with `translate`. */
+  #navigator-toolbox #urlbar[breakout] {
+    transition: transform 160ms ease-out;
+  }
+  #navigator-toolbox:not([cthulhu-compact-open]) #urlbar[breakout] {
+    transform: translateX(calc(-1 * var(--cthulhu-compact-w, 260px)));
+  }
 
   /* --- the tabs (and the docked player), body of the column --- */
   #sidebar-container {
@@ -158,6 +179,9 @@
 }
 :root[cthulhu-compact]:not([inDOMFullscreen]):has(#sidebar-container[sidebar-positionend]) #navigator-toolbox[cthulhu-compact-open] {
   translate: 0 0 !important;
+}
+:root[cthulhu-compact]:not([inDOMFullscreen]):has(#sidebar-container[sidebar-positionend]) #navigator-toolbox:not([cthulhu-compact-open]) #urlbar[breakout] {
+  transform: translateX(var(--cthulhu-compact-w, 260px));
 }
 
 /* Not in compact mode: the hot zone must not exist as a hit target at all. */

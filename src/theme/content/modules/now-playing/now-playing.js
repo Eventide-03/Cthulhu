@@ -37,6 +37,19 @@
  * control can set the element's volume again afterwards, and a Web Audio
  * player (no media element) is untouched.
  *
+ * POSITION AT ATTACH goes through the same actor. The controller's
+ * positionstatechange fires only when the PAGE next calls setPositionState, so
+ * a track already playing when the tracker picked its tab reported no
+ * position at all until a seek or the next track -- the card said "live" for
+ * a song. Now, until a real position event arrives (and again whenever the
+ * metadata changes, or every few seconds while it is the only source), the
+ * tab is asked for the playing element's own currentTime / duration / rate,
+ * which is what a page derives its position state from anyway. A real event
+ * always wins once it comes.
+ *
+ * TITLES SCROLL when they do not fit: the text sits in a span the CSS slides
+ * by the measured overflow, with long holds at each end (now-playing.css).
+ *
  * ART SLOTS (assets/): play, pause, skip (previous is skip mirrored), sound1 /
  * sound2 / sound3 (the speaker at three levels), mute, close. Each is drawn at
  * whatever size it was drawn and shown 1:1, pixelated -- nothing is scaled to
@@ -92,32 +105,92 @@
         try { fn(); } catch (e) { console.error("[Cthulhu:" + ID + "] tracker listener", e); }
       }
     }
+    function rawPosition() {
+      if (!posSnap || !(posSnap.duration > 0)) return null;
+      let pos = posSnap.position;
+      if (current && current.mc.isPlaying) pos += ((win.performance.now() - posSnap.at) / 1000) * (posSnap.rate || 1);
+      return Math.max(0, Math.min(pos, posSnap.duration));
+    }
     function onPositionState(e) {
-      const before = posSnap;
+      const before = rawPosition();
       posSnap = { position: e.position, duration: e.duration, rate: e.playbackRate, at: win.performance.now() };
       // A real seek (or a new track) must be allowed to move the bar back.
-      if (!before || Math.abs(e.position - before.position) > JITTER_S) shown = { tab: current && current.tab, pos: 0 };
+      if (before == null || Math.abs(e.position - before) > JITTER_S) shown = { tab: current && current.tab, pos: 0 };
+      notify();
+    }
+    /* No position event yet (or the last one is from before a metadata
+     * change, so possibly another track's): ask the tab's frames where their
+     * playing element is. Snapshots made this way are marked `guessed` and
+     * yield to the first real event. Answers for a pick that is no longer
+     * current, or that arrive after a real event, are dropped. */
+    let askSeq = 0;
+    function askPosition() {
+      const pick = current;
+      const top = pick?.tab.linkedBrowser?.browsingContext;
+      if (!top) return;
+      const seq = ++askSeq;
+      let contexts = [];
+      try { contexts = top.getAllBrowsingContextsInSubtree(); } catch (e) { contexts = [top]; }
+      const asks = [];
+      for (const bc of contexts) {
+        try {
+          const actor = bc.currentWindowGlobal?.getActor("CthulhuTabVolume");
+          if (actor) asks.push(actor.sendQuery("CthulhuTabVolume:Position"));
+        } catch (e) { /* a frame with no actor (yet) */ }
+      }
+      if (!asks.length) return;
+      Promise.allSettled(asks).then((answers) => {
+        if (seq !== askSeq || current !== pick) return;
+        if (posSnap && !posSnap.guessed && !posSnap.stale) return; // a real event got here first
+        const got = answers
+          .map((a) => (a.status === "fulfilled" ? a.value : null))
+          .filter((v) => v && v.duration > 0 && isFinite(v.duration))
+          .sort((a, b) => Number(b.playing) - Number(a.playing))[0];
+        if (!got) return;
+        const before = rawPosition();
+        posSnap = { position: got.position, duration: got.duration, rate: got.rate || 1, at: win.performance.now(), guessed: true };
+        if (before == null || Math.abs(got.position - before) > JITTER_S) shown = { tab: pick.tab, pos: 0 };
+        notify();
+      });
+    }
+    function onMetadata() {
+      // A new track: a page that sets position state will send one; one that
+      // does not must be asked, or the old track's clock would run on.
+      if (posSnap) posSnap.stale = true;
+      askPosition();
+      notify();
+    }
+    function onPlayback() {
+      // Pause and resume freeze and restart the page's clock; a guessed
+      // snapshot cannot know for how long, so take a fresh one.
+      if (!posSnap || posSnap.guessed || posSnap.stale) askPosition();
       notify();
     }
     function attachTo(pick) {
       if (current) {
-        current.mc.removeEventListener("metadatachange", notify);
-        current.mc.removeEventListener("playbackstatechange", notify);
+        current.mc.removeEventListener("metadatachange", onMetadata);
+        current.mc.removeEventListener("playbackstatechange", onPlayback);
         current.mc.removeEventListener("positionstatechange", onPositionState);
       }
       current = pick;
       posSnap = null;
       shown = { tab: pick && pick.tab, pos: 0 };
       if (current) {
-        current.mc.addEventListener("metadatachange", notify);
-        current.mc.addEventListener("playbackstatechange", notify);
+        current.mc.addEventListener("metadatachange", onMetadata);
+        current.mc.addEventListener("playbackstatechange", onPlayback);
         current.mc.addEventListener("positionstatechange", onPositionState);
+        askPosition();
       }
       notify();
     }
+    const RESYNC_MS = 5000; // a guessed clock is checked against the element this often
     function tick() {
       const pick = pickMainMedia();
-      if (pick?.tab !== current?.tab) attachTo(pick);
+      // By controller, not by tab: a tab that navigates from one player to
+      // another gets a new controller, and the old one's listeners would
+      // otherwise stay attached to a controller that never speaks again.
+      if (pick?.mc !== current?.mc) attachTo(pick);
+      else if (current && (!posSnap || ((posSnap.guessed || posSnap.stale) && win.performance.now() - posSnap.at > RESYNC_MS))) askPosition();
     }
 
     const iv = win.setInterval(tick, 500);
@@ -148,7 +221,20 @@
       seek(fraction) {
         if (current && posSnap && posSnap.duration > 0) {
           shown = { tab: current.tab, pos: 0 };
-          current.mc.seekTo(fraction * posSnap.duration);
+          const t = fraction * posSnap.duration;
+          current.mc.seekTo(t);
+          if (posSnap.guessed) {
+            // No position state from the page means no seekto handler either;
+            // move the element itself, and take its word for where it landed.
+            posSnap = { ...posSnap, position: t, at: win.performance.now() };
+            const top = current.tab.linkedBrowser?.browsingContext;
+            let contexts = [];
+            try { contexts = top ? top.getAllBrowsingContextsInSubtree() : []; } catch (e) { contexts = top ? [top] : []; }
+            for (const bc of contexts) {
+              try { bc.currentWindowGlobal?.getActor("CthulhuTabVolume")?.sendAsyncMessage("CthulhuTabVolume:Seek", { time: t }); } catch (e) {}
+            }
+            win.setTimeout(askPosition, 300);
+          }
         }
       },
       metadata() {
@@ -187,6 +273,40 @@
     }
     el.style.width = v;
   };
+
+  /* --------------------------- scrolling titles ---------------------------- */
+  // A title line is a clipped block holding one span (marqueeLine); the text
+  // goes in the span, and if the span is wider than the line the CSS slides it
+  // by the difference (see .marquee in now-playing.css). Measuring needs
+  // layout: a closed panel has none, so the card measures again on attach.
+  function marqueeLine(doc, cls) {
+    const line = doc.createElement("div");
+    line.className = cls;
+    const span = doc.createElement("span");
+    span.className = "cthulhu-marquee-text";
+    line.appendChild(span);
+    return line;
+  }
+  function fitMarquee(line) {
+    const span = line.firstElementChild;
+    if (!span) return;
+    const room = line.clientWidth;
+    if (!room) return; // not laid out; nothing to measure against
+    const over = span.offsetWidth - room;
+    if (over > 2) {
+      setVar(line, "--cthulhu-marquee", -(over + 6) + "px");
+      line.classList.add("marquee");
+    } else {
+      line.classList.remove("marquee");
+    }
+  }
+  function setMarquee(line, text) {
+    const span = line.firstElementChild;
+    if (span.textContent === text) return;
+    line.classList.remove("marquee"); // a new title starts its scroll from the beginning
+    span.textContent = text;
+    fitMarquee(line);
+  }
 
   /* --------------------------- tab volume (actor) -------------------------- */
   // The levels live in the parent actor's module (keyed by browserId), where a
@@ -245,12 +365,12 @@
       const current = tracker.current;
       if (!current) {
         squircle.classList.remove("playing");
-        setText(title, "Nothing playing");
+        setMarquee(title, "Nothing playing");
         setText(artist, "");
       } else {
         squircle.classList.toggle("playing", current.mc.isPlaying);
         const m = tracker.metadata();
-        setText(title, m.title);
+        setMarquee(title, m.title);
         setText(artist, m.artist);
       }
       progress();
@@ -260,6 +380,9 @@
     }
     tracker.subscribe(render);
     render();
+    // The item is built before it is in the toolbar, so the first render had
+    // nothing to measure the title against; measure once it is placed.
+    win.requestAnimationFrame(() => fitMarquee(title));
     win.addEventListener("unload", () => { if (clock) win.clearInterval(clock); });
     squircle.addEventListener("click", () => onSquircleClick());
   }
@@ -299,8 +422,7 @@
     info.type = "button";
     info.className = "cthulhu-player-info";
     info.title = "Go to the tab that is playing";
-    const titleEl = doc.createElement("div");
-    titleEl.className = "cthulhu-player-title";
+    const titleEl = marqueeLine(doc, "cthulhu-player-title");
     const artistEl = doc.createElement("div");
     artistEl.className = "cthulhu-player-artist";
     info.append(titleEl, artistEl);
@@ -440,7 +562,7 @@
     function render() {
       const current = tracker.current;
       if (!current) {
-        setText(titleEl, "Nothing playing");
+        setMarquee(titleEl, "Nothing playing");
         setText(artistEl, "");
         setDisabled(info, true);
         setWidth(progressFill, "0%", true);
@@ -456,7 +578,7 @@
         return;
       }
       const m = tracker.metadata();
-      setText(titleEl, m.title);
+      setMarquee(titleEl, m.title);
       setText(artistEl, m.artist);
       setDisabled(info, false);
       setDisabled(playBtn, false);
@@ -485,6 +607,7 @@
         if (unsub) return;
         unsub = tracker.subscribe(render);
         render();
+        fitMarquee(titleEl); // the panel has layout now; the build-time render did not
         clock = win.setInterval(() => { if (tracker.isPlaying) progressPaint(); }, PROGRESS_TICK_MS);
         win.gBrowser.tabContainer.addEventListener("TabAttrModified", onTabAttr);
       },
@@ -564,9 +687,8 @@
 
     const info = doc.createElement("div");
     info.className = "cthulhu-np-info";
-    const title = doc.createElement("div");
-    title.className = "cthulhu-np-title";
-    title.textContent = "Nothing playing";
+    const title = marqueeLine(doc, "cthulhu-np-title");
+    title.firstElementChild.textContent = "Nothing playing";
     const artistEl = doc.createElement("div");
     artistEl.className = "cthulhu-np-artist";
     info.append(title, artistEl);
