@@ -149,7 +149,14 @@ window.CthulhuThemes = (function () {
     { id: "rose",     name: "Rose-Pine", mood: "wine dark, pink",           seed: { bg: "#1f1418", fg: "#f6e6ec", accent: "#ff7aa2" } },
     { id: "forest",   name: "Little boy in a forest cabin with his grandma", mood: "moss, leaf green",          seed: { bg: "#121a14", fg: "#e4efe4", accent: "#8bd17c" } },
     { id: "ember",    name: "Traffic light at night", mood: "charcoal, orange",          seed: { bg: "#1c1210", fg: "#f4e8e0", accent: "#ff8a3d" } },
-    { id: "lavender", name: "Night Sky", mood: "ink violet, lilac",         seed: { bg: "#17141f", fg: "#ece6f6", accent: "#b48cff" } },
+    // Night Sky is a hand-set palette from five swatches: Deep Lilac 7B4B94,
+    // Glaucous 7D82B8, Celadon B7E3CC, Tea Green C4FFB2, Lime Cream D6F7A3.
+    // Lilac is the sky (bg), glaucous the raised surfaces, the tiles sit between
+    // the two, tea green is the text, celadon the muted text, lime the accent.
+    { id: "lavender", name: "Night Sky", mood: "deep lilac, glaucous, tea green", tokens: {
+      "bg": "#7b4b94", "bg-elevated": "#7d82b8", "surface": "#7c5c9f", "surface-hover": "#8a8fc0",
+      "fg": "#c4ffb2", "fg-muted": "#b7e3cc", "accent": "#d6f7a3", "accent-hover": "#e6ffc0",
+      "fg-on-accent": "#7b4b94", "grid-line": "rgba(196, 255, 178, 0.14)", "border": "rgba(196, 255, 178, 0.24)" } },
     { id: "mono",     name: "Colorblind Simulator", mood: "black and white",           seed: { bg: "#111111", fg: "#ececec", accent: "#ffffff", "fg-on-accent": "#111111" } },
     { id: "paper",    name: "Flashbang 2", mood: "warm light, red ink", light: true, seed: { bg: "#f5f1e8", fg: "#2a2622", accent: "#c0392b" } },
   ];
