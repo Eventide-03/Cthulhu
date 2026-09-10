@@ -127,13 +127,13 @@ pref("cthulhu.admin.enabled", false);
 // changes things locally". Never has a shipped value.
 pref("cthulhu.admin.token", "");
 
-// Rishi's mood and look. These are the LOCAL CACHE of a value held on the
-// relay (relay/worker.js, GET /rishi): the Pet widget polls it and writes it
-// here, and tiles follow the pref live. The admin panel writes both here (so
-// this machine updates at once) and to the relay (so the other browser does).
-// mood: free text shown above the sprite; empty = no bubble.
-// variant: "" for Rishi, "tea" for the Tea sprite (assets/tea.png).
+// Rishi's mood: the LOCAL CACHE of a value held on the relay (relay/worker.js,
+// GET /rishi). The Pet widget polls it and writes it here, and tiles follow
+// the pref live. The admin panel writes it both here (so this machine updates
+// at once) and to the relay (so the other browser does). Empty = no bubble.
 pref("cthulhu.pet.rishi.mood", "");
+// Rishi's look: "" for Rishi, "tea" for the Tea sprite (assets/tea.png). Per
+// machine on purpose -- the admin panel's switch touches only this pref.
 pref("cthulhu.pet.rishi.variant", "");
 // The relay's updatedAt stamp last applied here. A poll that returns the same
 // stamp changes nothing, so a locally set value is not "corrected" back.

@@ -3,31 +3,36 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* =============================================================================
- * Compact mode for vertical tabs -- the Zen Browser behaviour.
+ * Compact mode for vertical tabs -- the Zen Browser layout.
  *
- * With vertical tabs on and `cthulhu.compact.mode` true, the vertical tab
- * strip (#sidebar-container, which holds <sidebar-main> and the tabs) is
- * taken out of the layout so the page gets the whole window, and slides back
- * in OVER the page while the pointer is at the window's edge or on the strip
- * itself. Leave it and it slides away again after a short delay. A context
- * menu opened from inside it (tab context menu, sidebar menu) keeps it open
- * until the menu closes, so a right-click does not pull the strip out from
- * under its own menu.
+ * With vertical tabs on and `cthulhu.compact.mode` true, the page gets the
+ * WHOLE window. Everything that is chrome lives in one column at the window's
+ * edge -- the navigation toolbar (back / forward / reload, the address bar on
+ * its own row, the menu), the tabs, and the player docked at the bottom -- and
+ * that column stays off-screen until the pointer touches the edge, the
+ * address bar takes focus (Cmd/Ctrl+L), or a menu is opened from inside it.
+ * Leave it and it slides away again after a short delay.
  *
- * Nothing here is re-implemented from upstream: the strip is upstream's own
- * sidebar, still resizable, still expanding/collapsing with its own button.
- * Only its place in the layout changes (compact-mode.css), and this file is
- * the plumbing: the hot zone at the edge, the open/close timing, the toggle.
+ * HOW, WITHOUT BREAKING FIREFOX: nothing is moved in the DOM. The toolbox
+ * (#navigator-toolbox) is a sibling above the browser area; compact-mode.css
+ * takes it out of the flow with position:absolute at the top-left, gives it
+ * the column's width and lets its buttons wrap, and pads the top of
+ * #sidebar-container (upstream's box around <sidebar-main>) by the toolbox's
+ * measured height so the tabs start under it. CustomizableUI, the urlbar's
+ * breakout popover and customize mode all keep working because every element
+ * is still where they expect it in the tree. The player card is the only
+ * thing added: now-playing.js mounts a docked copy at the bottom of the column
+ * (and the toolbar squircle is hidden while it is there).
  *
  * TOGGLE: Ctrl/Cmd+Alt+C (Zen's shortcut), or "Compact mode" in the sidebar's
  * and the toolbar's right-click menus, or the pref. Turning it on also sets
  * `sidebar.visibility` to "always-show": upstream's own "expand-on-hover" and
  * "hide-sidebar" modes move the same element with inline styles and the two
- * would fight.
+ * would fight. Customize mode suspends it (the toolbox has to be in the flow
+ * to be customised) and it resumes when customising ends.
  *
- * With horizontal tabs the pref is inert -- there is no strip to hide. The
- * root carries [cthulhu-vertical-tabs] and, when active, [cthulhu-compact], so
- * CSS elsewhere can tell.
+ * With horizontal tabs the pref is inert -- the tabs live in the toolbox. The
+ * root carries [cthulhu-vertical-tabs] and, when active, [cthulhu-compact].
  * ============================================================================= */
 (function () {
   "use strict";
@@ -38,6 +43,7 @@
   const VT_ATTR = "cthulhu-vertical-tabs";
   const OPEN_ATTR = "cthulhu-compact-open";
   const HIDE_DELAY_MS = 350;
+  const COLUMN_W = 260; // px; the toolbox needs at least this to lay out its rows
 
   const win = window;
   const doc = win.document;
@@ -45,43 +51,80 @@
   const getBool = (n, d) => { try { return Services.prefs.getBoolPref(n, d); } catch (e) { return d; } };
 
   const container = () => doc.getElementById("sidebar-container");
+  const toolbox = () => doc.getElementById("navigator-toolbox");
+  const parts = () => [container(), toolbox()].filter(Boolean);
 
   /* ------------------------------ open / close ------------------------------ */
   let hideTimer = 0;
-  let popupsOpen = 0; // menus opened from inside the strip hold it open
+  let popupsOpen = 0; // menus opened from inside the column hold it open
 
   function open() {
     if (hideTimer) { win.clearTimeout(hideTimer); hideTimer = 0; }
-    const c = container();
-    if (c && !c.hasAttribute(OPEN_ATTR)) c.setAttribute(OPEN_ATTR, "");
+    for (const el of parts()) if (!el.hasAttribute(OPEN_ATTR)) el.setAttribute(OPEN_ATTR, "");
   }
   function closeNow() {
     if (hideTimer) { win.clearTimeout(hideTimer); hideTimer = 0; }
-    const c = container();
-    if (c) c.removeAttribute(OPEN_ATTR);
+    for (const el of parts()) el.removeAttribute(OPEN_ATTR);
   }
+  const hovered = () => parts().some((el) => el.matches(":hover"));
+  // The address bar keeps the column open while it has focus: Cmd+L must
+  // leave you typing into something you can see.
+  const focusedInside = () => {
+    const a = doc.activeElement;
+    return !!a && parts().some((el) => el.contains(a));
+  };
   function scheduleClose() {
     if (hideTimer) win.clearTimeout(hideTimer);
     hideTimer = win.setTimeout(() => {
       hideTimer = 0;
-      if (popupsOpen > 0) return;
-      const c = container();
-      if (c && c.matches(":hover")) return;
+      if (popupsOpen > 0 || hovered() || focusedInside()) return;
       closeNow();
     }, HIDE_DELAY_MS);
   }
 
   /* --------------------------------- state --------------------------------- */
+  let suspended = false; // customize mode
+  let observers = [];
   function active() {
-    return getBool(PREF, false) && getBool(VT_PREF, false);
+    return getBool(PREF, false) && getBool(VT_PREF, false) && !suspended;
   }
   function sync() {
     const vt = getBool(VT_PREF, false);
-    const on = vt && getBool(PREF, false);
+    const on = vt && getBool(PREF, false) && !suspended;
     root.toggleAttribute(VT_ATTR, vt);
+    const was = root.hasAttribute(ATTR);
     root.toggleAttribute(ATTR, on);
-    if (!on) closeNow();
+    if (on && !was) activate();
+    if (!on && was) deactivate();
     paintMenuItems();
+  }
+  function activate() {
+    root.style.setProperty("--cthulhu-compact-w", COLUMN_W + "px");
+    // The tabs start under the toolbox: pad by its live height.
+    const tb = toolbox();
+    if (tb && typeof ResizeObserver === "function") {
+      const ro = new ResizeObserver(() => {
+        root.style.setProperty("--cthulhu-compact-toolbox-h", tb.getBoundingClientRect().height + "px");
+      });
+      ro.observe(tb);
+      observers.push(ro);
+    }
+    if (tb) root.style.setProperty("--cthulhu-compact-toolbox-h", tb.getBoundingClientRect().height + "px");
+    // The player, docked at the bottom of the column.
+    const c = container();
+    if (c && win.CthulhuNowPlaying) {
+      try { win.CthulhuNowPlaying.dock(c); } catch (e) { console.error("[Cthulhu:compact-mode] dock:", e); }
+    }
+  }
+  function deactivate() {
+    closeNow();
+    for (const ro of observers) ro.disconnect();
+    observers = [];
+    root.style.removeProperty("--cthulhu-compact-w");
+    root.style.removeProperty("--cthulhu-compact-toolbox-h");
+    if (win.CthulhuNowPlaying) {
+      try { win.CthulhuNowPlaying.undock(); } catch (e) {}
+    }
   }
 
   function setEnabled(on) {
@@ -97,10 +140,10 @@
   const toggle = () => setEnabled(!getBool(PREF, false));
 
   /* ------------------------------- hot zone --------------------------------- */
-  // A thin strip along the sidebar's edge of the content area. It is the only
-  // thing left of the sidebar while it is hidden, so it is what the pointer
-  // finds when it goes looking for the tabs. Also a drop target: dragging a
-  // link or a tab to the edge opens the strip so it can be dropped on it.
+  // A thin strip along the column's edge of the content area. It is the only
+  // thing left of the chrome while the column is hidden, so it is what the
+  // pointer finds when it goes looking. Also a drop target: dragging a link
+  // or a tab to the edge opens the column so it can be dropped on it.
   function installHotZone() {
     const browserBox = doc.getElementById("browser");
     if (!browserBox || doc.getElementById("cthulhu-compact-hotzone")) return;
@@ -110,26 +153,27 @@
     hot.addEventListener("dragenter", open);
     browserBox.appendChild(hot);
 
-    const c = container();
-    if (c) {
-      c.addEventListener("mouseenter", open);
-      c.addEventListener("mouseleave", scheduleClose);
-      c.addEventListener("dragleave", scheduleClose);
+    for (const el of parts()) {
+      el.addEventListener("mouseenter", open);
+      el.addEventListener("mouseleave", scheduleClose);
+      el.addEventListener("dragleave", scheduleClose);
+      // Focus arriving anywhere in the column (Cmd+L, tabbing into it) opens
+      // it; focus leaving lets it close.
+      el.addEventListener("focusin", () => { if (active()) open(); });
+      el.addEventListener("focusout", () => { if (active()) scheduleClose(); });
     }
     // Keep it open while a menu opened from inside it is up.
     const from = (e) => {
-      const cc = container();
-      if (!cc) return false;
       const p = e.target;
       const t = (p && (p.triggerNode || p.anchorNode)) || null;
-      return !!(t && cc.contains(t));
+      return !!(t && parts().some((el) => el.contains(t)));
     };
     doc.addEventListener("popupshown", (e) => { if (active() && from(e)) { popupsOpen++; open(); } });
     doc.addEventListener("popuphidden", (e) => {
       if (from(e) && popupsOpen > 0) { popupsOpen--; if (!popupsOpen) scheduleClose(); }
     });
     // Leaving the window altogether closes it (mouseleave does not always fire
-    // when the pointer exits the window over the strip).
+    // when the pointer exits the window over the column).
     win.addEventListener("blur", () => { if (!popupsOpen) scheduleClose(); });
   }
 
@@ -177,6 +221,12 @@
     installKey();
     installMenuItem("sidebar-context-menu", "sidebar-context-menu-enable-vertical-tabs");
     installMenuItem("toolbar-context-menu", "toolbar-context-toggle-vertical-tabs");
+    // Customize mode needs the toolbox in the normal flow.
+    const tb = toolbox();
+    if (tb) {
+      tb.addEventListener("customizationstarting", () => { suspended = true; sync(); });
+      tb.addEventListener("customizationending", () => { suspended = false; sync(); });
+    }
     sync();
   }
   const observer = { observe() { sync(); } };

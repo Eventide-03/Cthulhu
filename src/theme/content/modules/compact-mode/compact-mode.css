@@ -2,47 +2,128 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* Compact mode (compact-mode.js): with vertical tabs, the strip leaves the
- * layout and slides in over the page on hover at the window edge.
+/* Compact mode (compact-mode.js): with vertical tabs, ALL the chrome lives in
+ * one column at the window's edge and the page gets the whole window.
  *
- * #sidebar-container is upstream's box around <sidebar-main> (the vertical
- * tabs live inside it). Taking it out of flow with position:absolute is what
- * hands the page the whole width; `translate` is what hides and shows it.
- * !important on translate because upstream sets `translate: 0` on this very
- * element for its own animations (themes/shared/sidebar.css) and animates it
- * with the Web Animations API, which loses only to an important declaration.
+ * Two elements make the column, and neither moves in the DOM:
+ *
+ *   #navigator-toolbox   upstream's top toolbox (nav-bar with back / forward
+ *                        / address bar / menu). Taken out of the flow and put
+ *                        at the top-left with the column's width; its items
+ *                        wrap so the address bar gets a row of its own.
+ *   #sidebar-container   upstream's box around <sidebar-main> (the vertical
+ *                        tabs), plus the player card now-playing.js docks at
+ *                        its bottom. Padded at the top by the toolbox's
+ *                        measured height so the tabs start under it.
+ *
+ * Both hide together with `translate` and show together on the open
+ * attribute. !important on translate: upstream sets `translate: 0` on the
+ * container for its own animations and animates it with the Web Animations
+ * API, which only an important declaration outranks.
  *
  * Both edges are handled: upstream flips the strip to the right with
- * [sidebar-positionend] on the container. */
-:root[cthulhu-compact] {
+ * [sidebar-positionend] on the container. Fullscreen video is left alone. */
+:root[cthulhu-compact]:not([inDOMFullscreen]) {
   #browser {
     position: relative;
   }
 
+  /* --- the toolbox, head of the column --- */
+  #navigator-toolbox {
+    position: absolute !important;
+    top: 0;
+    inset-inline-start: 0;
+    width: var(--cthulhu-compact-w, 260px) !important;
+    box-sizing: border-box;
+    z-index: 7;
+    translate: -100% 0 !important;
+    transition: translate 160ms ease-out;
+    background-color: var(--bg-elevated) !important;
+    border-inline-end: 1px solid var(--border);
+    /* Upstream's fullscreen slide-in uses margin-top on this element. */
+    margin-top: 0 !important;
+  }
+  /* Inside the column the nav-bar is three things: its buttons, wrapping as
+   * they must (with a gap kept free at the top-right for the menu button);
+   * the menu (and overflow) button pinned to that top-right corner, since it
+   * is a sibling of the buttons' container and could never share their row
+   * otherwise; and the address bar on a row of its own along the bottom,
+   * spanning the whole column -- as a flex child it could only ever have the
+   * width left over after the menu button, which was a 190px pill. */
+  #navigator-toolbox #nav-bar {
+    position: relative;
+    align-items: flex-start;
+    padding-block: 4px 44px; /* the address bar's row */
+  }
+  #navigator-toolbox #nav-bar-customization-target {
+    flex-wrap: wrap;
+    row-gap: 2px;
+    padding-inline-end: 36px; /* keep the menu button's corner clear */
+    box-sizing: border-box;
+  }
+  #navigator-toolbox #PanelUI-button,
+  #navigator-toolbox #nav-bar-overflow-button {
+    position: absolute;
+    top: 4px;
+    inset-inline-end: 4px;
+    align-self: flex-start;
+  }
+  #navigator-toolbox #nav-bar-overflow-button {
+    inset-inline-end: 36px;
+  }
+  #navigator-toolbox #urlbar-container {
+    position: absolute;
+    inset-inline: 6px;
+    bottom: 4px;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+  }
+  #navigator-toolbox toolbarspring {
+    display: none;
+  }
+  /* The player is docked in the column instead of the squircle. */
+  #navigator-toolbox #cthulhu-nowplaying {
+    display: none !important;
+  }
+
+  /* --- the tabs (and the docked player), body of the column --- */
   #sidebar-container {
     position: absolute !important;
     inset-block: 0;
     inset-inline-start: 0;
+    width: var(--cthulhu-compact-w, 260px) !important;
+    max-width: none;
+    box-sizing: border-box;
+    padding-block-start: var(--cthulhu-compact-toolbox-h, 0px);
+    display: flex;
+    flex-direction: column;
     z-index: var(--browser-area-z-index-sidebar-expand-on-hover, 4);
-    max-width: 75vw;
     translate: -100% 0 !important;
     transition: translate 160ms ease-out;
     background-color: var(--bg-elevated);
     border-inline-end: 1px solid var(--border);
     box-shadow: 4px 0 16px rgba(0, 0, 0, 0.35);
+  }
+  #sidebar-container > sidebar-main {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
 
-    &[sidebar-positionend] {
-      inset-inline-start: auto;
-      inset-inline-end: 0;
-      translate: 100% 0 !important;
-      border-inline-end: none;
-      border-inline-start: 1px solid var(--border);
-      box-shadow: -4px 0 16px rgba(0, 0, 0, 0.35);
-    }
+  /* Right-hand strip. */
+  #sidebar-container[sidebar-positionend],
+  #sidebar-container[sidebar-positionend] ~ #navigator-toolbox {
+    inset-inline-start: auto;
+    inset-inline-end: 0;
+    translate: 100% 0 !important;
+    border-inline-end: none;
+    border-inline-start: 1px solid var(--border);
+    box-shadow: -4px 0 16px rgba(0, 0, 0, 0.35);
+  }
 
-    &[cthulhu-compact-open] {
-      translate: 0 0 !important;
-    }
+  #sidebar-container[cthulhu-compact-open],
+  #navigator-toolbox[cthulhu-compact-open] {
+    translate: 0 0 !important;
   }
 
   /* The resize splitter between strip and page has nothing to sit between. */
@@ -64,6 +145,19 @@
     inset-inline-start: auto;
     inset-inline-end: 0;
   }
+}
+
+/* The toolbox is a sibling BEFORE #browser, so the positionend rule above
+ * cannot reach it with ~; mirror it from the root instead. */
+:root[cthulhu-compact]:not([inDOMFullscreen]):has(#sidebar-container[sidebar-positionend]) #navigator-toolbox {
+  inset-inline-start: auto;
+  inset-inline-end: 0;
+  translate: 100% 0 !important;
+  border-inline-end: none;
+  border-inline-start: 1px solid var(--border);
+}
+:root[cthulhu-compact]:not([inDOMFullscreen]):has(#sidebar-container[sidebar-positionend]) #navigator-toolbox[cthulhu-compact-open] {
+  translate: 0 0 !important;
 }
 
 /* Not in compact mode: the hot zone must not exist as a hit target at all. */

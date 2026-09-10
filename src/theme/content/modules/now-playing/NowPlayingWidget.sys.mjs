@@ -78,3 +78,26 @@ if (!place()) {
   };
   CustomizableUI.addListener(listener);
 }
+
+// The tab-volume actor: there is no per-tab volume level in Gecko's chrome
+// API, so the player's slider sets `volume` on the page's media elements from
+// inside the content process. Scoped to ordinary tabs' browsers; the child
+// hears `play` (captured, so elements the page creates later are caught) and
+// `pageshow` (to re-ask after a navigation).
+try {
+  ChromeUtils.registerWindowActor("CthulhuTabVolume", {
+    parent: {
+      esModuleURI: "chrome://cthulhu/content/modules/now-playing/CthulhuTabVolumeParent.sys.mjs",
+    },
+    child: {
+      esModuleURI: "chrome://cthulhu/content/modules/now-playing/CthulhuTabVolumeChild.sys.mjs",
+      events: { play: { capture: true }, pageshow: {} },
+    },
+    messageManagerGroups: ["browsers"],
+    allFrames: true,
+  });
+} catch (e) {
+  if (!/already/i.test(String(e))) {
+    console.error("[Cthulhu:now-playing] tab-volume actor registration failed:", e);
+  }
+}

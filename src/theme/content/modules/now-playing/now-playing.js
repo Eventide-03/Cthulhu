@@ -4,46 +4,63 @@
 
 /* =============================================================================
  * Now Playing: a toolbar squircle (left of the extensions button) showing
- * whatever media is playing in any tab, and a dropdown player under it --
- * title, artist, a seekable progress bar with elapsed / total time, and
- * previous / play-pause / next / mute. Nothing else: no service toggles, no
- * embedded web apps, no browse shortcuts, no search. (Those were the former
- * side-panels module; this is what is left once they went.)
+ * whatever media is playing in any tab, and a player card -- title, artist, a
+ * seekable progress bar with elapsed / total time, previous / play-pause /
+ * next, and a speaker that mutes on click and shows a volume slider on hover.
+ * The card appears in two places: a dropdown under the squircle, and DOCKED at
+ * the bottom of the sidebar while compact mode is on (modules/compact-mode
+ * asks for it through window.CthulhuNowPlaying.dock()).
  *
- * Two pieces, set up per window from __cthulhuBuildNowPlayingItem (called by
- * NowPlayingWidget.sys.mjs's onBuild, once per browser window):
- *   - createMediaTracker()  -- one "what's playing right now" poll per window,
- *                              fanned out to both UIs
- *   - createPlayerDropdown() / setupNowPlaying() -- the popup and the squircle
+ * NO FLICKER, BY CONSTRUCTION. The first version re-rendered everything four
+ * times a second from a poll that "notified" whether or not anything changed,
+ * and the progress bar was fed extrapolated positions that Google's position
+ * events kept correcting backwards by a few hundred ms -- the bar and the
+ * elapsed label wobbled. Now:
+ *   - the tracker notifies only on a real change (a different tab, or a
+ *     metadata / playback / position event from the controller);
+ *   - the cards run their own 1 Hz clock for the progress bar while something
+ *     plays, with a 1 s linear transition so the bar glides instead of steps;
+ *   - a displayed position never moves backwards by less than a couple of
+ *     seconds (that is jitter, not a seek);
+ *   - nothing in the DOM is written unless its value changed.
  *
- * Transport controls call straight into the tab's MediaController (play /
- * pause / prevTrack / nextTrack / seekTo -- MediaController.webidl). There is
- * no volume-LEVEL API on that interface at all, so the speaker button toggles
- * the tab's own mute flag rather than pretending to be a slider it cannot be.
+ * MUTE uses the tab's own toggleMuteAudio(): the browser element's audioMuted
+ * is getter-only, and assigning it (what the old code did) throws in strict
+ * mode -- which is why the button did nothing.
+ *
+ * VOLUME: there is no per-tab volume level anywhere in Gecko's chrome API (no
+ * nsIDOMWindowUtils.audioVolume in this tree, nothing on MediaController or
+ * BrowsingContext). The slider therefore sets `volume` on the page's <audio>
+ * and <video> elements through a content actor (CthulhuTabVolume*, registered
+ * from NowPlayingWidget.sys.mjs), including elements the page creates later
+ * and every frame of the tab. Honest limits: a page with its own volume
+ * control can set the element's volume again afterwards, and a Web Audio
+ * player (no media element) is untouched.
  *
  * ART SLOTS: assets/prev.png, play.png, pause.png, next.png, volume.png,
  * mute.png, close.png -- each 16x16, drawn 1:1 (rendered at 16 CSS px,
  * pixelated). Overwrite in place.
  *
- * Runs in the browser-window scope (see loader.js). CustomizableUI's ES module
- * import is cached by the module loader, so importing it from every window's
- * copy of this script is cheap, not a fresh load.
+ * Runs in the browser-window scope (see loader.js).
  * ============================================================================= */
 (function () {
   "use strict";
   const ID = "now-playing";
   const ASSET = "chrome://cthulhu/content/modules/now-playing/assets/";
+  const PROGRESS_TICK_MS = 1000;
+  const JITTER_S = 2; // a backwards move smaller than this is noise, not a seek
+
+  const win = window;
 
   /* ---------------------------------------------------------------------
    * Shared media tracking: aggregates each tab's chrome-only
    * browsingContext.mediaController (title/artist/position via events --
    * see MediaController.webidl) into one readout. There is no built-in
-   * "any tab" event for this (the closest, "main-media-controller-changed",
-   * is gated behind a testing-only pref), so this polls every tab's
-   * controller flags on a short interval and picks the best candidate --
-   * a handful of boolean reads, cheap.
+   * "any tab" event for this, so the candidate is re-picked on a short poll
+   * (a handful of boolean reads); listeners hear about it only when the
+   * pick, its metadata, its playback state or its position CHANGES.
    * --------------------------------------------------------------------- */
-  function pickMainMedia(win) {
+  function pickMainMedia() {
     let best = null;
     let bestScore = -1;
     for (const tab of win.gBrowser.tabs) {
@@ -58,9 +75,10 @@
     return best;
   }
 
-  function createMediaTracker(win) {
+  function createMediaTracker() {
     let current = null; // { tab, mc }
     let posSnap = null; // { position, duration, rate, at } -- last positionstatechange, extrapolated between events
+    let shown = { tab: null, pos: 0 }; // last position handed out, for the jitter guard
     const listeners = new Set();
 
     function notify() {
@@ -69,7 +87,10 @@
       }
     }
     function onPositionState(e) {
+      const before = posSnap;
       posSnap = { position: e.position, duration: e.duration, rate: e.playbackRate, at: win.performance.now() };
+      // A real seek (or a new track) must be allowed to move the bar back.
+      if (!before || Math.abs(e.position - before.position) > JITTER_S) shown = { tab: current && current.tab, pos: 0 };
       notify();
     }
     function attachTo(pick) {
@@ -80,6 +101,7 @@
       }
       current = pick;
       posSnap = null;
+      shown = { tab: pick && pick.tab, pos: 0 };
       if (current) {
         current.mc.addEventListener("metadatachange", notify);
         current.mc.addEventListener("playbackstatechange", notify);
@@ -88,12 +110,11 @@
       notify();
     }
     function tick() {
-      const pick = pickMainMedia(win);
+      const pick = pickMainMedia();
       if (pick?.tab !== current?.tab) attachTo(pick);
-      else notify(); // re-extrapolate the progress bar between position events
     }
 
-    const iv = win.setInterval(tick, 250);
+    const iv = win.setInterval(tick, 500);
     tick();
     win.addEventListener("unload", () => win.clearInterval(iv));
 
@@ -104,26 +125,35 @@
       },
       get current() { return current; },
       get duration() { return posSnap ? posSnap.duration : 0; },
+      get isPlaying() { return !!(current && current.mc.isPlaying); },
       extrapolatedPosition() {
         if (!posSnap || !(posSnap.duration > 0)) return null;
         let pos = posSnap.position;
         if (current && current.mc.isPlaying) {
           pos += ((win.performance.now() - posSnap.at) / 1000) * (posSnap.rate || 1);
         }
-        return Math.max(0, Math.min(pos, posSnap.duration));
+        pos = Math.max(0, Math.min(pos, posSnap.duration));
+        // Jitter guard: an extrapolated value that a late position event pulls
+        // back by a fraction of a second must not make the bar twitch.
+        if (current && shown.tab === current.tab && pos < shown.pos && shown.pos - pos < JITTER_S) pos = shown.pos;
+        shown = { tab: current && current.tab, pos };
+        return pos;
       },
       seek(fraction) {
-        if (current && posSnap && posSnap.duration > 0) current.mc.seekTo(fraction * posSnap.duration);
+        if (current && posSnap && posSnap.duration > 0) {
+          shown = { tab: current.tab, pos: 0 };
+          current.mc.seekTo(fraction * posSnap.duration);
+        }
       },
-    };
-  }
-
-  function metadataOf(current) {
-    let meta = null;
-    try { meta = current.mc.getMetadata(); } catch (e) {} // throws if the controller went inactive between the poll and here
-    return {
-      title: (meta && meta.title) || current.tab.label || "",
-      artist: (meta && meta.artist) || "",
+      metadata() {
+        if (!current) return { title: "", artist: "" };
+        let meta = null;
+        try { meta = current.mc.getMetadata(); } catch (e) {} // throws if the controller went inactive between the poll and here
+        return {
+          title: (meta && meta.title) || current.tab.label || "",
+          artist: (meta && meta.artist) || "",
+        };
+      },
     };
   }
 
@@ -135,62 +165,111 @@
     const two = (n) => String(n).padStart(2, "0");
     return h ? h + ":" + two(m) + ":" + two(s) : m + ":" + two(s);
   }
+  /* Write only when different: a text node replaced with an identical one is
+   * still a relayout of that line, and the old code did it four times a second. */
+  const setText = (el, v) => { if (el.textContent !== v) el.textContent = v; };
+  const setDisabled = (el, v) => { if (el.disabled !== v) el.disabled = v; };
+  const setVar = (el, name, v) => { if (el.style.getPropertyValue(name) !== v) el.style.setProperty(name, v); };
+  /* Bar widths are percentages; a move under 0.4 of a point is invisible on a
+   * 250px bar, so it is not written -- a four-minute track's 4 Hz position
+   * events then settle to about one write a second, the clock's. */
+  const setWidth = (el, v, force) => {
+    if (el.style.width === v) return;
+    if (!force) {
+      const cur = parseFloat(el.style.width), next = parseFloat(v);
+      if (!isNaN(cur) && !isNaN(next) && Math.abs(next - cur) < 0.4) return;
+    }
+    el.style.width = v;
+  };
+
+  /* --------------------------- tab volume (actor) -------------------------- */
+  // The levels live in the parent actor's module (keyed by browserId), where a
+  // freshly loaded frame's "what does my tab want?" can find them; the tab
+  // element keeps a copy for the UI.
+  let TabVolumes = null;
+  try {
+    ({ TabVolumes } = ChromeUtils.importESModule("chrome://cthulhu/content/modules/now-playing/CthulhuTabVolumeParent.sys.mjs"));
+  } catch (e) {
+    console.error("[Cthulhu:" + ID + "] tab-volume registry:", e);
+  }
+  const volume = {
+    get(tab) {
+      const v = tab && tab._cthulhuVolume;
+      return typeof v === "number" ? v : 1;
+    },
+    set(tab, v) {
+      if (!tab) return;
+      v = Math.max(0, Math.min(1, Number(v) || 0));
+      tab._cthulhuVolume = v;
+      const bid = tab.linkedBrowser?.browserId;
+      if (TabVolumes && bid) {
+        if (v < 1) TabVolumes.set(bid, v); else TabVolumes.delete(bid);
+      }
+      const top = tab.linkedBrowser?.browsingContext;
+      if (!top) return;
+      let contexts = [];
+      try { contexts = top.getAllBrowsingContextsInSubtree(); } catch (e) { contexts = [top]; }
+      for (const bc of contexts) {
+        try {
+          bc.currentWindowGlobal?.getActor("CthulhuTabVolume")?.sendAsyncMessage("CthulhuTabVolume:Set", { volume: v });
+        } catch (e) { /* a frame with no actor yet; it asks on load */ }
+      }
+    },
+  };
+  // A closed tab's entry is not needed any more.
+  win.addEventListener("load", () => {
+    win.gBrowser?.tabContainer.addEventListener("TabClose", (e) => {
+      const bid = e.target.linkedBrowser?.browserId;
+      if (TabVolumes && bid) TabVolumes.delete(bid);
+    });
+  }, { once: true });
 
   /* ------------------------------ the squircle ----------------------------- */
-  function setupNowPlaying(win, els, tracker, onSquircleClick) {
+  function setupNowPlaying(els, tracker, onSquircleClick) {
     const { squircle, title, artist, fill } = els;
+    let clock = 0;
+    function progress() {
+      const current = tracker.current;
+      if (!current) { setWidth(fill, "0%"); return; }
+      const pos = tracker.extrapolatedPosition();
+      if (pos != null && tracker.duration > 0) setWidth(fill, (pos / tracker.duration) * 100 + "%");
+      else setWidth(fill, current.mc.isPlaying ? "100%" : "0%"); // no duration reported -- e.g. a live stream
+    }
     function render() {
       const current = tracker.current;
       if (!current) {
         squircle.classList.remove("playing");
-        title.textContent = "Nothing playing";
-        artist.textContent = "";
-        fill.style.width = "0%";
-        return;
-      }
-      squircle.classList.toggle("playing", current.mc.isPlaying);
-      const m = metadataOf(current);
-      title.textContent = m.title;
-      artist.textContent = m.artist;
-      const pos = tracker.extrapolatedPosition();
-      if (pos != null && tracker.duration > 0) {
-        fill.style.width = (pos / tracker.duration) * 100 + "%";
+        setText(title, "Nothing playing");
+        setText(artist, "");
       } else {
-        fill.style.width = current.mc.isPlaying ? "100%" : "0%"; // no duration reported -- e.g. a live stream
+        squircle.classList.toggle("playing", current.mc.isPlaying);
+        const m = tracker.metadata();
+        setText(title, m.title);
+        setText(artist, m.artist);
       }
+      progress();
+      // The 1 Hz clock runs only while something plays.
+      if (tracker.isPlaying && !clock) clock = win.setInterval(progress, PROGRESS_TICK_MS);
+      if (!tracker.isPlaying && clock) { win.clearInterval(clock); clock = 0; }
     }
     tracker.subscribe(render);
     render();
+    win.addEventListener("unload", () => { if (clock) win.clearInterval(clock); });
     squircle.addEventListener("click", () => onSquircleClick());
   }
 
   /* ---------------------------------------------------------------------
-   * Dropdown player: a real XUL <panel type="arrow"> anchored to the
-   * squircle. Real popups render in the OS-level popup layer, above every
-   * other piece of chrome.
+   * The player card. Built once per host (dropdown panel, or the docked
+   * slot in compact mode); attach() starts rendering, detach() stops it.
    *
-   *   [ Title                          × ]
+   *   [ Title                          × ]      (× only in the dropdown)
    *   [ Artist                           ]
    *   [ 0:15 ━━━━━━━━━━━━━━━━━━━━ 3:53   ]
-   *   [      |<    ||    >|    🔊        ]
+   *   [      |<    ||    >|    🔊 ━━━━   ]      (slider slides out on hover)
    * --------------------------------------------------------------------- */
-  function createPlayerDropdown(win, tracker) {
-    const doc = win.document;
-    const popupset = doc.getElementById("mainPopupSet") || doc.documentElement;
-
-    const panel = doc.createXULElement("panel");
-    panel.id = "cthulhu-player-panel";
-    panel.setAttribute("type", "arrow");
-    panel.setAttribute("noautofocus", "true");
-    panel.setAttribute("flip", "both");
-    // panel-no-padding: the card supplies its own padding -- without this the
-    // default arrow-panel content padding (toolkit's popup.css) stacks with it.
-    panel.className = "cthulhu-player-popup panel-no-padding";
-    popupset.appendChild(panel);
-
+  function buildPlayerCard(doc, tracker, opts) {
     const card = doc.createElement("div");
-    card.className = "cthulhu-player-card";
-    panel.appendChild(card);
+    card.className = "cthulhu-player-card" + (opts && opts.docked ? " docked" : "");
 
     const icon = (name) => {
       const img = doc.createElement("img");
@@ -200,9 +279,14 @@
       img.draggable = false;
       return img;
     };
+    const setIcon = (btn, name) => {
+      const img = btn.querySelector("img");
+      const want = ASSET + name + ".png";
+      if (img && img.getAttribute("src") !== want) img.src = want;
+    };
 
     // Header: title + artist on the left (click either to go to the tab),
-    // close on the right.
+    // close on the right (dropdown only).
     const head = doc.createElement("div");
     head.className = "cthulhu-player-head";
     const info = doc.createElement("button");
@@ -217,16 +301,19 @@
     info.addEventListener("click", () => {
       const tab = tracker.current?.tab;
       if (!tab) return;
-      panel.hidePopup();
+      if (opts && opts.onClose) opts.onClose();
       win.gBrowser.selectedTab = tab;
     });
-    const closeBtn = doc.createElement("button");
-    closeBtn.type = "button";
-    closeBtn.className = "cthulhu-player-close";
-    closeBtn.title = "Close";
-    closeBtn.appendChild(icon("close"));
-    closeBtn.addEventListener("click", () => panel.hidePopup());
-    head.append(info, closeBtn);
+    head.appendChild(info);
+    if (opts && opts.onClose) {
+      const closeBtn = doc.createElement("button");
+      closeBtn.type = "button";
+      closeBtn.className = "cthulhu-player-close";
+      closeBtn.title = "Close";
+      closeBtn.appendChild(icon("close"));
+      closeBtn.addEventListener("click", () => opts.onClose());
+      head.appendChild(closeBtn);
+    }
 
     // Progress with the elapsed time on the left and the total on the right.
     const progressRow = doc.createElement("div");
@@ -249,6 +336,10 @@
       if (!r.width) return;
       const frac = Math.max(0, Math.min(1, (clientX - r.x) / r.width));
       tracker.seek(frac);
+      // Show the seek at once rather than after the next tick.
+      progressFill.classList.add("jump");
+      setWidth(progressFill, frac * 100 + "%", true);
+      win.setTimeout(() => progressFill.classList.remove("jump"), 50);
     }
     progress.addEventListener("pointerdown", (e) => {
       seekAt(e.clientX);
@@ -273,7 +364,22 @@
     const playBtn = mk("play", "Play/Pause", "play");
     const nextBtn = mk("next", "Next", "next");
     const muteBtn = mk("mute", "Mute", "volume");
-    controls.append(prevBtn, playBtn, nextBtn, muteBtn);
+
+    // Speaker + slider. The slider is collapsed to nothing and slides out
+    // while the pointer is over the group (see .cthulhu-player-vol in CSS).
+    const vol = doc.createElement("div");
+    vol.className = "cthulhu-player-vol";
+    const slider = doc.createElement("input");
+    slider.type = "range";
+    slider.className = "cthulhu-player-slider";
+    slider.min = "0";
+    slider.max = "100";
+    slider.step = "1";
+    slider.value = "100";
+    slider.title = "Volume";
+    slider.setAttribute("aria-label", "Volume");
+    vol.append(muteBtn, slider);
+    controls.append(prevBtn, playBtn, nextBtn, vol);
 
     prevBtn.addEventListener("click", () => tracker.current?.mc.prevTrack());
     nextBtn.addEventListener("click", () => tracker.current?.mc.nextTrack());
@@ -285,88 +391,162 @@
     muteBtn.addEventListener("click", () => {
       const tab = tracker.current?.tab;
       if (!tab) return;
-      tab.linkedBrowser.audioMuted = !tab.linkedBrowser.audioMuted;
+      tab.toggleMuteAudio(); // NOT browser.audioMuted = ...: that is getter-only
       render();
+    });
+    slider.addEventListener("input", () => {
+      const tab = tracker.current?.tab;
+      if (!tab) return;
+      volume.set(tab, Number(slider.value) / 100);
+      // Sliding up from silence un-mutes, as every player does.
+      if (Number(slider.value) > 0 && tab.linkedBrowser.audioMuted) tab.toggleMuteAudio();
+      paintVolume(tab);
     });
 
     card.append(head, progressRow, controls);
 
-    const setIcon = (btn, name) => {
-      const img = btn.querySelector("img");
-      const want = ASSET + name + ".png";
-      if (img && img.getAttribute("src") !== want) img.src = want;
-    };
-
+    function paintVolume(tab) {
+      const muted = !!(tab && tab.linkedBrowser.audioMuted);
+      const level = tab ? volume.get(tab) : 1;
+      setIcon(muteBtn, muted || level === 0 ? "mute" : "volume");
+      muteBtn.classList.toggle("muted", muted);
+      const t = muted ? "Unmute" : "Mute";
+      if (muteBtn.title !== t) muteBtn.title = t;
+      const want = String(Math.round(level * 100));
+      if (slider.value !== want && doc.activeElement !== slider) slider.value = want;
+      setVar(vol, "--cthulhu-vol", (muted ? 0 : Math.round(level * 100)) + "%");
+    }
+    function progressPaint() {
+      const current = tracker.current;
+      if (!current) return;
+      const pos = tracker.extrapolatedPosition();
+      if (pos != null && tracker.duration > 0) {
+        setWidth(progressFill, (pos / tracker.duration) * 100 + "%");
+        setText(elapsed, fmtTime(pos));
+        setText(total, fmtTime(tracker.duration));
+      } else {
+        setWidth(progressFill, current.mc.isPlaying ? "100%" : "0%");
+        setText(elapsed, current.mc.isPlaying ? "live" : "0:00");
+        setText(total, "");
+      }
+    }
     function render() {
       const current = tracker.current;
       if (!current) {
-        titleEl.textContent = "Nothing playing";
-        artistEl.textContent = "";
-        info.disabled = true;
-        progressFill.style.width = "0%";
-        elapsed.textContent = "0:00";
-        total.textContent = "0:00";
+        setText(titleEl, "Nothing playing");
+        setText(artistEl, "");
+        setDisabled(info, true);
+        setWidth(progressFill, "0%", true);
+        setText(elapsed, "0:00");
+        setText(total, "0:00");
         setIcon(playBtn, "play");
-        playBtn.disabled = true;
-        prevBtn.disabled = true;
-        nextBtn.disabled = true;
-        muteBtn.disabled = true;
+        setDisabled(playBtn, true);
+        setDisabled(prevBtn, true);
+        setDisabled(nextBtn, true);
+        setDisabled(muteBtn, true);
+        setDisabled(slider, true);
+        card.classList.remove("playing");
         return;
       }
-      const m = metadataOf(current);
-      titleEl.textContent = m.title;
-      artistEl.textContent = m.artist;
-      info.disabled = false;
-      playBtn.disabled = false;
+      const m = tracker.metadata();
+      setText(titleEl, m.title);
+      setText(artistEl, m.artist);
+      setDisabled(info, false);
+      setDisabled(playBtn, false);
       setIcon(playBtn, current.mc.isPlaying ? "pause" : "play");
+      card.classList.toggle("playing", current.mc.isPlaying);
       const supported = current.mc.supportedKeys || [];
-      prevBtn.disabled = !supported.includes("previoustrack");
-      nextBtn.disabled = !supported.includes("nexttrack");
-      muteBtn.disabled = false;
-      const muted = !!current.tab.linkedBrowser.audioMuted;
-      setIcon(muteBtn, muted ? "mute" : "volume");
-      muteBtn.classList.toggle("muted", muted);
-      muteBtn.title = muted ? "Unmute" : "Mute";
-      const pos = tracker.extrapolatedPosition();
-      if (pos != null && tracker.duration > 0) {
-        progressFill.style.width = (pos / tracker.duration) * 100 + "%";
-        elapsed.textContent = fmtTime(pos);
-        total.textContent = fmtTime(tracker.duration);
-      } else {
-        progressFill.style.width = current.mc.isPlaying ? "100%" : "0%";
-        elapsed.textContent = current.mc.isPlaying ? "live" : "0:00";
-        total.textContent = "";
-      }
+      setDisabled(prevBtn, !supported.includes("previoustrack"));
+      setDisabled(nextBtn, !supported.includes("nexttrack"));
+      setDisabled(muteBtn, false);
+      setDisabled(slider, false);
+      paintVolume(current.tab);
+      progressPaint();
     }
 
     let unsub = null;
-    let tickIv = null;
-    panel.addEventListener("popupshown", () => {
-      unsub = tracker.subscribe(render);
-      render();
-      tickIv = win.setInterval(render, 250); // re-extrapolates the progress bar while visible
-    });
-    panel.addEventListener("popuphiding", () => {
-      if (unsub) { unsub(); unsub = null; }
-      if (tickIv) { win.clearInterval(tickIv); tickIv = null; }
-    });
-
+    let clock = 0;
+    // The tab's mute state can change from its own tab strip button; keep the
+    // speaker honest without polling: TabAttrModified fires for "muted".
+    const onTabAttr = (e) => {
+      if (e.target === tracker.current?.tab && e.detail?.changed?.includes("muted")) render();
+    };
     return {
-      toggle(anchor) {
-        if (panel.state === "open" || panel.state === "showing") {
-          panel.hidePopup();
-        } else {
-          panel.openPopup(anchor, { position: "bottomcenter topcenter" });
-        }
+      card,
+      render,
+      attach() {
+        if (unsub) return;
+        unsub = tracker.subscribe(render);
+        render();
+        clock = win.setInterval(() => { if (tracker.isPlaying) progressPaint(); }, PROGRESS_TICK_MS);
+        win.gBrowser.tabContainer.addEventListener("TabAttrModified", onTabAttr);
+      },
+      detach() {
+        if (unsub) { unsub(); unsub = null; }
+        if (clock) { win.clearInterval(clock); clock = 0; }
+        win.gBrowser.tabContainer.removeEventListener("TabAttrModified", onTabAttr);
       },
     };
   }
+
+  /* ----------------------------- the dropdown ------------------------------ */
+  function createPlayerDropdown(doc, tracker) {
+    const popupset = doc.getElementById("mainPopupSet") || doc.documentElement;
+    const panel = doc.createXULElement("panel");
+    panel.id = "cthulhu-player-panel";
+    panel.setAttribute("type", "arrow");
+    panel.setAttribute("noautofocus", "true");
+    panel.setAttribute("flip", "both");
+    // panel-no-padding: the card supplies its own padding -- without this the
+    // default arrow-panel content padding (toolkit's popup.css) stacks with it.
+    panel.className = "cthulhu-player-popup panel-no-padding";
+    popupset.appendChild(panel);
+    const player = buildPlayerCard(doc, tracker, { onClose: () => panel.hidePopup() });
+    panel.appendChild(player.card);
+    panel.addEventListener("popupshown", () => player.attach());
+    panel.addEventListener("popuphiding", () => player.detach());
+    return {
+      toggle(anchor) {
+        if (panel.state === "open" || panel.state === "showing") panel.hidePopup();
+        else panel.openPopup(anchor, { position: "bottomcenter topcenter" });
+      },
+      hide() { if (panel.state !== "closed") panel.hidePopup(); },
+    };
+  }
+
+  /* ------------------------------- window API ------------------------------ */
+  // One tracker per window, made on first use by whoever asks first: the
+  // toolbar item (CustomizableUI's onBuild) or compact mode's dock() -- their
+  // order at startup is not fixed.
+  let tracker = null;
+  let docked = null;
+  win.CthulhuNowPlaying = {
+    tracker() {
+      if (!tracker) tracker = createMediaTracker();
+      return tracker;
+    },
+    /** Mount a docked card into `container` (compact mode's sidebar). */
+    dock(container) {
+      if (docked) this.undock();
+      docked = buildPlayerCard(container.ownerDocument, this.tracker(), { docked: true });
+      container.appendChild(docked.card);
+      docked.attach();
+      return docked.card;
+    },
+    undock() {
+      if (!docked) return;
+      docked.detach();
+      docked.card.remove();
+      docked = null;
+    },
+    get isDocked() { return !!docked; },
+    volume,
+  };
 
   /* --- toolbar widget: build the DOM for THIS window (called by
    * NowPlayingWidget.sys.mjs's onBuild -- see that file for why the
    * CustomizableUI.createWidget() call lives there and not here). */
   window.__cthulhuBuildNowPlayingItem = function (doc) {
-    const win = doc.defaultView;
     const item = doc.createXULElement("toolbaritem");
     item.id = "cthulhu-nowplaying";
     item.classList.add("chromeclass-toolbar-additional", "cthulhu-nowplaying-item");
@@ -393,9 +573,9 @@
     squircle.append(info, track);
     item.append(squircle);
 
-    const tracker = createMediaTracker(win);
-    const dropdown = createPlayerDropdown(win, tracker);
-    setupNowPlaying(win, { squircle, title, artist: artistEl, fill }, tracker, () => dropdown.toggle(squircle));
+    const t = win.CthulhuNowPlaying.tracker();
+    const dropdown = createPlayerDropdown(doc, t);
+    setupNowPlaying({ squircle, title, artist: artistEl, fill }, t, () => dropdown.toggle(squircle));
 
     // Placing this "immediately before the extensions button" via
     // CustomizableUI's placement-array index is a race at startup: at the

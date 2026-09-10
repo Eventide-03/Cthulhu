@@ -90,7 +90,7 @@ try:
     check("tools straddle the top border (8px above, 12px below)",
           abs((r["contentTop"] - r["toolsTop"]) - 8) <= 1 and abs((r["toolsBottom"] - r["contentTop"]) - 12) <= 1,
           "top %.0f bottom %.0f content %.0f" % (r["toolsTop"], r["toolsBottom"], r["contentTop"]))
-    check("tools do not overlap the calendar's mode/⟳/‹/Today/› buttons", r["nBtns"] == 5 and not r["overlapsAny"],
+    check("tools do not overlap the calendar's mode/⟳/‹/Today/›/⤢ buttons", r["nBtns"] == 6 and not r["overlapsAny"],
           "buttons=%d firstBtnTop=%s" % (r["nBtns"], r["firstBtnTop"]))
     # hover to show them in a screenshot
     m.set_context("content")
@@ -205,16 +205,62 @@ try:
     """)
     check("edge drag grew C to two days", rz["start"] == c_day.isoformat() and rz["end"] == (c_day + datetime.timedelta(days=2)).isoformat(), rz)
 
-    # click (no movement) on a name -> inline rename box
+    # click (no movement) on a box -> its details, Google-Calendar style
+    page("""
+      const c = [...document.querySelectorAll('#grid .grid-stack-item')].find(e => e._cthulhu && e._cthulhu.id === 'calendar');
+      const dbg = c.querySelector('.cw-cal')._cthCalDebug;
+      const evs = dbg.events(); const cev = evs.find(e => e.id === 'C'); cev.description = 'Bring the form. Instructions: https://example.invalid/files/1 and notes.';
+      dbg.inject(evs);
+    """)
     title_el = m.find_element("css selector", '.cw-cal-ev[data-event-id="C"] .cw-cal-ev-title')
     m.actions.sequence("pointer", "mouse", {"pointerType": "mouse"}).pointer_move(0, 0, origin=title_el).pointer_down().pointer_up().perform()
-    time.sleep(0.3)
-    ren = page("""
-      const i = document.querySelector('.cw-cal-ev[data-event-id="C"] .cw-cal-ev-title input');
-      return i ? { value: i.value, focused: document.activeElement === i } : null;
+    time.sleep(0.4)
+    det = page("""
+      const d = document.querySelector('.cw-cal-dt-modal');
+      if (!d) return null;
+      return { title: d.querySelector('.cw-cal-dt-title').textContent, when: d.querySelector('.cw-cal-dt-when').textContent,
+               notes: (d.querySelector('.cw-cal-dt-notes') || {}).textContent, links: [...d.querySelectorAll('.cw-cal-dt-notes a')].map(a => a.href),
+               meta: d.querySelector('.cw-cal-dt-meta').textContent,
+               actions: [...d.querySelectorAll('.cw-cal-dt-actions button')].map(b => b.textContent),
+               noRename: !document.querySelector('.cw-cal-ev-title input') };
     """)
-    check("click on a name opens an inline rename with the old name", ren and ren["value"] == "single" and ren["focused"], ren)
-    page("const i = document.querySelector('.cw-cal-ev-title input'); if (i) i.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}));")
+    check("click on a box opens its details: name, when, notes with the link clickable, calendar, actions",
+          det and det["title"] == "single" and "All day" in det["when"] and det["links"] == ["https://example.invalid/files/1"]
+          and "Calendar: Primary" in det["meta"] and det["actions"] == ["Mark done", "Edit", "Delete"] and det["noRename"], det)
+    shot("02b-calendar-details")
+    page("const d = document.querySelector('.cw-cal-dt-modal'); if (d) d.remove();")
+    # a click on the tile's EMPTY space (a GridStack drag that goes nowhere) expands the board
+    empty_day = m.find_element("css selector", '.cw-cal-week:last-child .cw-cal-day:nth-child(6)')
+    m.actions.sequence("pointer", "mouse", {"pointerType": "mouse"}).pointer_move(0, 8, origin=empty_day).pointer_down().pointer_up().perform()
+    time.sleep(0.8)
+    big = page("""
+      const b = document.querySelector('.cw-cal-big-modal');
+      if (!b) return null;
+      const r = b.querySelector('.cw-cal-big').getBoundingClientRect();
+      return { w: r.width / window.innerWidth, h: r.height / window.innerHeight, weeks: b.querySelectorAll('.cw-cal-week').length,
+               boxes: b.querySelectorAll('.cw-cal-ev').length, closeBtn: !!b.querySelector('.cw-cal-hbtn.close'), expandBtn: !!b.querySelector('.cw-cal-hbtn.expand'),
+               tileStill: !!document.querySelector('#grid .cw-cal') };
+    """)
+    check("clicking empty tile space expands the board to most of the window, with a close button and no nested expand",
+          big and big["w"] > 0.85 and big["h"] > 0.85 and big["weeks"] in (5, 6) and big["closeBtn"] and not big["expandBtn"] and big["tileStill"], big)
+    shot("02c-calendar-expanded")
+    # click outside closes it, and the tile re-renders
+    page("const b = document.querySelector('.cw-cal-big-modal'); if (b) b.dispatchEvent(new MouseEvent('click', {bubbles:true}));")
+    time.sleep(0.5)
+    gone = page("return { big: !!document.querySelector('.cw-cal-big-modal'), tile: !!document.querySelector('#grid .cw-cal .cw-cal-week') };")
+    check("clicking outside the expanded board closes it and the tile is still there", not gone["big"] and gone["tile"], gone)
+    # the injected events are gone with the re-render; re-inject for the checks below
+    page("""
+      const [af, al, bd, cd] = arguments;
+      const c = [...document.querySelectorAll('#grid .grid-stack-item')].find(e => e._cthulhu && e._cthulhu.id === 'calendar');
+      const exclusive = (ymd) => { const [y,m,d] = ymd.split('-').map(Number); const t = new Date(y, m-1, d+1); return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0'); };
+      c.querySelector('.cw-cal')._cthCalDebug.inject([
+        { id:'A', summary:'three day bar', start:{date:af}, end:{date:exclusive(al)}, creator:{self:true}, extendedProperties:{shared:{cthulhuKind:'project'}} },
+        { id:'B', summary:'nine am', start:{dateTime:bd+'T09:00:00'}, end:{dateTime:bd+'T10:00:00'}, creator:{self:false}, _cthCal:'them-cal', extendedProperties:{shared:{cthulhuKind:'task'}} },
+        { id:'C', summary:'single', start:{date:cd}, end:{date:exclusive(cd)}, creator:{self:true} },
+      ]);
+    """, a_first.isoformat(), a_last.isoformat(), b_day.isoformat(), c_day.isoformat())
+    time.sleep(0.3)
     shot("02b-calendar-board")
 
     # delete is ONE click now: no "sure?" arm step
@@ -382,6 +428,23 @@ try:
     """)
     check("a 1x1 orb shrinks below its configured size to fit and never scrolls", small["scale"] < small["wanted"] and small["scale"] >= 1 and not small["overflowX"] and not small["overflowY"] and small["inside"] and small["wrapOverflow"] == "hidden", small)
     page("const el = [...document.querySelectorAll('#grid .grid-stack-item')].find(e => e._cthulhu && e._cthulhu.id === 'orb' && e.gridstackNode.w === 1); w.CthulhuHome.removeWidget(el);")
+    # orb speed: a multiplier on the art's own frame rate
+    page("w.CthulhuHome.addWidgetByType('orb', {x:4, y:3, w:1, h:1, config:{color:'', glow:true, scale:2, speed:2}});")
+    time.sleep(1.2)
+    spd = page("""
+      const els = [...document.querySelectorAll('#grid .grid-stack-item')].filter(e => e._cthulhu && e._cthulhu.id === 'orb');
+      const dur = (e) => parseFloat(getComputedStyle(e.querySelector('.cw-orb-sprite')).animationDuration);
+      const slow = els.find(e => (e._cthulhu.config.speed || 1) === 1), fast = els.find(e => e._cthulhu.config.speed === 2);
+      return { slow: dur(slow), fast: dur(fast) };
+    """)
+    check("orb speed 2x halves the sprite's animation duration", spd["slow"] > 0 and abs(spd["fast"] - spd["slow"] / 2) < 0.02, spd)
+    page("""
+      const el = [...document.querySelectorAll('#grid .grid-stack-item')].find(e => e._cthulhu && e._cthulhu.id === 'orb' && e._cthulhu.config.speed === 2);
+      el.querySelector('.cthulhu-widget-tools button').click();
+    """); time.sleep(0.4)
+    rng = page("return [...document.querySelectorAll('.cthulhu-widget-config .cw-ui-row')].filter(r => r.querySelector('input[type=range]')).map(r => r.querySelector('.cw-ui-label').textContent);")
+    check("orb config offers Size and Speed sliders", rng == ["Size (max)", "Speed"], rng)
+    page("document.querySelector('.cthulhu-config-modal').remove(); const el = [...document.querySelectorAll('#grid .grid-stack-item')].find(e => e._cthulhu && e._cthulhu.id === 'orb' && e.gridstackNode.w === 1); w.CthulhuHome.removeWidget(el);")
 
     # moon: the ART is centred, not the 32px frame
     page("w.CthulhuHome.addWidgetByType('moon', {x:4, y:3, w:1, h:1});")
@@ -598,8 +661,103 @@ try:
     """)
     check("admin panel has the Relay token section and Rishi's section with a Tea switch", adm and adm["sections"] == ["relay", "rishi-mood"] and adm["token"] and adm["tea"] == "Switch to Tea" and adm["presets"] == 6, adm)
     shot("10-admin")
+    page("document.querySelector('.cw-pet-teabtn').click();"); time.sleep(0.8)
+    teaLocal = page("""
+      const p = document.querySelector('.cthulhu-admin');
+      return { pref: Services.prefs.getStringPref('cthulhu.pet.rishi.variant', ''), btn: p.querySelector('.cw-pet-teabtn').textContent,
+               status: [...p.querySelectorAll('[data-section="rishi-mood"] .cthulhu-admin-note')].map(n => n.textContent).join(' | '),
+               sprite: (document.querySelector('.cw-pet-img[data-pet="rishi"]') || {}).src?.split('/').pop() };
+    """)
+    check("Switch to Tea flips the pref locally and says so (no relay involved)", teaLocal["pref"] == "tea" and teaLocal["btn"] == "Switch back to Rishi" and "here only" in teaLocal["status"] and teaLocal["sprite"] == "tea.png", teaLocal)
+    page("document.querySelector('.cw-pet-teabtn').click();"); time.sleep(0.5)
     page("w.CthulhuAdmin.close();")
     chrome("Services.prefs.setBoolPref('cthulhu.admin.enabled', false);")
+
+    # --- player with something actually playing: a generated 6 s sine in its own tab
+    import struct, math
+    rate, secs = 8000, 6
+    pcm = b"".join(struct.pack("<h", int(0.15 * 32767 * math.sin(2 * math.pi * 440 * i / rate))) for i in range(rate * secs))
+    wav = (b"RIFF" + struct.pack("<I", 36 + len(pcm)) + b"WAVEfmt " + struct.pack("<IHHIIHH", 16, 1, 1, rate, rate * 2, 2, 16) + b"data" + struct.pack("<I", len(pcm)) + pcm)
+    wav_url = "data:audio/wav;base64," + base64.b64encode(wav).decode()
+    # Like a real player, the page declares media-session metadata AND a position state
+    # (Firefox reports no position for a bare element; YouTube/Spotify/Apple Music all call this).
+    media_page = ("data:text/html,<title>Sine test track</title><audio id=a autoplay loop src=\"" + wav_url + "\"></audio>"
+                  "<script>const a=document.getElementById('a');navigator.mediaSession.metadata=new MediaMetadata({title:'Sine test track',artist:'Marionette'});"
+                  "navigator.mediaSession.setActionHandler('previoustrack',()=>{});navigator.mediaSession.setActionHandler('nexttrack',()=>{});"
+                  "const ps=()=>{try{navigator.mediaSession.setPositionState({duration:a.duration||6,playbackRate:1,position:a.currentTime||0});}catch(e){}};"
+                  "a.addEventListener('timeupdate',ps);a.addEventListener('playing',ps);</script>")
+    chrome("Services.prefs.setIntPref('media.autoplay.default', 0); Services.prefs.setIntPref('media.autoplay.blocking_policy', 0);")
+    chrome("""const t = gBrowser.addTab(arguments[0], { triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal() }); gBrowser.selectedTab = t; window.__mediaTab = t;""", media_page)
+    playing = None
+    for _ in range(20):
+        time.sleep(0.5)
+        playing = chrome("""const tr = window.CthulhuNowPlaying.tracker(); const c = tr.current;
+          return c ? { tab: c.tab === window.__mediaTab, playing: c.mc.isPlaying, title: tr.metadata().title, artist: tr.metadata().artist } : null;""")
+        if playing and playing["tab"] and playing["playing"]:
+            break
+    check("the tracker picks the tab that is playing, with its media-session metadata",
+          playing and playing["tab"] and playing["playing"] and playing["title"] == "Sine test track" and playing["artist"] == "Marionette", playing)
+    sq = chrome("return { title: document.querySelector('.cthulhu-np-title').textContent, playing: document.querySelector('.cthulhu-np-squircle').classList.contains('playing') };")
+    check("the squircle shows the track and lights up", sq["title"] == "Sine test track" and sq["playing"], sq)
+    chrome("document.querySelector('.cthulhu-np-squircle').click();"); time.sleep(1.0)
+    # no flicker: watch the open card for 2.2 s of playback -- the bar must only ever move forward
+    # (the old code wobbled backwards on every position event), the elapsed label must change at most
+    # a few times, and nothing else in the card may be rewritten at all.
+    muts = chrome("""
+      const card = document.querySelector('#cthulhu-player-panel .cthulhu-player-card');
+      const fill = card.querySelector('.cthulhu-player-progress-fill');
+      return new Promise(res => {
+        const widths = [parseFloat(fill.style.width) || 0]; let textChanges = 0, other = 0;
+        const mo = new MutationObserver(list => { for (const r of list) {
+          if (r.type === 'attributes' && r.target === fill && r.attributeName === 'style') widths.push(parseFloat(fill.style.width) || 0);
+          else if (r.type === 'characterData' || (r.type === 'childList' && r.target.classList && r.target.classList.contains('cthulhu-player-time'))) textChanges++;
+          else other++; } });
+        mo.observe(card, { subtree: true, childList: true, attributes: true, characterData: true });
+        setTimeout(() => { mo.disconnect();
+          const backwards = widths.some((w, i) => i && w < widths[i - 1] - 0.01 && !(widths[i - 1] > 90 && w < 10)); // a loop restart is not jitter
+          res({ widthWrites: widths.length - 1, backwards, textChanges, other, first: widths[0], last: widths[widths.length - 1],
+                playIcon: card.querySelector('.cthulhu-player-ctrl.play img').src.split('/').pop(),
+                transition: getComputedStyle(fill).transitionDuration, elapsed: card.querySelector('.cthulhu-player-time').textContent }); }, 2200);
+      });
+    """)
+    check("the open card's bar only ever moves forward, the label changes at most a few times, and nothing else is rewritten",
+          muts["widthWrites"] >= 1 and not muts["backwards"] and muts["textChanges"] <= 4 and muts["other"] == 0 and muts["playIcon"] == "pause.png" and muts["transition"] == "1s" and muts["elapsed"] != "live", muts)
+    # mute: click the speaker -> the TAB is muted (tab.toggleMuteAudio), and back
+    chrome("document.querySelector('#cthulhu-player-panel .cthulhu-player-ctrl.mute').click();"); time.sleep(0.4)
+    mu = chrome("return { muted: window.__mediaTab.linkedBrowser.audioMuted, attr: window.__mediaTab.hasAttribute('muted'), icon: document.querySelector('#cthulhu-player-panel .cthulhu-player-ctrl.mute img').src.split('/').pop() };")
+    check("clicking the speaker mutes the tab (icon swaps)", mu["muted"] and mu["attr"] and mu["icon"] == "mute.png", mu)
+    chrome("document.querySelector('#cthulhu-player-panel .cthulhu-player-ctrl.mute').click();"); time.sleep(0.4)
+    un = chrome("return { muted: window.__mediaTab.linkedBrowser.audioMuted, icon: document.querySelector('#cthulhu-player-panel .cthulhu-player-ctrl.mute img').src.split('/').pop() };")
+    check("and clicking again unmutes", not un["muted"] and un["icon"] == "volume.png", un)
+    # volume: the slider is hidden until the speaker is hovered; moving it stores the level on the tab
+    vol = chrome("""
+      const s = document.querySelector('#cthulhu-player-panel .cthulhu-player-slider');
+      const before = getComputedStyle(s).width;
+      s.value = '40'; s.dispatchEvent(new Event('input', { bubbles: true }));
+      return { hiddenWidth: before, stored: window.__mediaTab._cthulhuVolume, disabled: s.disabled };
+    """)
+    check("the volume slider is collapsed until hovered and stores the level on the tab", vol["hiddenWidth"] == "0px" and vol["stored"] == 0.4 and not vol["disabled"], vol)
+    time.sleep(0.8)
+    # the content side (the actor setting <audio>.volume). Informational on the dev bundle: a child
+    # actor cannot be loaded from the bundle's symlinks by the sandboxed content process (see the
+    # FilePicker note in CONTRIBUTING); it ships inside omni.ja in a release.
+    m.set_context("content")
+    cur = m.current_window_handle
+    applied = None
+    for h in m.window_handles:
+        m.switch_to_window(h)
+        try:
+            if m.execute_script("return document.title") == "Sine test track":
+                applied = m.execute_script("return document.querySelector('audio').volume")
+                break
+        except Exception:
+            continue
+    m.switch_to_window(cur)
+    if applied == 0.4:
+        check("the page's <audio> volume follows the slider (actor)", True)
+    else:
+        print("INFO the page's <audio> volume is", applied, "-- the volume actor did not reach content on this dev bundle (symlinked child module; shipped builds carry it in omni.ja)")
+    chrome("document.getElementById('cthulhu-player-panel').hidePopup();")
 
     # --- chrome: the player is there, the side panels and the feature-request button are gone
     ch = chrome("""
@@ -614,7 +772,7 @@ try:
     check("Now Playing squircle present; Discord/Instagram/Apple Music toggles, sidebar and feature-request button gone",
           ch["np"] and ch["toggles"] == 0 and not ch["sidepanels"] and not ch["fr"], ch)
     check("player is title/artist, close, elapsed+total, prev/play/next/mute with PNG icon slots, no browse or search",
-          ch["panel"] and ch["icons"] == ["close.png", "prev.png", "play.png", "next.png", "volume.png"] and ch["times"] == 2 and ch["close"] and ch["rec"] == 0, ch)
+          ch["panel"] and ch["icons"] in (["close.png", "prev.png", "play.png", "next.png", "volume.png"], ["close.png", "prev.png", "pause.png", "next.png", "volume.png"]) and ch["times"] == 2 and ch["close"] and ch["rec"] == 0, ch)
     check("loaded chrome modules", set(ch["modules"]) == {"cursors", "ambient-theme", "now-playing", "compact-mode"}, ch["modules"])
 
     # --- vertical tabs: the Home tab appears as a pinned tab with the house; compact mode hides the strip
@@ -633,24 +791,62 @@ try:
     check("vertical tabs: a pinned Home tab exists in the strip, visible, with the house icon, not stolen focus",
           vt["orient"] == "vertical" and vt["tab"] and vt["display"] != "none" and vt["pinned"] and vt["icon"] == "home.png" and vt["inPinned"] and vt["pinnedShown"] and vt["selected"] is False, vt)
     check("root flags vertical tabs and the Compact mode menu item exists", vt["rootVT"] and vt["menu"], vt)
-    chrome("window.CthulhuCompactMode.setEnabled(true);"); time.sleep(0.8)
+    chrome("window.CthulhuCompactMode.setEnabled(true);"); time.sleep(1.0)
     cm = chrome("""
       const c = document.getElementById('sidebar-container'); const cs = getComputedStyle(c);
+      const tb = document.getElementById('navigator-toolbox'); const ts = getComputedStyle(tb);
       const hot = document.getElementById('cthulhu-compact-hotzone');
       const tabbox = document.getElementById('tabbrowser-tabbox').getBoundingClientRect();
+      const urlc = document.getElementById('urlbar-container').getBoundingClientRect();
+      const back = document.getElementById('back-button').getBoundingClientRect();
       return { attr: document.documentElement.hasAttribute('cthulhu-compact'), position: cs.position, translate: cs.translate,
+               tbPosition: ts.position, tbTranslate: ts.translate, tbWidth: tb.getBoundingClientRect().width,
                hot: !!hot && getComputedStyle(hot).display !== 'none', hotW: hot ? hot.getBoundingClientRect().width : null,
-               tabboxLeft: tabbox.left, vis: Services.prefs.getCharPref('sidebar.visibility'),
-               checked: document.querySelector('#toolbar-context-menu .cthulhu-compact-menuitem').getAttribute('checked') };
+               tabboxLeft: tabbox.left, tabboxTop: tabbox.top, vis: Services.prefs.getCharPref('sidebar.visibility'),
+               checked: document.querySelector('#toolbar-context-menu .cthulhu-compact-menuitem').getAttribute('checked'),
+               docked: !!c.querySelector('.cthulhu-player-card.docked'), squircleHidden: getComputedStyle(document.getElementById('cthulhu-nowplaying')).display === 'none',
+               urlbarOwnRow: urlc.top >= back.bottom - 1, urlbarWide: urlc.width > 220,
+               menuTopRight: (() => { const p = document.getElementById('PanelUI-button').getBoundingClientRect(); const t = tb.getBoundingClientRect();
+                 return p.top - t.top < 40 && t.right - p.right < 40 && p.bottom <= urlc.top + 1; })(),
+               padTop: parseFloat(cs.paddingTop) };
     """)
-    check("compact mode: strip is out of flow and slid off-screen, page takes the full width, hot zone armed",
-          cm["attr"] and cm["position"] == "absolute" and cm["translate"] not in ("none", "0px", "") and cm["hot"] and cm["hotW"] == 6 and cm["tabboxLeft"] < 10 and cm["vis"] == "always-show" and cm["checked"] == "true", cm)
+    check("compact mode: page is full-screen (tabbox at the top-left), both toolbox and strip out of flow and off-screen",
+          cm["attr"] and cm["position"] == "absolute" and cm["tbPosition"] == "absolute" and cm["translate"] not in ("none", "0px", "") and cm["tbTranslate"] not in ("none", "0px", "")
+          and cm["tabboxLeft"] < 10 and cm["tabboxTop"] < 10 and cm["hot"] and cm["hotW"] == 6 and cm["vis"] == "always-show" and cm["checked"] == "true", cm)
+    check("the column: toolbox 260 wide, menu at its top-right, the address bar spanning its own bottom row, tabs padded under it, player docked, squircle hidden",
+          cm["tbWidth"] == 260 and cm["urlbarOwnRow"] and cm["urlbarWide"] and cm["menuTopRight"] and cm["padTop"] > 40 and cm["docked"] and cm["squircleHidden"], cm)
+    # the address bar's dropdown must open where the bar is, inside the column
+    chrome("window.CthulhuCompactMode.open(); gURLBar.focus(); gURLBar.value = 'exa'; gURLBar.startQuery();"); time.sleep(1.2)
+    ub = chrome("""const u = document.getElementById('urlbar'); const r = u.getBoundingClientRect(); const c = document.getElementById('urlbar-container').getBoundingClientRect();
+      const v = u.querySelector('.urlbarView'); const vr = v ? v.getBoundingClientRect() : null;
+      return { open: u.hasAttribute('open') || u.hasAttribute('breakout-extend'), left: r.left, top: r.top, width: r.width, cLeft: c.left, cTop: c.top,
+               viewShown: !!vr && vr.height > 20, viewLeft: vr ? vr.left : null, viewWidth: vr ? vr.width : null };""")
+    check("the focused address bar and its results open over the column, aligned with the pill",
+          ub["open"] and abs(ub["left"] - ub["cLeft"]) < 12 and ub["left"] < 30 and ub["width"] > 200 and ub["width"] < 420 and ub["viewShown"] and ub["viewLeft"] < 30, ub)
+    if SHOTS:
+        m.set_context("chrome")
+        with open(os.path.join(SHOTS, "15c-compact-urlbar.png"), "wb") as f: f.write(base64.b64decode(m.screenshot(format="base64")))
+    chrome("gURLBar.view.close(); gURLBar.handleRevert(); gURLBar.blur(); window.CthulhuCompactMode.close();"); time.sleep(0.5)
     chrome("window.CthulhuCompactMode.open();"); time.sleep(0.4)
-    op = chrome("const c = document.getElementById('sidebar-container'); return { open: c.hasAttribute('cthulhu-compact-open'), translate: getComputedStyle(c).translate };")
-    check("hovering the edge (open()) slides the strip back over the page", op["open"] and op["translate"] in ("none", "0px", "0px 0px"), op)
-    chrome("window.CthulhuCompactMode.close(); window.CthulhuCompactMode.setEnabled(false);"); time.sleep(0.4)
-    off = chrome("const c = document.getElementById('sidebar-container'); return { attr: document.documentElement.hasAttribute('cthulhu-compact'), position: getComputedStyle(c).position };")
-    check("compact mode off: strip back in the layout", not off["attr"] and off["position"] != "absolute", off)
+    op = chrome("""const c = document.getElementById('sidebar-container'); const tb = document.getElementById('navigator-toolbox');
+      return { open: c.hasAttribute('cthulhu-compact-open') && tb.hasAttribute('cthulhu-compact-open'), translate: getComputedStyle(c).translate, tbTranslate: getComputedStyle(tb).translate,
+               dockedVisible: c.querySelector('.cthulhu-player-card.docked').getBoundingClientRect().width > 100 };""")
+    check("open(): the whole column slides in over the page, docked player visible", op["open"] and op["translate"] in ("none", "0px", "0px 0px") and op["tbTranslate"] in ("none", "0px", "0px 0px") and op["dockedVisible"], op)
+    if SHOTS:
+        m.set_context("chrome")
+        with open(os.path.join(SHOTS, "15b-compact-column.png"), "wb") as f: f.write(base64.b64decode(m.screenshot(format="base64")))
+    chrome("window.CthulhuCompactMode.close();"); time.sleep(0.3)
+    # Cmd/Ctrl+L: focusing the address bar reveals the column; blurring lets it hide
+    chrome("gURLBar.focus();"); time.sleep(0.3)
+    fo = chrome("return document.getElementById('navigator-toolbox').hasAttribute('cthulhu-compact-open');")
+    chrome("gURLBar.blur(); document.getElementById('tabbrowser-tabbox').focus();"); time.sleep(0.9)
+    fb = chrome("return document.getElementById('navigator-toolbox').hasAttribute('cthulhu-compact-open');")
+    check("focusing the address bar reveals the column and blurring hides it again", fo and not fb, {"focused": fo, "blurred": fb})
+    chrome("window.CthulhuCompactMode.setEnabled(false);"); time.sleep(0.5)
+    off = chrome("""const c = document.getElementById('sidebar-container'); const tb = document.getElementById('navigator-toolbox');
+      return { attr: document.documentElement.hasAttribute('cthulhu-compact'), position: getComputedStyle(c).position, tbPosition: getComputedStyle(tb).position,
+               docked: !!c.querySelector('.cthulhu-player-card.docked'), squircle: getComputedStyle(document.getElementById('cthulhu-nowplaying')).display !== 'none' };""")
+    check("compact mode off: toolbox and strip back in the layout, player undocked, squircle back", not off["attr"] and off["position"] != "absolute" and off["tbPosition"] != "absolute" and not off["docked"] and off["squircle"], off)
     chrome("Services.prefs.setBoolPref('sidebar.verticalTabs', false);"); time.sleep(2.0)
     hz = chrome("const tab = document.querySelector('tab[cthulhu-home-tab]'); return { orient: document.getElementById('tabbrowser-tabs').getAttribute('orient'), hidden: tab ? getComputedStyle(tab).display === 'none' : null, fvVisible: document.getElementById('firefox-view-button').getBoundingClientRect().width > 10 };")
     check("back to horizontal: the Home tab hides again and the Home button is back", hz["orient"] == "horizontal" and hz["hidden"] and hz["fvVisible"], hz)

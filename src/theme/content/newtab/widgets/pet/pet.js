@@ -32,15 +32,16 @@
  *   variantPref a pref naming one of `variants`, followed live: when set, the
  *               pet is drawn with that variant's frames and name. Rishi's
  *               "tea" variant is assets/tea.png -- the admin panel's "Switch
- *               to Tea", again shared through the relay.
+ *               to Tea". LOCAL to the machine, on purpose: it is not sent to
+ *               or read from the relay.
  *
- * SHARED STATE: mood and variant for a pet with moodPref live on the relay
+ * SHARED STATE: the MOOD of a pet with moodPref lives on the relay
  * (relay/worker.js, GET /rishi). Any page with such a pet polls it every
- * minute (and on becoming visible) and writes the result into the two prefs;
- * every tile follows the prefs, so the update reaches all open tabs at once.
- * The admin panel writes the prefs directly (this machine updates instantly)
- * AND PUTs to the relay with the owner's token (the other browser picks it up
- * on its next poll). Without a token, the panel changes this machine only and
+ * minute (and on becoming visible) and writes the result into the pref; every
+ * tile follows the pref, so the update reaches all open tabs at once. The
+ * admin panel writes the pref directly (this machine updates instantly) AND
+ * PUTs to the relay with the owner's token (the other browser picks it up on
+ * its next poll). Without a token, the panel changes this machine only and
  * says so. No secret is in this file or the binary.
  *
  * A relay value is applied only when it is NEW: the relay stamps every write
@@ -109,13 +110,9 @@
         const stamp = Number(data.updatedAt) || 0;
         if (!stamp || String(stamp) === getPref(SYNCED_PREF, "")) return;
         // Only touch a pref that actually changed: each write pings every
-        // observer in every tab.
+        // observer in every tab. The mood only -- Rishi/Tea is per machine.
         const mood = String(data.mood == null ? "" : data.mood).slice(0, MOOD_MAX);
-        const variant = String(data.variant == null ? "" : data.variant);
         if (getPref(shared.prefs.moodPref, "") !== mood) setPref(shared.prefs.moodPref, mood);
-        if (shared.prefs.variantPref && getPref(shared.prefs.variantPref, "") !== variant) {
-          setPref(shared.prefs.variantPref, variant);
-        }
         setPref(SYNCED_PREF, String(stamp));
       } catch (e) {
         // A relay that predates /rishi answers 405; a machine offline answers
@@ -339,7 +336,7 @@
     window.CthulhuAdmin.register({
       id: "rishi-mood",
       title: "Rishi",
-      note: "Shown above Rishi in the Pet widget, in both browsers when the relay token is set.",
+      note: "The mood shows above Rishi in both browsers when the relay token is set. Tea is this machine only.",
       render(body, ctx) {
         const input = document.createElement("input");
         input.type = "text";
@@ -362,11 +359,10 @@
         const status = document.createElement("div");
         status.className = "cthulhu-admin-note";
 
-        // One writer for both values: prefs first (instant here), relay second
-        // (the other browser). The status line says which of the two happened.
+        // The mood: pref first (instant here), relay second (the other
+        // browser). The status line says which of the two happened.
         async function commit(patch) {
           if ("mood" in patch) { input.value = patch.mood; ctx.setPref(MOOD_PREF, patch.mood); paint(patch.mood); }
-          if ("variant" in patch) { ctx.setPref(VARIANT_PREF, patch.variant); paintVariant(); }
           const relay = ctx.relay || (window.CthulhuAdmin && window.CthulhuAdmin.relay);
           if (!relay || !relay.url()) { status.textContent = "Saved here only: no relay configured."; return; }
           if (!relay.token()) { status.textContent = "Saved here only. Set the admin token (Relay, above) to share it with the other browser."; return; }
@@ -409,7 +405,8 @@
         actions.appendChild(clearBtn);
         body.appendChild(actions);
 
-        // Rishi <-> Tea. One button that says what it will do next.
+        // Rishi <-> Tea. One button that says what it will do next. LOCAL:
+        // this writes the pref and nothing else -- it never reaches the relay.
         const teaBtn = document.createElement("button");
         teaBtn.type = "button";
         teaBtn.className = "cw-ui-btn cw-pet-teabtn";
@@ -421,7 +418,9 @@
         paintVariant();
         teaBtn.addEventListener("click", (e) => {
           e.stopPropagation();
-          commit({ variant: getPref(VARIANT_PREF, "") === "tea" ? "" : "tea" });
+          ctx.setPref(VARIANT_PREF, getPref(VARIANT_PREF, "") === "tea" ? "" : "tea");
+          paintVariant();
+          status.textContent = "Switched here only -- Tea is per machine.";
         });
         body.appendChild(teaBtn);
         body.appendChild(status);
@@ -588,7 +587,7 @@
           const paintMood = (v) => { moodEl.textContent = (v || "").slice(0, MOOD_MAX); };
           paintMood(getPref(base.moodPref, ""));
           stops.push(watchPref(base.moodPref, paintMood));
-          shared.start({ moodPref: base.moodPref, variantPref: base.variantPref || "" });
+          shared.start({ moodPref: base.moodPref });
           stops.push(() => shared.stop());
         }
 

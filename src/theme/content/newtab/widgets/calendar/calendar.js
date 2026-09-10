@@ -11,8 +11,12 @@
  *                            dates, all-day or a time, notes. Enter creates.
  *   - drag a box to another day                       ->  it moves
  *   - drag a box's left/right edge                    ->  it grows/shrinks
- *   - click a box's title                             ->  rename it in place
+ *   - click a box                                     ->  its details (as
+ *                            Google Calendar shows them: when, notes, which
+ *                            calendar), with Done / Edit / Delete
  *   - hover a box for ✓ (done), ✎ (edit) and × (delete -- one click)
+ *   - click the tile's empty space, or ⤢             ->  the board expands to
+ *                            most of the window; click outside or Esc to close
  *   - Mine / Theirs / Both filter, ⟳, ‹ Today ›, and a 5-15 min poll
  *
  * CALENDARS AND SIDES. Every calendar the Google account can see is listed in
@@ -380,6 +384,32 @@ CthulhuWidgets.register({
     .cw-cal-ed-del { margin-inline-start:auto; color:var(--notify) !important; border-color:var(--notify) !important; }
     .cw-cal-ed-status { font-size:11px; color:var(--notify); min-height:1.2em; }
 
+    /* --- details view (click a box) --- */
+    .cw-cal-dt { width:380px; gap:10px; }
+    .cw-cal-dt-head { display:flex; align-items:flex-start; gap:10px; }
+    .cw-cal-dt-dot { flex:none; width:14px; height:14px; border-radius:4px; margin-top:4px; background:var(--kind, var(--fg-muted)); }
+    .cw-cal-dt-title { flex:1; min-width:0; margin:0; font-size:1.25em; font-weight:normal; color:var(--fg); overflow-wrap:anywhere; }
+    .cw-cal-dt-title.done { text-decoration:line-through; color:var(--fg-muted); }
+    .cw-cal-dt-x { flex:none; width:24px; height:24px; padding:0; border:none; border-radius:6px; background:transparent;
+                   color:var(--fg-muted); font-size:16px; line-height:1; cursor:pointer; font-family:inherit; }
+    .cw-cal-dt-x:hover { background:var(--surface-hover); color:var(--fg); }
+    .cw-cal-dt-when { font-size:13px; color:var(--fg); line-height:1.4; }
+    .cw-cal-dt-when small { display:block; color:var(--fg-muted); font-size:12px; }
+    .cw-cal-dt-notes { font-size:12px; color:var(--fg); line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere;
+                       max-height:40vh; overflow-y:auto; padding:8px 10px; background:var(--surface); border:1px solid var(--border);
+                       border-radius:8px; user-select:text; }
+    .cw-cal-dt-notes a { color:var(--accent); text-decoration:underline; }
+    .cw-cal-dt-meta { display:flex; flex-wrap:wrap; gap:6px; align-items:center; font-size:11px; color:var(--fg-muted); }
+    .cw-cal-dt-meta .cw-cal-pill { font-size:11px; }
+    .cw-cal-dt-actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .cw-cal-dt-actions .del { margin-inline-start:auto; color:var(--notify) !important; border-color:var(--notify) !important; }
+
+    /* --- the expanded board (click the tile, or ⤢) --- */
+    .cw-cal-big { width:min(1400px, 92vw); height:90vh; max-height:90vh; padding:14px 16px 16px; gap:0; }
+    .cw-cal-big .cw-cal { font-size:1.15em; }
+    .cw-cal-big .cw-cal-week { min-height:96px; }
+    .cw-cal-big-body { flex:1; min-height:0; display:flex; flex-direction:column; }
+
     /* --- ⚙: the calendar list with its roles --- */
     .cw-cal-calrow { display:flex; flex-direction:column; gap:4px; padding:6px 0; border-top:1px solid var(--border); }
     .cw-cal-calrow:first-of-type { border-top:none; padding-top:0; }
@@ -428,6 +458,13 @@ CthulhuWidgets.register({
     const prevBtn = mkHeadBtn("prev", "‹", "Previous month");
     const todayBtn = mkHeadBtn("today", "Today", "Back to this month");
     const nextBtn = mkHeadBtn("next", "›", "Next month");
+    // On the tile: expand. In the expanded copy: close (it is a modal).
+    const sizeBtn = mkHeadBtn(ctx.isExpanded ? "close" : "expand", ctx.isExpanded ? "×" : "⤢",
+      ctx.isExpanded ? "Close" : "Expand the calendar");
+    sizeBtn.addEventListener("click", () => {
+      if (ctx.isExpanded) { if (ctx.closeExpanded) ctx.closeExpanded(); }
+      else cthCalOpenExpanded(ctx);
+    });
 
     let disposed = false;
     let myEmail = null;
@@ -674,10 +711,11 @@ CthulhuWidgets.register({
       } else {
         // A read-only calendar's box is still a box on the board -- it just
         // cannot be picked up. GridStack must not treat the press as a tile
-        // drag either.
+        // drag either. A plain click still shows its details.
         box.setAttribute("data-cthulhu-nodrag", "");
         box.addEventListener("mousedown", (e) => e.stopPropagation());
         box.addEventListener("pointerdown", (e) => e.stopPropagation());
+        box.addEventListener("click", (e) => { e.stopPropagation(); openDetails(ev); });
       }
       return box;
     }
@@ -716,9 +754,6 @@ CthulhuWidgets.register({
         e.stopPropagation(); // not a tile drag
         const handle = e.target.closest && e.target.closest(".cw-cal-rz");
         const mode = handle ? "resize-" + handle.dataset.side : "move";
-        // Once the pointer is captured every event is retargeted to the box,
-        // so whether this press began on the title must be decided now.
-        const onTitle = titleEl_.contains(e.target);
         const originCell = dayAt(e.clientX, e.clientY);
         const origin = originCell ? originCell.dataset.ymd : seg.span.first;
         const startX = e.clientX;
@@ -750,8 +785,8 @@ CthulhuWidgets.register({
           box.classList.remove("dragging");
           clearDrop();
           if (!dragging) {
-            // A press that never moved: on the title it's a rename.
-            if (ev2.type === "pointerup" && onTitle) beginRename(seg.ev, box, titleEl_);
+            // A press that never moved is a click: show the item.
+            if (ev2.type === "pointerup" && !ev2.target.closest(".cw-cal-rbtn")) openDetails(seg.ev);
             return;
           }
           if (!target || target === origin) return;
@@ -771,33 +806,123 @@ CthulhuWidgets.register({
       });
     }
 
-    function beginRename(ev, box, titleEl_) {
-      if (titleEl_.querySelector("input")) return;
-      const old = ev.summary || "";
-      const inp = document.createElement("input");
-      inp.type = "text";
-      inp.value = old;
-      inp.setAttribute("aria-label", "Rename item");
-      titleEl_.textContent = "";
-      titleEl_.appendChild(inp);
-      box.style.cursor = "text";
-      let done = false;
-      const finish = (commit) => {
-        if (done) return;
-        done = true;
-        const text = inp.value.trim();
-        box.style.cursor = "";
-        if (commit && text && text !== old) renameEvent(ev, text);
-        else paint();
-      };
-      inp.addEventListener("pointerdown", (e) => e.stopPropagation());
-      inp.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") { e.preventDefault(); finish(true); }
-        if (e.key === "Escape") { e.preventDefault(); finish(false); }
-      });
-      inp.addEventListener("blur", () => finish(true));
-      inp.focus();
-      inp.select();
+    /* --- details: what Google Calendar shows when you click an event -----------
+     * Title, when (date or range, time or all-day), the notes with their links
+     * clickable, which calendar it is in and whose side it is on, and the
+     * actions: Done / Edit / Delete. Read-only calendars get the facts only. */
+    function openDetails(ev) {
+      if (document.querySelector(".cw-cal-dt-modal")) return;
+      const span = cthEventSpan(ev) || { first: cthYmd(new Date()), last: cthYmd(new Date()) };
+      const kind = cthKindOf(ev);
+      const ro = !writable(ev._cthCal || "primary");
+      const theirs = sideOf(ev) === "theirs";
+
+      const overlay = document.createElement("div");
+      overlay.className = "cthulhu-config-modal cw-cal-dt-modal";
+      const panel = document.createElement("div");
+      panel.className = "cthulhu-widget-config cw-cal-dt";
+      panel.setAttribute("role", "dialog");
+      panel.setAttribute("aria-label", "Item details");
+      if (kind) panel.style.setProperty("--kind", kind.color);
+      overlay.appendChild(panel);
+      const close = () => overlay.remove();
+
+      const head = document.createElement("div");
+      head.className = "cw-cal-dt-head";
+      const dot = document.createElement("span");
+      dot.className = "cw-cal-dt-dot";
+      const title = document.createElement("h3");
+      title.className = "cw-cal-dt-title" + (cthIsDone(ev) ? " done" : "");
+      title.textContent = ev.summary || "(no title)";
+      const x = document.createElement("button");
+      x.type = "button";
+      x.className = "cw-cal-dt-x";
+      x.textContent = "×";
+      x.title = "Close";
+      x.setAttribute("aria-label", "Close");
+      x.addEventListener("click", close);
+      head.append(dot, title, x);
+      panel.appendChild(head);
+
+      // When. "Wednesday, September 9" / "Wed, Sep 9 – Fri, Sep 11", then the
+      // time or "All day".
+      const when = document.createElement("div");
+      when.className = "cw-cal-dt-when";
+      const long = (ymd) => cthParseDateOnly(ymd).toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
+      const short = (ymd) => cthParseDateOnly(ymd).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+      when.textContent = span.first === span.last ? long(span.first) : short(span.first) + " – " + short(span.last);
+      const sub = document.createElement("small");
+      if (cthIsAllDay(ev)) {
+        sub.textContent = "All day";
+      } else {
+        const s0 = cthEventStart(ev);
+        const e0 = ev.end && ev.end.dateTime ? new Date(ev.end.dateTime) : null;
+        const t = (d) => d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+        sub.textContent = e0 ? t(s0) + " – " + t(e0) : t(s0);
+      }
+      when.appendChild(sub);
+      panel.appendChild(when);
+
+      if (ev.description) {
+        const notes = document.createElement("div");
+        notes.className = "cw-cal-dt-notes";
+        cthLinkify(notes, ev.description, (url) => ctx.openLink(url));
+        panel.appendChild(notes);
+      }
+
+      const meta = document.createElement("div");
+      meta.className = "cw-cal-dt-meta";
+      const calLine = document.createElement("span");
+      calLine.textContent = "Calendar: " + calName(ev._cthCal || "primary") + (ro ? " (read only)" : "");
+      meta.appendChild(calLine);
+      if (kind) {
+        const pill = document.createElement("span");
+        pill.className = "cw-cal-pill";
+        pill.textContent = kind.label;
+        meta.appendChild(pill);
+      }
+      const side = document.createElement("span");
+      side.textContent = theirs ? (ctx.config.theirLabel || "Theirs") : "Mine";
+      meta.appendChild(side);
+      if (cthIsDone(ev)) {
+        const d = document.createElement("span");
+        d.textContent = "Done";
+        meta.appendChild(d);
+      }
+      panel.appendChild(meta);
+
+      const actions = document.createElement("div");
+      actions.className = "cw-cal-dt-actions";
+      if (!ro) {
+        const doneBtn = document.createElement("button");
+        doneBtn.type = "button";
+        doneBtn.className = "cw-cfg-save";
+        doneBtn.textContent = cthIsDone(ev) ? "Mark not done" : "Mark done";
+        doneBtn.addEventListener("click", () => { close(); toggleDone(ev); });
+        const edit = document.createElement("button");
+        edit.type = "button";
+        edit.className = "cw-ui-btn";
+        edit.textContent = "Edit";
+        edit.addEventListener("click", () => { close(); openEditor({ ev }); });
+        const del = document.createElement("button");
+        del.type = "button";
+        del.className = "cw-ui-btn del";
+        del.textContent = "Delete";
+        del.addEventListener("click", () => { close(); removeEvent(ev); });
+        actions.append(doneBtn, edit, del);
+      } else {
+        const note = document.createElement("span");
+        note.className = "cw-ui-note";
+        note.textContent = "This calendar is read-only here.";
+        actions.appendChild(note);
+      }
+      panel.appendChild(actions);
+
+      overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+      panel.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); close(); } });
+      document.body.appendChild(overlay);
+      x.focus();
+      return overlay;
     }
 
     /* --- the item editor -------------------------------------------------------
@@ -1140,6 +1265,20 @@ CthulhuWidgets.register({
       }
     }
 
+    // Expand on a click on empty day space. Two routes lead here and never
+    // both: a real click with a pixel of jitter becomes a GridStack tile drag
+    // that goes nowhere (the core reports it through onClick, below, and
+    // swallows the native click), while a perfectly still press never starts
+    // a drag, so the native click arrives here. Boxes and the + buttons stop
+    // their presses before either can happen.
+    if (!ctx.isExpanded) {
+      month.addEventListener("click", (e) => {
+        const t = e.target;
+        if (!(t.classList && (t.classList.contains("cw-cal-day") || t.classList.contains("cw-cal-num") || t.classList.contains("cw-cal-week")))) return;
+        cthCalOpenExpanded(ctx);
+      });
+    }
+
     // Test seam: tools/home-widgets-test.py injects events here and drives the
     // board with real pointer input, since there is no Google account in CI.
     root._cthCalDebug = {
@@ -1157,6 +1296,7 @@ CthulhuWidgets.register({
       events() { return lastEvents; },
       roles() { return { ...roles }; },
       openEditor,
+      openDetails,
     };
 
     paint(); // the grid never waits for Google
@@ -1166,6 +1306,13 @@ CthulhuWidgets.register({
     const mins = Math.min(15, Math.max(5, Number(ctx.config.pollMinutes) || 5));
     const iv = setInterval(() => load(), mins * 60 * 1000);
     ctx.onCleanup(() => clearInterval(iv));
+  },
+
+  /* A click on the tile's empty space (a GridStack drag that went nowhere --
+   * see widgets/README.md) expands the board. Boxes, the + buttons and the
+   * header stop the press before GridStack sees it, so they never get here. */
+  onClick(ctx) {
+    if (!ctx.isExpanded) cthCalOpenExpanded(ctx);
   },
 
   configUI(panel, ctx) {
@@ -1422,6 +1569,84 @@ CthulhuWidgets.register({
     })();
   },
 });
+
+/** The expanded board: the same widget rendered again into a modal that
+ *  fills most of the window. It shares the tile's config (edits to the
+ *  config save through the tile's own ctx) but has its own render lifetime;
+ *  when it closes, the tile re-renders so anything changed in the big one
+ *  shows in the small one. Only one at a time. */
+function cthCalOpenExpanded(ctx) {
+  if (document.querySelector(".cw-cal-big-modal")) return;
+  const def = CthulhuWidgets.get("calendar");
+  if (!def) return;
+  const overlay = document.createElement("div");
+  overlay.className = "cthulhu-config-modal cw-cal-big-modal";
+  const panel = document.createElement("div");
+  panel.className = "cthulhu-widget-config cw-cal-big";
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-label", "Calendar");
+  const body = document.createElement("div");
+  body.className = "cw-cal-big-body cthulhu-widget-body";
+  panel.appendChild(body);
+  overlay.appendChild(panel);
+
+  let cleanups = [];
+  const dispose = () => { for (const fn of cleanups.splice(0)) { try { fn(); } catch (e) {} } };
+  const close = () => {
+    dispose();
+    overlay.remove();
+    document.removeEventListener("keydown", onKey, true);
+    try { ctx.refresh(); } catch (e) {}
+  };
+  const onKey = (e) => {
+    // Only when nothing else (the editor, a details view) is on top.
+    if (e.key === "Escape" && overlay.isConnected && document.querySelector(".cthulhu-config-modal:last-of-type") === overlay) {
+      e.preventDefault();
+      close();
+    }
+  };
+  // The expanded copy's ctx: the tile's, with its own cleanup list, a refresh
+  // that redraws the copy, and a saveConfig that saves through the tile but
+  // does not redraw the (hidden) tile on every change.
+  const bigCtx = Object.create(ctx, {
+    onCleanup: { value: (fn) => cleanups.push(fn) },
+    refresh: { value: () => rerender() },
+    saveConfig: { value: (cfg, opts) => { ctx.saveConfig(cfg, { refresh: false }); if (!opts || opts.refresh !== false) rerender(); } },
+    isExpanded: { value: true },
+    closeExpanded: { value: close },
+  });
+  function rerender() {
+    dispose();
+    body.innerHTML = "";
+    try { def.render(body, bigCtx); } catch (e) { console.error("[Cthulhu:calendar] expanded render", e); }
+  }
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+  document.addEventListener("keydown", onKey, true);
+  document.body.appendChild(overlay);
+  rerender();
+  return overlay;
+}
+
+/** Write `text` into `el` with its URLs as links. The description of a Google
+ *  event is plain text (or the plain-text rendering of its HTML) -- links in
+ *  it are bare URLs, as in the Canvas feed. */
+function cthLinkify(el, text, open) {
+  const re = /(https?:\/\/[^\s<>"')\]]+)/g;
+  let last = 0;
+  let m;
+  const str = String(text);
+  while ((m = re.exec(str))) {
+    if (m.index > last) el.appendChild(document.createTextNode(str.slice(last, m.index)));
+    const a = document.createElement("a");
+    a.href = m[1];
+    a.textContent = m[1];
+    a.title = m[1];
+    a.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); open(m[1]); });
+    el.appendChild(a);
+    last = m.index + m[1].length;
+  }
+  if (last < str.length) el.appendChild(document.createTextNode(str.slice(last)));
+}
 
 /** Build the Calendar API event body for a new item. `endDate` (inclusive,
  *  YYYY-MM-DD) makes a multi-day item. Exposed at module scope so it can be

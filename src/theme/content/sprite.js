@@ -62,7 +62,9 @@ window.CthulhuSprite = {
    * resolved relative to the JSON's folder.
    * @param {Element} el
    * @param {string}  jsonUrl
-   * @param {Object}  o  { mode, fps, loop } (all optional)
+   * @param {Object}  o  { mode, fps, speed, loop } (all optional). `speed`
+   *                     multiplies the rate the JSON's durations give (1 = as
+   *                     drawn, 2 = twice as fast); `fps` overrides it outright.
    */
   async fromAseprite(el, jsonUrl, o) {
     o = o || {};
@@ -84,7 +86,7 @@ window.CthulhuSprite = {
     if (!fps) {
       const avg =
         frames.reduce((s, fr) => s + (fr.duration || 100), 0) / frames.length;
-      fps = Math.max(1, Math.round(1000 / avg));
+      fps = Math.max(0.25, (1000 / avg) * (o.speed > 0 ? o.speed : 1));
     }
     return this.play(el, {
       src: src,

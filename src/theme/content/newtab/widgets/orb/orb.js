@@ -14,6 +14,8 @@
  *   colour ""  -> follow the theme accent (live; re-measured on theme change)
  *   colour hex -> that colour
  *   glow       -> a soft drop-shadow in the same colour
+ *   speed      -> how fast it beats: a multiplier on the rate the art's own
+ *                 frame durations give (1 = as drawn)
  *
  * Drop your own art at assets/orb.png + orb.json (Aseprite horizontal strip;
  * frame size/count come from the JSON). */
@@ -65,7 +67,7 @@ CthulhuWidgets.register({
   category: "aesthetic",
   name: "Orb",
   defaultSize: { w: 2, h: 2 },
-  defaultConfig: { color: "", glow: true, scale: 3 },
+  defaultConfig: { color: "", glow: true, scale: 3, speed: 1 },
   css: `
     .cw-orb { display:flex; align-items:center; justify-content:center; height:100%; overflow:hidden; }
     .cw-orb .cthulhu-sprite { image-rendering:pixelated; }
@@ -104,7 +106,8 @@ CthulhuWidgets.register({
     let disposed = false;
     ctx.onCleanup(() => { disposed = true; });
     const jsonUrl = ctx.assetUrl("orb.json");
-    ctx.sprite.fromAseprite(sprite, jsonUrl, { mode: "css" })
+    const speed = Math.max(0.25, Math.min(4, +ctx.config.speed || 1));
+    ctx.sprite.fromAseprite(sprite, jsonUrl, { mode: "css", speed })
       .then((ctrl) => {
         ctx.onCleanup(() => ctrl && ctrl.stop && ctrl.stop());
         // The frame size is only known now; fit again with the real box.
@@ -136,6 +139,7 @@ CthulhuWidgets.register({
     panel.appendChild(f);
     panel.appendChild(ctx.ui.checkRow("Glow", ctx.config.glow !== false, (v) => save({ glow: v })));
     panel.appendChild(ctx.ui.rangeRow("Size (max)", { min: 1, max: 6, step: 1, value: ctx.config.scale || 3, unit: "×" }, (v) => save({ scale: v })));
+    panel.appendChild(ctx.ui.rangeRow("Speed", { min: 0.25, max: 4, step: 0.25, value: ctx.config.speed || 1, unit: "×" }, (v) => save({ speed: v })));
     const note = document.createElement("div"); note.className = "cw-ui-note";
     note.textContent = "The orb shrinks to fit a small tile; this is the largest it will go.";
     panel.appendChild(note);

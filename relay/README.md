@@ -4,9 +4,9 @@ A tiny Cloudflare Worker with two jobs:
 
 1. **Feature requests** — accepts a message from the browser (the Rishi pet's
    form) and forwards it to a Discord webhook.
-2. **Rishi's shared state** — holds his mood and whether he is Rishi or Tea, so
-   both browsers show the same thing. Read by every home page with a Rishi
-   tile; written only with the admin token.
+2. **Rishi's shared mood** — so both browsers show the same bubble. Read by
+   every home page with a Rishi tile; written only with the admin token.
+   (Rishi-or-Tea is deliberately per machine and never comes here.)
 
 ## Why a relay at all
 
@@ -26,8 +26,8 @@ into the browser's admin panel. Neither secret is in the repo or the binary.
 | | | |
 | --- | --- | --- |
 | `POST /` | `{ message, name?, version?, platform? }` | → `{ ok: true }`; forwarded to Discord |
-| `GET /rishi` | — | → `{ ok, mood, variant, updatedAt }` |
-| `PUT /rishi` | `{ mood?, variant? }` + `Authorization: Bearer <ADMIN_TOKEN>` | → the new state; `variant` is `""` (Rishi) or `"tea"` |
+| `GET /rishi` | — | → `{ ok, mood, updatedAt }` |
+| `PUT /rishi` | `{ mood }` + `Authorization: Bearer <ADMIN_TOKEN>` | → the new state |
 
 Every request needs the `X-Cthulhu-Client` header (see CORS below).
 
@@ -143,8 +143,8 @@ Run it four times in a minute and the fourth should return `429`.
 curl -i https://cthulhu-relay.cthulhubrowser.workers.dev/rishi -H 'x-cthulhu-client: 1'
 ```
 
-Expect `{"ok":true,"mood":"…","variant":"…","updatedAt":…}`. A `PUT` without a
-token must come back `401` (or `503` while `ADMIN_TOKEN` is unset).
+Expect `{"ok":true,"mood":"…","updatedAt":…}`. A `PUT` without a token must
+come back `401` (or `503` while `ADMIN_TOKEN` is unset).
 
 ## Rotating
 

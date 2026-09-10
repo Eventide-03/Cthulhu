@@ -11,18 +11,17 @@
  * therefore knows only this Worker's public URL; the webhook lives in
  * env.DISCORD_WEBHOOK_URL, a Cloudflare secret, and never leaves the edge.
  *
- * The same reasoning gives the Worker its second job. Rishi's mood (and
- * whether he is Rishi or Tea) is meant to be seen in BOTH browsers, which needs
- * a place to hold the value and a way to prove who may change it. The value
- * lives in KV (env.STATE); the proof is env.ADMIN_TOKEN, a secret the owner
- * sets here and types into the browser's admin panel. It, too, is never in the
- * binary or the repo.
+ * The same reasoning gives the Worker its second job. Rishi's mood is meant
+ * to be seen in BOTH browsers, which needs a place to hold the value and a way
+ * to prove who may change it. The value lives in KV (env.STATE); the proof is
+ * env.ADMIN_TOKEN, a secret the owner sets here and types into the browser's
+ * admin panel. It, too, is never in the binary or the repo.
  *
  * Contract:
  *   POST /        { message, name?, version?, platform? }  ->  { ok: true }
- *   GET  /rishi                                            ->  { ok, mood, variant, updatedAt }
- *   PUT  /rishi   { mood?, variant? }  + Authorization: Bearer <ADMIN_TOKEN>
- *                                                          ->  { ok, mood, variant, updatedAt }
+ *   GET  /rishi                                            ->  { ok, mood, updatedAt }
+ *   PUT  /rishi   { mood }  + Authorization: Bearer <ADMIN_TOKEN>
+ *                                                          ->  { ok, mood, updatedAt }
  *   anything else                                          ->  { ok: false, error }
  */
 
@@ -34,7 +33,6 @@ const LIMITS = {
   platform: 60,
   mood: 60, // must match MOOD_MAX in the pet widget
 };
-const VARIANTS = new Set(["", "tea"]);
 const STATE_KEY = "rishi";
 
 // about:cthulhu runs with the system principal, so its fetches carry either no
@@ -144,7 +142,6 @@ async function readState(env) {
   const v = await env.STATE.get(STATE_KEY, "json");
   return {
     mood: typeof v?.mood === "string" ? v.mood : "",
-    variant: VARIANTS.has(v?.variant) ? v.variant : "",
     updatedAt: typeof v?.updatedAt === "number" ? v.updatedAt : 0,
   };
 }
@@ -181,12 +178,7 @@ async function handleRishi(request, env, headers) {
     const current = await readState(env);
     const next = { ...current };
     if ("mood" in payload) next.mood = sanitize(payload.mood, LIMITS.mood);
-    if ("variant" in payload) {
-      const v = String(payload.variant == null ? "" : payload.variant).trim().toLowerCase();
-      if (!VARIANTS.has(v)) return json({ ok: false, error: "Unknown variant" }, 400, headers);
-      next.variant = v;
-    }
-    if (next.mood !== current.mood || next.variant !== current.variant) {
+    if (next.mood !== current.mood) {
       next.updatedAt = Date.now();
       await env.STATE.put(STATE_KEY, JSON.stringify(next));
     }

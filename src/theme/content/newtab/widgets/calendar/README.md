@@ -13,11 +13,17 @@ and an item that runs over several days is one bar across them.
   so *Tuesday 9 am* dragged to Thursday is *Thursday 9 am*.
 - **Drag a box's left or right edge** to change when it starts or ends — that
   is how a one-day item becomes a three-day bar, or back again.
-- **Click a box's name** to rename it in place.
+- **Click a box** for its details, the way Google Calendar shows them: the
+  name, the day (or range) and time, the notes with their links clickable,
+  which calendar it is in and whose it is — with **Mark done**, **Edit** and
+  **Delete** underneath. Read-only calendars get the facts only.
 - **Hover a box** for **✓** (mark done — non-destructive, the box dims and
   strikes through), **✎** (open it in the editor — change anything, including
   which calendar it lives in) and **×** (delete — **one click**; it goes to
   the calendar's trash on Google's side, where it can be restored for 30 days).
+- **Click the tile's empty space, or ⤢ in its header**, and the board expands
+  to most of the window. Same board, same edits; click outside it, press
+  **Esc** or its × to close, and the tile picks up anything you changed.
 - **Mine / Theirs / Both** — click the chip in the header to cycle, or set it
   in ⚙. Which side an item is on comes from its calendar's role (below); in
   *Both*, the other person's boxes have a dashed border. With more than one
@@ -187,6 +193,16 @@ The reason is printed under the status line. The common ones:
 > then the status was repainted as "not connected" a moment later, wiping it.
 > The sign-in tab claimed success, the panel claimed failure, and nothing said
 > why. It now has its own line that the repaint never touches.
+
+## The expanded board is the same widget twice
+
+`⤢` (or a click on empty tile space — GridStack reports a drag that went
+nowhere as a click, see `widgets/README.md`) renders the widget a second time
+into a modal that fills ~92% of the window, with a ctx derived from the tile's:
+same config (saves go through the tile), its own cleanup list, and
+`isExpanded` so the header shows × instead of ⤢. Closing it re-renders the
+tile. The two copies poll Google independently; the calendar list is cached
+between them.
 
 ## Nothing in ⚙ or the editor is a native dropdown or date picker
 

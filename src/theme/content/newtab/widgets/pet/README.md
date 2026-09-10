@@ -73,30 +73,31 @@ would be, the picker refuses him (same message, as a toast) and marks his row
 The home page and a new tab are different pages, so each gets its own one —
 one on the home page, one on the tab board.
 
-### Rishi or Tea (admin panel)
+### Rishi or Tea (admin panel) — local
 
 Rishi carries `"variantPref": "cthulhu.pet.rishi.variant"` and one variant,
 `tea` (`assets/tea.png`, 18×30 like `rishi.png`). While the pref says `tea`
-every Rishi tile is drawn as **Tea** — same button, same bubble, different
-sprite and name — and it follows the pref live. The admin panel's **Switch to
-Tea / Switch back to Rishi** button flips it.
+every Rishi tile on this machine is drawn as **Tea** — same button, same
+bubble, different sprite and name — and it follows the pref live. The admin
+panel's **Switch to Tea / Switch back to Rishi** button flips the pref and
+nothing else: it is **per machine on purpose** and never touches the relay.
 
-### Rishi's mood (admin panel)
+### Rishi's mood (admin panel) — shared
 
 Rishi carries `"moodPref": "cthulhu.pet.rishi.mood"`; whatever that pref holds
 is drawn in a speech bubble **above** his sprite, live.
 
-Both values are **shared between the two browsers**, and this is how:
+The mood is **shared between the two browsers**, and this is how:
 
-- The relay (`relay/worker.js`) holds them: `GET /rishi` returns
-  `{ mood, variant }`. Any page with a Rishi tile polls it once a minute (and
-  when the tab becomes visible again) and writes the answer into the two
-  prefs. Every tile follows the prefs, so all open tabs update together.
+- The relay (`relay/worker.js`) holds it: `GET /rishi` returns `{ mood }`.
+  Any page with a Rishi tile polls it once a minute (and when the tab becomes
+  visible again) and writes the answer into the pref. Every tile follows the
+  pref, so all open tabs update together.
 - The **admin panel** (`cthulhu.admin.enabled` in `about:config`, then the
-  *admin* button beside the widget-settings gear) writes the prefs directly —
+  *admin* button beside the widget-settings gear) writes the pref directly —
   your own machine updates instantly — **and** `PUT`s to the relay with the
   admin token, so the other browser picks it up on its next poll. Six presets,
-  a free-text field, **Clear**, and the Tea switch.
+  a free-text field and **Clear**.
 - A relay value is applied only when it is **new**: every relay write carries
   a timestamp, each profile remembers the last one it applied, and a poll that
   returns the same stamp changes nothing. So a value set locally stays until a

@@ -59,11 +59,14 @@
   overflow: hidden;
   flex: none;
 }
+/* Fed once a second by the tracker's clock; a 1 s linear transition makes
+ * the bar glide between ticks instead of stepping (or twitching -- the old
+ * 0.2 s transition on 250 ms updates that were themselves jittering). */
 .cthulhu-np-fill {
   height: 100%;
   width: 0%;
   background: var(--fg-muted);
-  transition: width 0.2s linear;
+  transition: width 1s linear;
 }
 .cthulhu-np-squircle.playing .cthulhu-np-fill {
   background: var(--accent);
@@ -88,6 +91,15 @@
   background: var(--bg-elevated);
   font-family: var(--font-pixel);
   color: var(--fg);
+}
+/* Docked at the bottom of the sidebar in compact mode (compact-mode.js asks
+ * now-playing.js to mount it). Same card, no fixed width, a rule above it. */
+.cthulhu-player-card.docked {
+  width: auto;
+  flex: none;
+  padding: 10px 12px 12px;
+  background: transparent;
+  border-top: 1px solid var(--border);
 }
 .cthulhu-player-head {
   display: flex;
@@ -173,7 +185,10 @@
   height: 100%;
   width: 0%;
   background: var(--accent);
-  transition: width 0.2s linear;
+  transition: width 1s linear;
+}
+.cthulhu-player-progress-fill.jump {
+  transition: none; /* a seek shows at once */
 }
 
 .cthulhu-player-controls {
@@ -181,6 +196,45 @@
   align-items: center;
   justify-content: center;
   gap: 18px;
+  /* Room on the right for the volume slider to slide out into, so the
+   * buttons never move when it appears. */
+  padding-inline-end: 56px;
+}
+.cthulhu-player-card.docked .cthulhu-player-controls {
+  gap: 12px;
+}
+/* Speaker + slider. The slider hangs off the speaker's right, collapsed to
+ * nothing, and slides out while the pointer is over either of them (or the
+ * slider has keyboard focus). Clicking the speaker mutes; the slider sets the
+ * tab's volume. */
+.cthulhu-player-vol {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.cthulhu-player-slider {
+  position: absolute;
+  left: calc(100% + 2px);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0;
+  opacity: 0;
+  margin: 0;
+  padding: 0;
+  height: 18px;
+  accent-color: var(--accent);
+  transition: width 0.15s ease, opacity 0.15s ease;
+  pointer-events: none;
+}
+.cthulhu-player-vol:hover .cthulhu-player-slider,
+.cthulhu-player-slider:focus-visible,
+.cthulhu-player-vol:focus-within .cthulhu-player-slider {
+  width: 60px;
+  opacity: 1;
+  pointer-events: auto;
+}
+.cthulhu-player-slider:disabled {
+  display: none;
 }
 /* ART SLOTS: every icon is a 16x16 PNG in assets/, drawn 1:1 and rendered at
  * 16 CSS px, pixelated. The play/pause button is a 30px round chip so the

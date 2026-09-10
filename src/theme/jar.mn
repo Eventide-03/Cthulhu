@@ -144,6 +144,8 @@ cthulhu.jar:
     content/modules/now-playing/manifest.json               (content/modules/now-playing/manifest.json)
     content/modules/now-playing/now-playing.js              (content/modules/now-playing/now-playing.js)
     content/modules/now-playing/NowPlayingWidget.sys.mjs     (content/modules/now-playing/NowPlayingWidget.sys.mjs)
+    content/modules/now-playing/CthulhuTabVolumeParent.sys.mjs (content/modules/now-playing/CthulhuTabVolumeParent.sys.mjs)
+    content/modules/now-playing/CthulhuTabVolumeChild.sys.mjs  (content/modules/now-playing/CthulhuTabVolumeChild.sys.mjs)
     content/modules/now-playing/now-playing.css             (content/modules/now-playing/now-playing.css)
     content/modules/now-playing/assets/prev.png              (content/modules/now-playing/assets/prev.png)
     content/modules/now-playing/assets/play.png              (content/modules/now-playing/assets/play.png)
