@@ -1268,10 +1268,19 @@ jobs:
           PREV=$(git tag --sort=-creatordate --list 'v*' | grep -vFx "$TAG" | head -1 || true)
           if [ -n "$PREV" ]; then RANGE="$PREV..$TAG"; echo "Since $PREV"; else RANGE="$TAG"; echo "First release"; fi
 
+          # Hand-written notes win over the commit list, but only while
+          # docs/whatsnew/NEXT.md says "since <the previous tag>" -- a file
+          # left over from an earlier release is ignored, not repeated.
+          SINCE=$(sed -n 's/^# What.s new since //p' docs/whatsnew/NEXT.md 2>/dev/null | head -1 | tr -d '[:space:]')
           {
             echo "## Changes"
             echo
-            git log --no-merges --pretty='- %s' "$RANGE" | grep -v '^- Co-Authored-By' || echo "- No commits found in range"
+            if [ -n "$SINCE" ] && [ "v$SINCE" = "$PREV" ] && grep -q '^- ' docs/whatsnew/NEXT.md; then
+              echo "Hand-written notes (docs/whatsnew/NEXT.md, since $PREV)" >&2
+              grep '^- ' docs/whatsnew/NEXT.md
+            else
+              git log --no-merges --pretty='- %s' "$RANGE" | grep -v '^- Co-Authored-By' || echo "- No commits found in range"
+            fi
             echo
             echo "## Downloads"
             echo
