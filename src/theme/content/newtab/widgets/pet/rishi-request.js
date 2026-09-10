@@ -6,10 +6,10 @@
  * used to be a widget of its own; it is now a modal that the pet loads on
  * demand, so the home page carries no permanent "send feedback" tile.
  *
- * Same relay, same contract, same states as the toolbar button in
- * modules/feature-request. The Discord webhook is never in this browser: all
- * this knows is the relay URL from the pref `cthulhu.relay.url`. See
- * relay/README.md.
+ * This is the ONLY feature-request entry point: the toolbar button
+ * (modules/feature-request) is gone too. The Discord webhook is never in this
+ * browser: all this knows is the relay URL from the pref `cthulhu.relay.url`.
+ * See relay/README.md.
  *
  * NOTE: about:cthulhu runs with the system principal, and assigning innerHTML
  * there goes through Gecko's chrome-fragment sanitizer, which silently DROPS

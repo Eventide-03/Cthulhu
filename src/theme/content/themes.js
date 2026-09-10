@@ -120,8 +120,12 @@ window.CthulhuThemes = (function () {
   // Hand-tuned palettes keep their exact values (they came from theme.css and
   // ambient-theme.css); the rest are seeds. `mood` is just a one-liner for the
   // Theme widget. `light: true` marks a light palette so consumers can tell.
+  //
+  // The ids are the stable part -- prefs, favourites and the ambient bands all
+  // key off them -- so a preset can be renamed freely by editing `name` alone.
+  // (The names are the owner's; the id says what the palette actually is.)
   const PRESETS = [
-    { id: "night", name: "Night", mood: "blue-black, moonlit", tokens: {
+    { id: "night", name: "It's turning blue 😟", mood: "blue-black, moonlit", tokens: {
       "bg": "#14151c", "bg-elevated": "#1d1f2a", "surface": "#191b24", "surface-hover": "#262a38",
       "fg": "#e6e8f0", "fg-muted": "#8b90a6", "accent": "#6c8cff", "accent-hover": "#90a8ff",
       "fg-on-accent": "#0a0a12", "grid-line": "rgba(150, 170, 255, 0.06)", "border": "rgba(150, 170, 255, 0.14)" } },
@@ -129,25 +133,25 @@ window.CthulhuThemes = (function () {
       "bg": "#1a1a1a", "bg-elevated": "#242424", "surface": "#1f1f1f", "surface-hover": "#2e2e2e",
       "fg": "#e8e8e8", "fg-muted": "#9a9a9a", "accent": "#5ad1b0", "accent-hover": "#6fe0c2",
       "fg-on-accent": "#0a0a0a", "grid-line": "rgba(255, 255, 255, 0.22)", "border": "rgba(255, 255, 255, 0.12)" } },
-    { id: "dawn", name: "Dawn", mood: "warm plum, coral", tokens: {
+    { id: "dawn", name: "the big biscuit", mood: "warm plum, coral", tokens: {
       "bg": "#241a24", "bg-elevated": "#2f2230", "surface": "#291d29", "surface-hover": "#3a2b3a",
       "fg": "#f3e7ea", "fg-muted": "#b5929c", "accent": "#e39a7a", "accent-hover": "#f2b094",
       "fg-on-accent": "#241014", "grid-line": "rgba(255, 180, 190, 0.06)", "border": "rgba(255, 180, 190, 0.14)" } },
-    { id: "day", name: "Day", mood: "bright, light, teal", light: true, tokens: {
+    { id: "day", name: "Flashbang", mood: "bright, light, teal", light: true, tokens: {
       "bg": "#eceef2", "bg-elevated": "#ffffff", "surface": "#f4f6f9", "surface-hover": "#e4e8ef",
       "fg": "#1b1e26", "fg-muted": "#5a6172", "accent": "#2f8f76", "accent-hover": "#26765f",
       "fg-on-accent": "#ffffff", "grid-line": "rgba(0, 0, 0, 0.06)", "border": "rgba(0, 0, 0, 0.12)" } },
-    { id: "dusk", name: "Dusk", mood: "golden hour", tokens: {
+    { id: "dusk", name: "Domo", mood: "golden hour", tokens: {
       "bg": "#241a16", "bg-elevated": "#30231c", "surface": "#291d18", "surface-hover": "#3a2b22",
       "fg": "#f3e9df", "fg-muted": "#b59d8a", "accent": "#e08a4a", "accent-hover": "#f0a05f",
       "fg-on-accent": "#1a0f08", "grid-line": "rgba(255, 180, 120, 0.06)", "border": "rgba(255, 180, 120, 0.14)" } },
-    { id: "abyss",    name: "Abyss",    mood: "deep sea, phosphor green",  seed: { bg: "#0b1416", fg: "#d8ecec", accent: "#3ee8c0" } },
-    { id: "rose",     name: "Rose",     mood: "wine dark, pink",           seed: { bg: "#1f1418", fg: "#f6e6ec", accent: "#ff7aa2" } },
-    { id: "forest",   name: "Forest",   mood: "moss, leaf green",          seed: { bg: "#121a14", fg: "#e4efe4", accent: "#8bd17c" } },
-    { id: "ember",    name: "Ember",    mood: "charcoal, orange",          seed: { bg: "#1c1210", fg: "#f4e8e0", accent: "#ff8a3d" } },
-    { id: "lavender", name: "Lavender", mood: "ink violet, lilac",         seed: { bg: "#17141f", fg: "#ece6f6", accent: "#b48cff" } },
-    { id: "mono",     name: "Mono",     mood: "black and white",           seed: { bg: "#111111", fg: "#ececec", accent: "#ffffff", "fg-on-accent": "#111111" } },
-    { id: "paper",    name: "Paper",    mood: "warm light, red ink", light: true, seed: { bg: "#f5f1e8", fg: "#2a2622", accent: "#c0392b" } },
+    { id: "abyss",    name: "Not Even Domo", mood: "deep sea, phosphor green",  seed: { bg: "#0b1416", fg: "#d8ecec", accent: "#3ee8c0" } },
+    { id: "rose",     name: "Rose-Pine", mood: "wine dark, pink",           seed: { bg: "#1f1418", fg: "#f6e6ec", accent: "#ff7aa2" } },
+    { id: "forest",   name: "Little boy in a forest cabin with his grandma", mood: "moss, leaf green",          seed: { bg: "#121a14", fg: "#e4efe4", accent: "#8bd17c" } },
+    { id: "ember",    name: "Traffic light at night", mood: "charcoal, orange",          seed: { bg: "#1c1210", fg: "#f4e8e0", accent: "#ff8a3d" } },
+    { id: "lavender", name: "Night Sky", mood: "ink violet, lilac",         seed: { bg: "#17141f", fg: "#ece6f6", accent: "#b48cff" } },
+    { id: "mono",     name: "Colorblind Simulator", mood: "black and white",           seed: { bg: "#111111", fg: "#ececec", accent: "#ffffff", "fg-on-accent": "#111111" } },
+    { id: "paper",    name: "Flashbang 2", mood: "warm light, red ink", light: true, seed: { bg: "#f5f1e8", fg: "#2a2622", accent: "#c0392b" } },
   ];
   for (const p of PRESETS) if (!p.tokens) p.tokens = derive(p.seed);
 
@@ -236,10 +240,32 @@ window.CthulhuThemes = (function () {
     if (r.band) root.setAttribute("cthulhu-ambient-time", r.band);
     else root.removeAttribute("cthulhu-ambient-time");
     root.toggleAttribute("cthulhu-theme-light", !!r.preset.light);
+    // Form controls, scrollbars and the like on this document follow the
+    // palette too, not the OS (the about page declares dark in its <meta>).
+    root.style.colorScheme = r.preset.light ? "light" : "dark";
+    applyContentScheme(!!r.preset.light);
     try {
       doc.dispatchEvent(new (doc.defaultView.CustomEvent)("cthulhu-theme-change", { detail: r }));
     } catch (e) {}
     return r;
+  }
+
+  /* WEB CONTENT follows the palette as well. The chrome pins its own
+   * color-scheme (browser.css), but a site that honours prefers-color-scheme
+   * asked the OS, so a light Cthulhu palette on a dark-mode Mac still got a
+   * dark Google. layout.css.prefers-color-scheme.content-override is the pref
+   * behind "Website appearance" in Firefox's settings: 0 = dark, 1 = light,
+   * 2 = follow the browser theme / OS. Set it from the palette: light presets
+   * make sites light, dark presets make them dark, and the OS no longer has a
+   * say. Written on every apply, which is cheap and idempotent. */
+  const CONTENT_SCHEME_PREF = "layout.css.prefers-color-scheme.content-override";
+  function applyContentScheme(light) {
+    const P = prefs();
+    if (!P) return;
+    const want = light ? 1 : 0;
+    try {
+      if (P.getIntPref(CONTENT_SCHEME_PREF, 2) !== want) P.setIntPref(CONTENT_SCHEME_PREF, want);
+    } catch (e) { console.warn("[Cthulhu:theme] content scheme:", e.message); }
   }
 
   /** Apply now, re-apply on pref change, and tick in ambient mode. Returns stop(). */

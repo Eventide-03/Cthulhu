@@ -31,11 +31,11 @@ There is no server that belongs to this project collecting anything about you.
 
 | # | Endpoint | When | Off switch |
 | --- | --- | --- | --- |
-| 1 | The linked site itself, then `icons.duckduckgo.com` | Homepage quick-links, folder widget, side panels | `cthulhu.favicons.remote=false` |
+| 1 | The linked site itself, then `icons.duckduckgo.com` | Homepage quick-links, folder widget | `cthulhu.favicons.remote=false` |
 | 2 | `api.open-meteo.com` | Ambient weather theming | `cthulhu.ambient.weather.enabled=false` |
 | 3 | Google Calendar / OAuth | Only if you connect a calendar | Don't connect / Disconnect |
 | 4 | `eventide-03.github.io` → `github.com` | Update check at every startup, then periodically | `DisableAppUpdate` policy |
-| 5 | Your feature-request relay | Only when you send one (toolbar button, or clicking the Rishi pet) | Don't use the feature |
+| 5 | The relay | A feature request, only when you send one (clicking the Rishi pet); and, while a home page with a Rishi tile is open, a small read of his shared mood once a minute | Don't add Rishi, or clear `cthulhu.relay.url` |
 | 6 | `eventide-03.github.io`, `github.com` | After an update, and About-dialog links | `startup.homepage_override_url=""` |
 
 ### 1. Favicon lookups — the site itself, then DuckDuckGo
@@ -201,32 +201,40 @@ disables the startup check only, and
 `app.update.background.scheduling.enabled = false` disables the Windows
 scheduled task only.
 
-### 5. Feature-request relay — only on explicit submission
+### 5. The relay — feature requests, and Rishi's shared mood
 
-**Nothing is sent unless you type a feature request and press Send.** There is
-no background traffic to this endpoint, and no telemetry rides along with it.
+The relay is a small [Cloudflare Worker](relay/README.md) run by this project.
+Two things talk to it.
 
-**Sent:** the message you typed, the name you optionally typed, your Cthulhu
-version, and a coarse platform string (e.g. `Windows (x86_64)` or
-`macOS (aarch64)`). Nothing else — no page you were on, no profile identifier,
-no device id.
+**Feature requests.** Nothing is sent unless you click the Rishi pet, type a
+request and press Send. **Sent:** the message you typed, the name you
+optionally typed, your Cthulhu version, and a coarse platform string (e.g.
+`Windows (x86_64)` or `macOS (aarch64)`). Nothing else — no page you were on,
+no profile identifier, no device id. The Worker forwards it to a private
+Discord channel. Cloudflare sees your IP (it uses it for rate limiting); Discord
+sees only what the Worker forwards. **Why:** so you can ask for features
+without needing a GitHub account.
 
-**To whom:** a small [Cloudflare Worker](../relay/README.md) run by this project,
-which forwards the message to a private Discord channel. Cloudflare sees your IP
-(it uses it for rate limiting); Discord sees only what the Worker forwards.
-
-**Why:** so you can ask for features without needing a GitHub account.
+**Rishi's shared mood.** The Rishi pet shows a mood bubble, and can be switched
+to his Tea sprite, and both are meant to look the same in both browsers. So
+while a home page (or new tab) **with a Rishi tile** is open, the page reads
+`GET /rishi` from the relay **once a minute** (and when the tab becomes visible
+again). **Sent:** nothing but the request itself — no identifier, no page, no
+profile; the response is a mood string and a variant name. It is the one piece
+of background traffic in this list, and it exists only because you chose to put
+Rishi on the board. Writing the value needs an admin token that only the
+owner has; a browser without it can only read.
 
 > **Why a relay rather than posting to Discord directly:** the Discord webhook
 > URL would otherwise have to ship inside the browser, where anyone could pull
 > it out of the binary and post to the channel. The webhook exists only as a
-> Cloudflare secret and is never in the browser or this repository.
+> Cloudflare secret and is never in the browser or this repository. The admin
+> token is kept the same way.
 
-**How to turn it off:** don't use the feature. If you want to be certain, clear
-the `cthulhu.relay.url` pref in `about:config` — the button and widget then
-refuse to send at all. Removing the `feature-request` module
-(`cthulhu.module.feature-request.enabled = false`) hides the toolbar button
-entirely.
+**How to turn it off:** don't add Rishi (any other pet makes no request at
+all), and don't send a request. If you want to be certain, clear the
+`cthulhu.relay.url` pref in `about:config` — the form then refuses to send and
+the mood poll never runs.
 
 ### 6. Release notes and post-update page
 
@@ -257,11 +265,9 @@ the About-dialog links are only followed if you click them.
 - **Search widget** — submitting a search navigates to DuckDuckGo
   (`https://duckduckgo.com/?q=…`) in a tab. Configurable per widget; nothing is
   sent until you press Enter.
-- **Side panels** — Discord, Instagram, and Apple Music load in embedded browser
-  views. These are ordinary web sessions with those services, with their own
-  cookies and their own privacy policies. They load only when you open the panel,
-  but note that **panels stay loaded until the browser exits**, so a service can
-  keep a connection open in the background after you close the panel.
+- **Now Playing** — the toolbar player reads the title, artist and position of
+  whatever a tab is already playing, from the browser's own media-session
+  data, on this machine. It makes no request of its own.
 
 ## What Cthulhu does *not* change
 
@@ -291,7 +297,8 @@ so decide deliberately.
 | `cthulhu.ambient.geolocation` | `false` | `true` → allows device geolocation as a location source |
 | `cthulhu.ambient.latitude` / `.longitude` | unset | Explicit coordinates; avoids geolocation entirely |
 | `app.update.auto` | `true` | `false` → no automatic update checks |
-| `cthulhu.relay.url` | *(set at build)* | Empty → the feature-request form cannot send anything |
+| `cthulhu.relay.url` | *(set at build)* | Empty → the feature-request form cannot send, and Rishi's mood is never polled |
+| `cthulhu.admin.token` | empty | The relay admin token, if you are the owner; lets the admin panel change what the other browser sees. Never has a shipped value |
 
 ---
 

@@ -1,7 +1,12 @@
-# Feature-request relay
+# The relay
 
-A tiny Cloudflare Worker that accepts a feature request from the browser and
-forwards it to a Discord webhook.
+A tiny Cloudflare Worker with two jobs:
+
+1. **Feature requests** — accepts a message from the browser (the Rishi pet's
+   form) and forwards it to a Discord webhook.
+2. **Rishi's shared state** — holds his mood and whether he is Rishi or Tea, so
+   both browsers show the same thing. Read by every home page with a Rishi
+   tile; written only with the admin token.
 
 ## Why a relay at all
 
@@ -11,26 +16,38 @@ anyone post into the channel until it is rotated. So the browser knows only this
 Worker's public URL. The webhook lives in a Cloudflare secret and never leaves
 the edge.
 
-## What it does
+The shared state follows the same logic: a value both browsers can see needs a
+place to live and a way to prove who may change it. The value lives in KV; the
+proof is a second secret, `ADMIN_TOKEN`, which the owner sets here and types
+into the browser's admin panel. Neither secret is in the repo or the binary.
 
-`POST /` with `{ message, name?, version?, platform? }` → `{ ok: true }`.
+## Endpoints
+
+| | | |
+| --- | --- | --- |
+| `POST /` | `{ message, name?, version?, platform? }` | → `{ ok: true }`; forwarded to Discord |
+| `GET /rishi` | — | → `{ ok, mood, variant, updatedAt }` |
+| `PUT /rishi` | `{ mood?, variant? }` + `Authorization: Bearer <ADMIN_TOKEN>` | → the new state; `variant` is `""` (Rishi) or `"tea"` |
+
+Every request needs the `X-Cthulhu-Client` header (see CORS below).
 
 | Protection | How |
 | --- | --- |
-| Size | Body capped at 8 KB; message 1500 chars, name 80, version 40, platform 60 |
-| Empty / malformed | Rejected with 400 before anything is forwarded |
+| Size | Body capped at 8 KB; message 1500 chars, name 80, version 40, platform 60, mood 60 |
+| Empty / malformed | Rejected with 400 before anything is forwarded or stored |
 | Mention abuse | `@everyone`/`@here` defanged, role/user/channel mentions stripped, **and** `allowed_mentions:{parse:[]}` disables every mention server-side |
-| Flooding | Per-IP rate limit on `CF-Connecting-IP` (unspoofable — Cloudflare sets it) |
+| Flooding | Per-IP rate limits on `CF-Connecting-IP` (unspoofable — Cloudflare sets it): 3/min for `POST /` and `PUT /rishi`, 30/min for `GET /rishi` |
+| Token guessing | The 3/min limit applies to `PUT`; the comparison is constant-time |
 | Cross-site abuse | Origin allow-list + a required `X-Cthulhu-Client` header that forces a preflight |
 | Secret leakage | Upstream error bodies are logged, never echoed to the caller |
 
 ### On CORS, honestly
 
 CORS is enforced by *browsers*, so it cannot stop `curl`. It is not the security
-boundary here — the rate limit and the validation are. What the origin
-allow-list plus the custom header genuinely buys is that a random web page
-cannot silently POST to this relay from a visitor's browser, because the custom
-header forces a preflight that we refuse.
+boundary here — the rate limit, the validation and the token are. What the
+origin allow-list plus the custom header genuinely buys is that a random web
+page cannot silently call this relay from a visitor's browser, because the
+custom header forces a preflight that we refuse.
 
 `about:cthulhu` runs with the system principal, so its requests carry no
 `Origin` (or `null`). That is why "no origin" is allowed while real foreign web
@@ -42,8 +59,8 @@ Cloudflare's rate-limiting binding is **per-datacentre and eventually
 consistent** — Cloudflare describes it as "permissive… intentionally designed to
 not be used as an accurate accounting system". It is burst protection, not a
 quota. Someone determined, spread across many exit nodes, could exceed it. For a
-hobby project's feature-request box that is the right trade; if it is ever
-abused, rotate the webhook and tighten `limit`.
+hobby project that is the right trade; if it is ever abused, rotate the webhook
+and tighten `limit`.
 
 ## Deploy
 
@@ -57,13 +74,20 @@ abused, rotate the webhook and tighten `limit`.
    ```bash
    wrangler login
    ```
-3. Deploy from this directory:
+3. The KV namespace for Rishi's state. `wrangler.toml` already carries this
+   project's id; on a **new** Cloudflare account create your own and paste the
+   id it prints over the `id` under `[[kv_namespaces]]` (an id is an
+   identifier, not a secret):
+   ```bash
+   cd relay && wrangler kv namespace create STATE
+   ```
+4. Deploy from this directory:
    ```bash
    cd relay && wrangler deploy
    ```
    Note the URL it prints: `https://cthulhu-relay.cthulhubrowser.workers.dev`.
 
-4. Set the webhook as a **secret** (it is prompted for, never passed as an
+5. Set the webhook as a **secret** (it is prompted for, never passed as an
    argument, so it does not land in your shell history):
    ```bash
    wrangler secret put DISCORD_WEBHOOK_URL
@@ -78,7 +102,18 @@ abused, rotate the webhook and tighten `limit`.
    > precisely what happened once. `wrangler secret list` shows names only, so
    > it is a safe way to check what you have.
 
-5. Point the browser at it — set this pref default in
+6. Set the **admin token** the same way. Make up a long random string (a
+   password manager's generator is fine; 32+ characters):
+   ```bash
+   wrangler secret put ADMIN_TOKEN
+   ```
+   Then, in the browser: turn on `cthulhu.admin.enabled` in `about:config`,
+   open the **admin** button on the home page, paste the same string into the
+   **Relay** section and press **Test**. It should say the relay accepted it.
+   Until this secret is set, `PUT /rishi` answers `503 Admin token not
+   configured on the relay` and the panel changes your own machine only.
+
+7. Point the browser at it — set this pref default in
    `src/browser/app/profile/cthulhu.js` (or per-user in `about:config`):
    ```
    cthulhu.relay.url = https://cthulhu-relay.cthulhubrowser.workers.dev
@@ -104,18 +139,26 @@ curl -i -X POST https://cthulhu-relay.cthulhubrowser.workers.dev \
 Expect `HTTP/2 200` and `{"ok":true}`, and a message in the Discord channel.
 Run it four times in a minute and the fourth should return `429`.
 
-## Rotating the webhook
+```bash
+curl -i https://cthulhu-relay.cthulhubrowser.workers.dev/rishi -H 'x-cthulhu-client: 1'
+```
+
+Expect `{"ok":true,"mood":"…","variant":"…","updatedAt":…}`. A `PUT` without a
+token must come back `401` (or `503` while `ADMIN_TOKEN` is unset).
+
+## Rotating
 
 If the webhook is ever abused: delete it in Discord (Server Settings →
 Integrations → Webhooks), create a new one, then
-`wrangler secret put DISCORD_WEBHOOK_URL` again. No browser update needed —
-clients only know the relay URL.
+`wrangler secret put DISCORD_WEBHOOK_URL` again. If the admin token leaks:
+`wrangler secret put ADMIN_TOKEN` with a new string and paste it into the panel
+again. No browser update needed either way — clients only know the relay URL.
 
 ## Local development
 
 ```bash
 cd relay
-echo 'DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/..."' > .dev.vars
+printf 'DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/..."\nADMIN_TOKEN="dev-only"\n' > .dev.vars
 wrangler dev
 ```
 

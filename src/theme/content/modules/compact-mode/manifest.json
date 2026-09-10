@@ -1,0 +1,7 @@
+{
+  "id": "compact-mode",
+  "enabled": true,
+  "mount": "browser-window",
+  "css": "compact-mode.css",
+  "js": "compact-mode.js"
+}

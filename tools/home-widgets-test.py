@@ -58,7 +58,7 @@ try:
     page("""
       const H = w.CthulhuHome; const g = w.__cthulhuGrid;
       g.removeAll(true); g.el.querySelectorAll(':scope > .grid-stack-item').forEach(e => e.remove());
-      H.addWidgetByType('calendar',  {x:0, y:0, w:3, h:3});
+      H.addWidgetByType('calendar',  {x:0, y:0, w:3, h:3, config:{calendars:{primary:'mine', 'them-cal':'theirs'}, createIn:'primary', mode:'both', theirLabel:'Theirs', showCompleted:false, pollMinutes:5}});
       H.addWidgetByType('theme',     {x:3, y:0, w:3, h:3});
       H.addWidgetByType('gradient',  {x:6, y:0, w:2, h:3});
       H.addWidgetByType('refboard',  {x:8, y:0, w:2, h:3});
@@ -154,16 +154,17 @@ try:
         { id:'A', summary:'three day bar', start:{date:af}, end:{date:exclusive(al)}, creator:{self:true},
           extendedProperties:{shared:{cthulhuKind:'project'}} },
         { id:'B', summary:'nine am', start:{dateTime:bd+'T09:00:00'}, end:{dateTime:bd+'T10:00:00'}, creator:{self:false, email:'them@example.invalid'},
-          extendedProperties:{shared:{cthulhuKind:'task'}} },
+          _cthCal:'them-cal', extendedProperties:{shared:{cthulhuKind:'task'}} },
         { id:'C', summary:'single', start:{date:cd}, end:{date:exclusive(cd)}, creator:{self:true} },
       ]);
-      const seg = (id) => { const b = c.querySelector('.cw-cal-ev[data-event-id="'+id+'"]'); return b ? { col: b.style.gridColumn, row: b.style.gridRow, cls: b.className, week: [...c.querySelectorAll('.cw-cal-week')].indexOf(b.parentElement), pill: (b.querySelector('.cw-cal-pill')||{}).textContent || '', handles: b.querySelectorAll('.cw-cal-rz').length } : null; };
+      const seg = (id) => { const b = c.querySelector('.cw-cal-ev[data-event-id="'+id+'"]'); return b ? { col: b.style.gridColumn, row: b.style.gridRow, cls: b.className, week: [...c.querySelectorAll('.cw-cal-week')].indexOf(b.parentElement), pill: (b.querySelector('.cw-cal-pill')||{}).textContent || '', handles: b.querySelectorAll('.cw-cal-rz').length, side: b.dataset.side, cal: b.dataset.cal, calpill: (b.querySelector('.cw-cal-calpill')||{}).textContent || '' } : null; };
       return { n: c.querySelectorAll('.cw-cal-ev').length, A: seg('A'), B: seg('B'), C: seg('C') };
     """, a_first.isoformat(), a_last.isoformat(), b_day.isoformat(), c_day.isoformat())
     print("BOARD", laid)
     check("three injected items rendered as boxes", laid["n"] == 3, laid["n"])
     check("A is ONE bar spanning three columns with both resize handles", laid["A"] and laid["A"]["col"] == "2 / 5" and laid["A"]["handles"] == 2 and "Project" == laid["A"]["pill"], laid["A"])
-    check("B (same day, timed, theirs) drops to the next lane and is dashed", laid["B"] and laid["B"]["row"] == "3" and "theirs" in laid["B"]["cls"], laid["B"])
+    check("B (same day, timed, on a calendar tagged Theirs) drops to the next lane and is dashed", laid["B"] and laid["B"]["row"] == "3" and "theirs" in laid["B"]["cls"] and laid["B"]["side"] == "theirs" and laid["B"]["cal"] == "them-cal", laid["B"])
+    check("A (primary, tagged Mine) is mine even with an unknown creator, and boxes name their calendar", laid["A"]["side"] == "mine" and laid["A"]["calpill"] == "Primary" and laid["B"]["calpill"] == "them-cal", {"A": laid["A"]["side"], "Acal": laid["A"]["calpill"], "Bcal": laid["B"]["calpill"]})
     check("C lands in the following week", laid["C"] and laid["C"]["week"] == laid["A"]["week"] + 1 and laid["C"]["row"] == "2", laid["C"])
 
     # drag A with real pointer input. The grab lands on the bar's CENTRE (its
@@ -216,6 +217,80 @@ try:
     page("const i = document.querySelector('.cw-cal-ev-title input'); if (i) i.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}));")
     shot("02b-calendar-board")
 
+    # delete is ONE click now: no "sure?" arm step
+    n_before = page("return document.querySelectorAll('.cw-cal-ev').length;")
+    hov = m.find_element("css selector", '.cw-cal-ev[data-event-id="C"]')
+    m.actions.sequence("pointer", "mouse", {"pointerType": "mouse"}).pointer_move(0, 0, origin=hov).perform()
+    time.sleep(0.3)
+    dele = page("""
+      const b = document.querySelector('.cw-cal-ev[data-event-id="C"] .cw-cal-rbtn.del');
+      const before = b ? b.textContent : null;
+      if (b) b.click();
+      return { before, gone: !document.querySelector('.cw-cal-ev[data-event-id="C"]'),
+               n: document.querySelectorAll('.cw-cal-ev').length,
+               tools: [...document.querySelectorAll('.cw-cal-ev[data-event-id="A"] .cw-cal-rbtn')].map(x => x.className.replace('cw-cal-rbtn ', '')) };
+    """)
+    check("one click on x deletes the box (no confirm step)", dele["before"] == "\u00d7" and dele["gone"] and dele["n"] == n_before - 1, dele)
+    check("each box offers done / edit / delete", dele["tools"] == ["done", "edit", "del"], dele["tools"])
+
+    # the item editor: + on a day opens it (once "connected"), with a calendar chooser
+    page("""
+      const c = [...document.querySelectorAll('#grid .grid-stack-item')].find(e => e._cthulhu && e._cthulhu.id === 'calendar');
+      const dbg = c.querySelector('.cw-cal')._cthCalDebug;
+      dbg.inject(dbg.events(), { connected: true, calendars: [
+        { id: 'me@example.invalid', summary: 'Personal', primary: true, canWrite: true },
+        { id: 'them-cal', summary: 'Their school', primary: false, canWrite: false } ] });
+      c.querySelector('.cw-cal-day.today .cw-cal-add').click();
+    """)
+    time.sleep(0.4)
+    ed = page("""
+      const mdl = document.querySelector('.cw-cal-ed-modal');
+      if (!mdl) return null;
+      const chips = (cap) => { const f = [...mdl.querySelectorAll('.cw-ui-field, .cw-ui-row')].find(x => x.textContent.startsWith(cap)); return f ? [...f.querySelectorAll('.cw-ui-choice-btn')].map(b => b.textContent) : null; };
+      return { title: mdl.querySelector('.cthulhu-config-title').textContent,
+               focused: document.activeElement === mdl.querySelector('.cw-cal-ed-name'),
+               calendars: chips('Calendar'), kinds: chips('Kind'),
+               dates: [...mdl.querySelectorAll('.cw-cal-ed-date')].map(i => i.value),
+               allDay: mdl.querySelector('input[type=checkbox]').checked,
+               notes: !!mdl.querySelector('textarea'), selects: mdl.querySelectorAll('select').length };
+    """)
+    check("+ opens the item editor with the name focused", ed and ed["title"] == "New item" and ed["focused"], ed)
+    check("editor offers only writable, switched-on calendars (the read-only one is absent)", ed and ed["calendars"] == ["Personal"], ed and ed["calendars"])
+    check("editor has kind chips, both dates prefilled with the day, all-day on, notes, and no native select",
+          ed and ed["kinds"] == ["Task", "Deadline", "Event", "Project"] and ed["dates"][0] == now.isoformat() and ed["dates"][1] == now.isoformat() and ed["allDay"] and ed["notes"] and ed["selects"] == 0, ed)
+    shot("02c-calendar-editor")
+    # type a name, pick Deadline, Enter -> optimistic box + explained failure (no Google)
+    name_el = m.find_element("css selector", ".cw-cal-ed-name")
+    name_el.send_keys("dentist")
+    page("[...document.querySelectorAll('.cw-cal-ed-modal .cw-ui-choice-btn')].find(b => b.textContent === 'Deadline').click();")
+    page("const n = document.querySelector('.cw-cal-ed-name'); n.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter', bubbles:true}));")
+    time.sleep(0.8)
+    made = page("""
+      const c = [...document.querySelectorAll('#grid .grid-stack-item')].find(e => e._cthulhu && e._cthulhu.id === 'calendar');
+      const ev = c.querySelector('.cw-cal')._cthCalDebug.events().find(e => e.summary === 'dentist');
+      const box = [...c.querySelectorAll('.cw-cal-ev')].find(b => b.querySelector('.cw-cal-ev-title').textContent === 'dentist');
+      return { modalGone: !document.querySelector('.cw-cal-ed-modal'), ev: ev ? { cal: ev._cthCal, kind: ev.extendedProperties.shared.cthulhuKind, start: ev.start } : null,
+               box: !!box, pill: box ? (box.querySelector('.cw-cal-pill')||{}).textContent : null,
+               toast: (document.getElementById('cthulhu-toast') || {}).textContent || '' };
+    """)
+    check("Enter creates the item on the chosen calendar with the chosen kind (optimistically)",
+          made["modalGone"] and made["ev"] and made["ev"]["cal"] == "primary" and made["ev"]["kind"] == "deadline" and made["ev"]["start"].get("date") == now.isoformat() and made["box"] and made["pill"] == "Deadline", made)
+    check("and the failed Google create is explained", "Could not create" in made["toast"], made["toast"])
+    # the pencil opens the same editor prefilled
+    page("""
+      const c = [...document.querySelectorAll('#grid .grid-stack-item')].find(e => e._cthulhu && e._cthulhu.id === 'calendar');
+      c.querySelector('.cw-cal-ev[data-event-id="A"] .cw-cal-rbtn.edit').click();
+    """)
+    time.sleep(0.4)
+    ed2 = page("""
+      const mdl = document.querySelector('.cw-cal-ed-modal');
+      return mdl ? { title: mdl.querySelector('.cthulhu-config-title').textContent, name: mdl.querySelector('.cw-cal-ed-name').value,
+                     dates: [...mdl.querySelectorAll('.cw-cal-ed-date')].map(i => i.value), hasDelete: !!mdl.querySelector('.cw-cal-ed-del'),
+                     kindOn: (mdl.querySelector('.cw-ui-choice-btn.on') || {}).textContent } : null;
+    """)
+    check("the pencil opens the editor prefilled for editing", ed2 and ed2["title"] == "Edit item" and ed2["name"] == "three day bar" and ed2["hasDelete"] and ed2["dates"][1] > ed2["dates"][0], ed2)
+    page("const mdl = document.querySelector('.cw-cal-ed-modal'); if (mdl) mdl.remove();")
+
     # --- theme switching: page + chrome follow, favourites
     page("w.CthulhuThemes.setTheme('rose');"); time.sleep(0.6)
     pa = page("return getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();")
@@ -243,7 +318,17 @@ try:
     light = page("return document.documentElement.hasAttribute('cthulhu-theme-light');")
     check("light theme flagged", light)
     shot("04-theme-paper")
+    sch = page("return { root: document.documentElement.style.colorScheme, computed: getComputedStyle(document.documentElement).colorScheme };")
+    ovr = chrome("return Services.prefs.getIntPref('layout.css.prefers-color-scheme.content-override', 2);")
+    check("a light palette makes the page light-scheme and forces web content light (override=1)", sch["root"] == "light" and sch["computed"] == "light" and ovr == 1, {"page": sch, "override": ovr})
     page("w.CthulhuThemes.setTheme('night');"); time.sleep(0.5)
+    ovr2 = chrome("return Services.prefs.getIntPref('layout.css.prefers-color-scheme.content-override', 2);")
+    check("a dark palette forces web content dark (override=0)", ovr2 == 0, ovr2)
+    names = page("return Object.fromEntries(w.CthulhuThemes.presets().map(p => [p.id, p.name]));")
+    check("themes renamed (ids unchanged)", names.get("dawn") == "the big biscuit" and names.get("dusk") == "Domo" and names.get("abyss") == "Not Even Domo"
+          and names.get("rose") == "Rose-Pine" and names.get("forest") == "Little boy in a forest cabin with his grandma" and names.get("ember") == "Traffic light at night"
+          and names.get("lavender") == "Night Sky" and names.get("mono") == "Colorblind Simulator" and names.get("day") == "Flashbang" and names.get("paper") == "Flashbang 2"
+          and names.get("night", "").startswith("It's turning blue") and names.get("cthulhu") == "Cthulhu", names)
 
     # --- gradient: custom colours reach the tile; config panel has real inputs
     page("""
@@ -285,6 +370,60 @@ try:
     """)
     check("orb sprite animating", orb["anim"])
     check("orb tint filter applied (follow-accent)", "hue-rotate" in orb["filter"] and "drop-shadow" in orb["filter"], orb["filter"])
+    # a 1x1 orb must not overflow its tile (the Windows scrollbar report)
+    page("w.CthulhuHome.addWidgetByType('orb', {x:4, y:3, w:1, h:1, config:{color:'', glow:true, scale:6}});")
+    time.sleep(1.2)
+    small = page("""
+      const el = [...document.querySelectorAll('#grid .grid-stack-item')].find(e => e._cthulhu && e._cthulhu.id === 'orb' && e.gridstackNode.w === 1);
+      const body = el.querySelector('.cthulhu-widget-body'); const sp = el.querySelector('.cw-orb-sprite'); const wrap = el.querySelector('.cw-orb');
+      const r = sp.getBoundingClientRect(), b = wrap.getBoundingClientRect();
+      return { scale: +sp.dataset.scale, wanted: 6, overflowX: body.scrollWidth > body.clientWidth, overflowY: body.scrollHeight > body.clientHeight,
+               inside: r.left >= b.left - 1 && r.right <= b.right + 1 && r.top >= b.top - 1 && r.bottom <= b.bottom + 1, wrapOverflow: getComputedStyle(wrap).overflow };
+    """)
+    check("a 1x1 orb shrinks below its configured size to fit and never scrolls", small["scale"] < small["wanted"] and small["scale"] >= 1 and not small["overflowX"] and not small["overflowY"] and small["inside"] and small["wrapOverflow"] == "hidden", small)
+    page("const el = [...document.querySelectorAll('#grid .grid-stack-item')].find(e => e._cthulhu && e._cthulhu.id === 'orb' && e.gridstackNode.w === 1); w.CthulhuHome.removeWidget(el);")
+
+    # moon: the ART is centred, not the 32px frame
+    page("w.CthulhuHome.addWidgetByType('moon', {x:4, y:3, w:1, h:1});")
+    time.sleep(1.2)
+    moon = page("""
+      return w.CthulhuWidgets.moonBounds().then(b => {
+        const fr = document.querySelector('#grid .cw-moon .cthulhu-moon-frame');
+        const outer = fr.parentElement;
+        const f = +fr.dataset.frame; const fb = b[f];
+        const size = outer.getBoundingClientRect().width; const s = size / b.frameW;
+        const dpr = window.devicePixelRatio || 1; const snap = v => Math.round(v * dpr) / dpr;
+        const expectLeft = snap(((b.frameW - 1) / 2 - fb.cx) * s);
+        // where the art's centre lands relative to the outer box's centre
+        const artCentre = parseFloat(fr.style.left) + (fb.cx + 0.5) * s;
+        return { frame: f, cx: fb.cx, left: parseFloat(fr.style.left), expectLeft, artCentre, boxCentre: size / 2, clipped: getComputedStyle(outer).overflow === 'hidden',
+                 bounds: Object.keys(b).filter(k => /^[0-9]$/.test(k)).length };
+      });
+    """)
+    check("moon strip measured: 8 frames with opaque bounds", moon["bounds"] == 8, moon)
+    check("moon frame nudged so the visible art is centred in the tile", abs(moon["left"] - moon["expectLeft"]) < 0.01 and abs(moon["artCentre"] - moon["boxCentre"]) <= 1.0 and moon["clipped"], moon)
+    # and a crescent (an off-centre frame) gets a real nudge: build moons for a run of dates
+    cres = page("""
+      return w.CthulhuWidgets.moonBounds().then(async (b) => {
+        const out = [];
+        for (let d = 0; d < 30 && out.length < 2; d++) {
+          const date = new Date(); date.setDate(date.getDate() + d);
+          const p = w.CthulhuWidgets.moonPhase(date);
+          if (![1, 7].includes(p.frame)) continue;
+          const el = w.CthulhuWidgets.moonEl(date, 64); document.body.appendChild(el);
+          await new Promise(r => setTimeout(r, 50));
+          const fr = el.firstElementChild; const fb = b[p.frame]; const s = 64 / b.frameW;
+          const dpr = window.devicePixelRatio || 1; const snap = v => Math.round(v * dpr) / dpr;
+          out.push({ frame: p.frame, cx: fb.cx, left: parseFloat(fr.style.left), expect: snap(((b.frameW - 1) / 2 - fb.cx) * s),
+                     artCentre: parseFloat(fr.style.left) + (fb.cx + 0.5) * s, nudged: Math.abs(parseFloat(fr.style.left)) > 4 });
+          el.remove();
+        }
+        return out;
+      });
+    """)
+    check("a crescent frame is nudged by a real offset so its sliver sits mid-tile",
+          len(cres) >= 1 and all(abs(c["left"] - c["expect"]) < 0.01 and abs(c["artCentre"] - 32) <= 1.0 and c["nudged"] for c in cres), cres)
+    page("const el = [...document.querySelectorAll('#grid .grid-stack-item')].find(e => e._cthulhu && e._cthulhu.id === 'moon' && e.gridstackNode.w === 1); w.CthulhuHome.removeWidget(el);")
 
     # --- palette: swatches render, dice adds a palette
     ps = page("return document.querySelectorAll('.cw-pal-sw').length;")
@@ -406,6 +545,115 @@ try:
     shot("08-rishi-request")
     page("const mdl = document.querySelector('.cw-rr-modal'); if (mdl) mdl.remove();")
     shot("09-pets")
+
+    # only one Rishi per page: a second tile set to him says so instead
+    page("w.CthulhuHome.addWidgetByType('pet', {x:0, y:0, w:2, h:2, config:{pet:'rishi'}});")
+    time.sleep(1.5)
+    two = page("""
+      return { rishis: document.querySelectorAll('.cw-pet-img[data-pet="rishi"]').length,
+               only: [...document.querySelectorAll('.cw-pet-only')].map(e => e.textContent) };
+    """)
+    check("a second Rishi tile shows the one-Rishi message instead of a second Rishi", two["rishis"] == 1 and two["only"] == ["There can only be one Rishi at a time"], two)
+    # and the picker refuses him on that tile
+    page("""
+      const second = [...document.querySelectorAll('#grid .grid-stack-item')].find(e => e.querySelector('.cw-pet-only'));
+      second.querySelector('.cthulhu-widget-btn[title="Configure"]').click();
+    """)
+    time.sleep(0.5)
+    page("document.querySelector('.cw-pet-row[data-pet=\"cthulhu\"]').click();"); time.sleep(0.8)
+    page("document.querySelector('.cw-pet-row[data-pet=\"rishi\"]').click();"); time.sleep(0.5)
+    refused = page("""
+      const second = [...document.querySelectorAll('#grid .grid-stack-item')].filter(e => e._cthulhu && e._cthulhu.id === 'pet').find(e => e.gridstackNode.x === 0 && e.gridstackNode.y === 0);
+      return { config: second._cthulhu.config.pet, toast: (document.getElementById('cthulhu-toast') || {}).textContent || '',
+               taken: [...document.querySelectorAll('.cw-pet-row.taken')].map(r => r.dataset.pet) };
+    """)
+    check("picking Rishi while another tile has him is refused with the message", refused["config"] == "cthulhu" and "one Rishi" in refused["toast"] and refused["taken"] == ["rishi"], refused)
+    page("const mm = document.querySelector('.cthulhu-config-modal'); if (mm) mm.remove();")
+
+    # Tea: the variant pref redraws Rishi as Tea, live
+    chrome("Services.prefs.setStringPref('cthulhu.pet.rishi.variant', 'tea');"); time.sleep(1.2)
+    tea = page("""
+      const img = document.querySelector('.cw-pet-img[data-pet="rishi"]');
+      return img ? { src: img.src.split('/').pop(), variant: img.dataset.variant, name: img.closest('.cw-pet').querySelector('.cw-pet-name').textContent } : null;
+    """)
+    check("Switching the variant pref to tea redraws Rishi as Tea", tea and tea["src"] == "tea.png" and tea["variant"] == "tea" and tea["name"] == "Tea", tea)
+    chrome("Services.prefs.setStringPref('cthulhu.pet.rishi.variant', '');"); time.sleep(1.0)
+    back = page("const img = document.querySelector('.cw-pet-img[data-pet=\"rishi\"]'); return img ? img.src.split('/').pop() : null;")
+    check("and back to Rishi", back == "rishi.png", back)
+    # mood pref -> bubble, live
+    chrome("Services.prefs.setStringPref('cthulhu.pet.rishi.mood', 'shipping it');"); time.sleep(0.6)
+    mood = page("const m = document.querySelector('.cw-pet-img[data-pet=\"rishi\"]').closest('.cw-pet').querySelector('.cw-pet-mood'); return m.textContent;")
+    check("the mood pref shows in Rishi's bubble live", mood == "shipping it", mood)
+    chrome("Services.prefs.setStringPref('cthulhu.pet.rishi.mood', '');")
+
+    # admin panel: relay token section + Rishi section with the Tea switch
+    chrome("Services.prefs.setBoolPref('cthulhu.admin.enabled', true);")
+    page("w.CthulhuAdmin.open();"); time.sleep(0.5)
+    adm = page("""
+      const p = document.querySelector('.cthulhu-admin');
+      return p ? { sections: [...p.querySelectorAll('.cthulhu-admin-sec')].map(s => s.dataset.section),
+                   token: !!p.querySelector('[data-section="relay"] input[type=password]'),
+                   tea: (p.querySelector('.cw-pet-teabtn') || {}).textContent,
+                   presets: p.querySelectorAll('[data-section="rishi-mood"] .cw-ui-choice-btn').length } : null;
+    """)
+    check("admin panel has the Relay token section and Rishi's section with a Tea switch", adm and adm["sections"] == ["relay", "rishi-mood"] and adm["token"] and adm["tea"] == "Switch to Tea" and adm["presets"] == 6, adm)
+    shot("10-admin")
+    page("w.CthulhuAdmin.close();")
+    chrome("Services.prefs.setBoolPref('cthulhu.admin.enabled', false);")
+
+    # --- chrome: the player is there, the side panels and the feature-request button are gone
+    ch = chrome("""
+      const q = (s) => document.querySelector(s);
+      return { np: !!q('#cthulhu-nowplaying'), toggles: document.querySelectorAll('.cthulhu-sp-toggle').length,
+               sidepanels: !!q('#cthulhu-sidepanels'), fr: !!q('#cthulhu-feature-request-button'),
+               panel: !!q('#cthulhu-player-panel'), icons: [...document.querySelectorAll('#cthulhu-player-panel .cthulhu-player-icon')].map(i => i.src.split('/').pop()),
+               times: document.querySelectorAll('#cthulhu-player-panel .cthulhu-player-time').length,
+               close: !!q('#cthulhu-player-panel .cthulhu-player-close'), rec: document.querySelectorAll('.cthulhu-player-rec-tile, .cthulhu-player-search').length,
+               modules: window.CthulhuLoader.loaded.map(m => m.id) };
+    """)
+    check("Now Playing squircle present; Discord/Instagram/Apple Music toggles, sidebar and feature-request button gone",
+          ch["np"] and ch["toggles"] == 0 and not ch["sidepanels"] and not ch["fr"], ch)
+    check("player is title/artist, close, elapsed+total, prev/play/next/mute with PNG icon slots, no browse or search",
+          ch["panel"] and ch["icons"] == ["close.png", "prev.png", "play.png", "next.png", "volume.png"] and ch["times"] == 2 and ch["close"] and ch["rec"] == 0, ch)
+    check("loaded chrome modules", set(ch["modules"]) == {"cursors", "ambient-theme", "now-playing", "compact-mode"}, ch["modules"])
+
+    # --- vertical tabs: the Home tab appears as a pinned tab with the house; compact mode hides the strip
+    chrome("Services.prefs.setBoolPref('sidebar.verticalTabs', true);"); time.sleep(2.5)
+    vt = chrome("""
+      const tab = document.querySelector('tab[cthulhu-home-tab]');
+      const fv = document.getElementById('firefox-view-button');
+      return { orient: document.getElementById('tabbrowser-tabs').getAttribute('orient'),
+               tab: !!tab, display: tab ? getComputedStyle(tab).display : null, pinned: tab ? tab.pinned : null,
+               icon: tab ? (tab.getAttribute('image') || '').split('/').pop() : null, selected: tab ? tab.selected : null,
+               inPinned: tab ? !!tab.closest('#pinned-tabs-container') : null,
+               pinnedShown: getComputedStyle(document.getElementById('pinned-tabs-container')).display !== 'none',
+               rootVT: document.documentElement.hasAttribute('cthulhu-vertical-tabs'),
+               menu: !!document.querySelector('#toolbar-context-menu .cthulhu-compact-menuitem') };
+    """)
+    check("vertical tabs: a pinned Home tab exists in the strip, visible, with the house icon, not stolen focus",
+          vt["orient"] == "vertical" and vt["tab"] and vt["display"] != "none" and vt["pinned"] and vt["icon"] == "home.png" and vt["inPinned"] and vt["pinnedShown"] and vt["selected"] is False, vt)
+    check("root flags vertical tabs and the Compact mode menu item exists", vt["rootVT"] and vt["menu"], vt)
+    chrome("window.CthulhuCompactMode.setEnabled(true);"); time.sleep(0.8)
+    cm = chrome("""
+      const c = document.getElementById('sidebar-container'); const cs = getComputedStyle(c);
+      const hot = document.getElementById('cthulhu-compact-hotzone');
+      const tabbox = document.getElementById('tabbrowser-tabbox').getBoundingClientRect();
+      return { attr: document.documentElement.hasAttribute('cthulhu-compact'), position: cs.position, translate: cs.translate,
+               hot: !!hot && getComputedStyle(hot).display !== 'none', hotW: hot ? hot.getBoundingClientRect().width : null,
+               tabboxLeft: tabbox.left, vis: Services.prefs.getCharPref('sidebar.visibility'),
+               checked: document.querySelector('#toolbar-context-menu .cthulhu-compact-menuitem').getAttribute('checked') };
+    """)
+    check("compact mode: strip is out of flow and slid off-screen, page takes the full width, hot zone armed",
+          cm["attr"] and cm["position"] == "absolute" and cm["translate"] not in ("none", "0px", "") and cm["hot"] and cm["hotW"] == 6 and cm["tabboxLeft"] < 10 and cm["vis"] == "always-show" and cm["checked"] == "true", cm)
+    chrome("window.CthulhuCompactMode.open();"); time.sleep(0.4)
+    op = chrome("const c = document.getElementById('sidebar-container'); return { open: c.hasAttribute('cthulhu-compact-open'), translate: getComputedStyle(c).translate };")
+    check("hovering the edge (open()) slides the strip back over the page", op["open"] and op["translate"] in ("none", "0px", "0px 0px"), op)
+    chrome("window.CthulhuCompactMode.close(); window.CthulhuCompactMode.setEnabled(false);"); time.sleep(0.4)
+    off = chrome("const c = document.getElementById('sidebar-container'); return { attr: document.documentElement.hasAttribute('cthulhu-compact'), position: getComputedStyle(c).position };")
+    check("compact mode off: strip back in the layout", not off["attr"] and off["position"] != "absolute", off)
+    chrome("Services.prefs.setBoolPref('sidebar.verticalTabs', false);"); time.sleep(2.0)
+    hz = chrome("const tab = document.querySelector('tab[cthulhu-home-tab]'); return { orient: document.getElementById('tabbrowser-tabs').getAttribute('orient'), hidden: tab ? getComputedStyle(tab).display === 'none' : null, fvVisible: document.getElementById('firefox-view-button').getBoundingClientRect().width > 10 };")
+    check("back to horizontal: the Home tab hides again and the Home button is back", hz["orient"] == "horizontal" and hz["hidden"] and hz["fvVisible"], hz)
 
     # --- drawer: icons instead of dots
     page("document.getElementById('cthulhu-settings').click();"); time.sleep(0.8)

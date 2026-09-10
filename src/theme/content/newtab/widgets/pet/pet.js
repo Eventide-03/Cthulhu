@@ -11,21 +11,44 @@
  *
  *   { "id": "cat", "name": "Cat", "frames": ["cat.png"] }
  *
- *   frames   one or more PNGs, each a single frame at NATIVE pixel size. Frames
- *            can be any size -- 16x24, 32x32, 56x62, 64x64 all ship today. The
- *            widget scales each pet up by an INTEGER factor to fill the tile
- *            (pixelated, so it stays crisp), so never pre-scale the art.
- *   mode     omitted: a single frame plays a gentle idle bob; several frames
- *            play in order at `fps`.
- *            "glitch": frames play in a RANDOM order, reshuffled every pass,
- *            with a pixel of jitter -- and the pet's name flickers into
- *            gibberish wherever it is shown (tile label and the ⚙ dropdown).
- *   action   "feature-request": the sprite becomes a real button that opens
- *            the feature-request form (rishi-request.js, loaded on demand).
- *   hint     tooltip for an actionable pet.
- *   moodPref a pref name; its text is shown in a bubble ABOVE the sprite and
- *            follows the pref live. Rishi's is set from the admin panel
- *            (newtab/admin.js). Empty pref = no bubble.
+ *   frames      one or more PNGs, each a single frame at NATIVE pixel size.
+ *               Frames can be any size -- 16x24, 32x32, 56x62, 64x64 all ship
+ *               today. The widget scales each pet up by an INTEGER factor to
+ *               fill the tile (pixelated, so it stays crisp); never pre-scale.
+ *   mode        omitted: a single frame plays a gentle idle bob; several frames
+ *               play in order at `fps`.
+ *               "glitch": frames play in a RANDOM order, reshuffled every pass,
+ *               with a pixel of jitter -- and the pet's name flickers into
+ *               gibberish wherever it is shown (tile label and the picker).
+ *   action      "feature-request": the sprite becomes a real button that opens
+ *               the feature-request form (rishi-request.js, loaded on demand).
+ *   hint        tooltip for an actionable pet.
+ *   unique      only ONE tile per page may show this pet. A second tile asked
+ *               for it says so instead; Random never rolls it while another
+ *               tile has it. (Rishi: "there can only be one Rishi at a time".)
+ *   moodPref    a pref whose text is shown in a bubble ABOVE the sprite,
+ *               followed live. Rishi's is the local cache of a value the RELAY
+ *               holds (see "shared state" below), so both browsers show it.
+ *   variantPref a pref naming one of `variants`, followed live: when set, the
+ *               pet is drawn with that variant's frames and name. Rishi's
+ *               "tea" variant is assets/tea.png -- the admin panel's "Switch
+ *               to Tea", again shared through the relay.
+ *
+ * SHARED STATE: mood and variant for a pet with moodPref live on the relay
+ * (relay/worker.js, GET /rishi). Any page with such a pet polls it every
+ * minute (and on becoming visible) and writes the result into the two prefs;
+ * every tile follows the prefs, so the update reaches all open tabs at once.
+ * The admin panel writes the prefs directly (this machine updates instantly)
+ * AND PUTs to the relay with the owner's token (the other browser picks it up
+ * on its next poll). Without a token, the panel changes this machine only and
+ * says so. No secret is in this file or the binary.
+ *
+ * A relay value is applied only when it is NEW: the relay stamps every write
+ * with updatedAt, this profile remembers the last stamp it applied, and a
+ * poll that returns the same stamp changes nothing. Without that rule the
+ * poll would "correct" a locally set mood back to the relay's copy within a
+ * minute (it did, in testing: a re-render re-pulled and undid the change), and
+ * a relay nobody has ever written to (updatedAt 0) would blank everything.
  *
  * Everything lives inside this closure: widget scripts are plain <script>
  * elements sharing ONE global scope (see widgets.js loadWidgetScripts), so a
@@ -37,10 +60,14 @@
   const ASSET_BASE = "chrome://cthulhu/content/newtab/widgets/pet/";
   const MAX_SCALE = 8;
   const MOOD_MAX = 60;
+  const UNIQUE_MSG = "There can only be one Rishi at a time";
 
   const prefs = () => (typeof Services !== "undefined" && Services.prefs) || null;
   function getPref(name, d) {
     try { return prefs().getStringPref(name, d); } catch (e) { return d; }
+  }
+  function setPref(name, v) {
+    try { prefs().setStringPref(name, v); return true; } catch (e) { return false; }
   }
   /** Watch a string pref; returns stop(). Used so a mood set in the admin panel
    *  appears immediately, in every open tab, without a reload. */
@@ -51,6 +78,75 @@
     try { P.addObserver(name, obs); } catch (e) { return () => {}; }
     return () => { try { P.removeObserver(name, obs); } catch (e) {} };
   }
+
+  /* ------------------------------------------------------------------------
+   * Shared state: the relay holds { mood, variant }; the prefs cache it.
+   * ---------------------------------------------------------------------- */
+  const RELAY_PREF = "cthulhu.relay.url";
+  const RELAY_PATH = "/rishi";
+  const SYNCED_PREF = "cthulhu.pet.rishi.syncedAt"; // last relay updatedAt applied here
+  const POLL_MS = 60 * 1000;
+  const MIN_PULL_GAP_MS = 15 * 1000;
+  const relayUrl = () => getPref(RELAY_PREF, "").trim().replace(/\/+$/, "");
+
+  const shared = {
+    timer: 0,
+    watchers: 0,       // tiles that want the poll running
+    lastAt: 0,
+    lastError: "",
+    prefs: null,       // { moodPref, variantPref } of the pet being polled
+    async pull() {
+      const base = relayUrl();
+      if (!base || !shared.prefs) return;
+      try {
+        const resp = await fetch(base + RELAY_PATH, { headers: { "x-cthulhu-client": "1" } });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || data.ok === false) throw new Error(data.error || "HTTP " + resp.status);
+        shared.lastAt = Date.now();
+        shared.lastError = "";
+        // Apply only a NEW relay write (see the header). A relay never written
+        // to reports updatedAt 0 and is left alone entirely.
+        const stamp = Number(data.updatedAt) || 0;
+        if (!stamp || String(stamp) === getPref(SYNCED_PREF, "")) return;
+        // Only touch a pref that actually changed: each write pings every
+        // observer in every tab.
+        const mood = String(data.mood == null ? "" : data.mood).slice(0, MOOD_MAX);
+        const variant = String(data.variant == null ? "" : data.variant);
+        if (getPref(shared.prefs.moodPref, "") !== mood) setPref(shared.prefs.moodPref, mood);
+        if (shared.prefs.variantPref && getPref(shared.prefs.variantPref, "") !== variant) {
+          setPref(shared.prefs.variantPref, variant);
+        }
+        setPref(SYNCED_PREF, String(stamp));
+      } catch (e) {
+        // A relay that predates /rishi answers 405; a machine offline answers
+        // nothing. Either way the cached prefs stand and nothing is shown --
+        // the poll is a background nicety, not a feature the tile waits on.
+        shared.lastError = e.message;
+      }
+    },
+    start(petPrefs) {
+      shared.prefs = petPrefs;
+      shared.watchers++;
+      if (shared.timer) return;
+      // A tile re-render restarts this; don't hit the relay for every one.
+      if (Date.now() - shared.lastAt > MIN_PULL_GAP_MS) shared.pull();
+      shared.timer = setInterval(() => { if (!document.hidden) shared.pull(); }, POLL_MS);
+      document.addEventListener("visibilitychange", shared.onVisible);
+    },
+    stop() {
+      shared.watchers = Math.max(0, shared.watchers - 1);
+      if (shared.watchers) return;
+      clearInterval(shared.timer);
+      shared.timer = 0;
+      document.removeEventListener("visibilitychange", shared.onVisible);
+    },
+    onVisible() {
+      if (!document.hidden && Date.now() - shared.lastAt > MIN_PULL_GAP_MS) shared.pull();
+    },
+    /** Force the next pull to apply whatever the relay holds (after our own
+     *  write, so the stamp we just created is recorded here too). */
+    resync() { shared.lastAt = 0; return shared.pull(); },
+  };
 
   /* ------------------------------------------------------------------------
    * Glitch text: "KIY" <-> gibberish.
@@ -68,8 +164,7 @@
     }
     return s;
   }
-  /** Flicker `el`'s text until it leaves the DOM or stop() is called. Works on
-   *  anything with textContent -- a label, or an <option> in a <select>. */
+  /** Flicker `el`'s text until it leaves the DOM or stop() is called. */
   function glitchText(el, real, everyMs) {
     let timer = setInterval(() => {
       if (!el.isConnected) { stop(); return; }
@@ -176,28 +271,62 @@
         return pets;
       });
   }
-  function choose(pets, wanted) {
+  /** The pet as it should be drawn right now: its variant's name and frames
+   *  when the variant pref names one, else itself. */
+  function effective(pet) {
+    if (!pet.variantPref || !pet.variants) return pet;
+    const v = pet.variants[getPref(pet.variantPref, "")];
+    if (!v) return pet;
+    return { ...pet, name: v.name || pet.name, frames: (v.frames && v.frames.length) ? v.frames : pet.frames,
+      fps: v.fps || pet.fps, mode: v.mode || pet.mode, variant: getPref(pet.variantPref, "") };
+  }
+
+  /* ------------------------------------------------------------------------
+   * Uniqueness: at most one tile per page shows a `unique` pet.
+   *
+   * The holder is the grid ITEM, found from the widget body, so a re-render of
+   * the same tile (config change, refresh) keeps its claim rather than
+   * contesting it. Home and new-tab are different documents, so each page
+   * gets its own one -- "one on the homepage, one on the tab board".
+   * ---------------------------------------------------------------------- */
+  const holders = new Map(); // pet id -> grid item element
+  const tileOf = (el) => (el.closest && el.closest(".grid-stack-item")) || el;
+  function heldElsewhere(petId, tile) {
+    const h = holders.get(petId);
+    if (!h) return false;
+    if (h === tile) return false;
+    if (!h.isConnected) { holders.delete(petId); return false; }
+    return true;
+  }
+  function claim(petId, tile) { holders.set(petId, tile); }
+  function release(petId, tile) { if (holders.get(petId) === tile) holders.delete(petId); }
+
+  function choose(pets, wanted, tile) {
     if (wanted && wanted !== "random") {
       const found = pets.find((p) => p.id === wanted);
       if (found) return found;
       // Configured pet no longer in the manifest -- fall back to random rather
       // than rendering nothing.
     }
-    return pets[Math.floor(Math.random() * pets.length)];
+    // Random never deals a unique pet that another tile is already showing.
+    const pool = pets.filter((p) => !(p.unique && heldElsewhere(p.id, tile)));
+    const from = pool.length ? pool : pets;
+    return from[Math.floor(Math.random() * from.length)];
   }
 
   /* ------------------------------------------------------------------------
-   * Admin section: Rishi's mood.
+   * Admin section: Rishi's mood, and Rishi-or-Tea.
    *
    * Registered here rather than in admin.js so the control ships beside the
    * thing it controls -- admin.js never needs editing to gain a section. It is
    * a no-op if the admin panel isn't present.
    *
-   * LOCAL ONLY: this writes a pref on this machine. It does not reach anyone
-   * else's copy, and it cannot without a server to hold the value plus a
-   * secret the user supplies -- a secret shipped in a public binary is not one.
+   * Writes the prefs (this machine, instantly) and PUTs to the relay with the
+   * owner's token (the other browser, on its next poll). Without a token it
+   * says so and stays local.
    * ---------------------------------------------------------------------- */
   const MOOD_PREF = "cthulhu.pet.rishi.mood";
+  const VARIANT_PREF = "cthulhu.pet.rishi.variant";
   const MOOD_PRESETS = [
     "building something",
     "deep in the code",
@@ -209,8 +338,8 @@
   if (window.CthulhuAdmin) {
     window.CthulhuAdmin.register({
       id: "rishi-mood",
-      title: "Rishi's mood",
-      note: "Shown above Rishi in the Pet widget. Local to this machine.",
+      title: "Rishi",
+      note: "Shown above Rishi in the Pet widget, in both browsers when the relay token is set.",
       render(body, ctx) {
         const input = document.createElement("input");
         input.type = "text";
@@ -229,17 +358,33 @@
         const paint = (v) => {
           for (const b of buttons) b.classList.toggle("on", b.textContent === v);
         };
-        const commit = (v) => {
-          input.value = v;
-          ctx.setPref(MOOD_PREF, v);
-          paint(v);
-        };
+
+        const status = document.createElement("div");
+        status.className = "cthulhu-admin-note";
+
+        // One writer for both values: prefs first (instant here), relay second
+        // (the other browser). The status line says which of the two happened.
+        async function commit(patch) {
+          if ("mood" in patch) { input.value = patch.mood; ctx.setPref(MOOD_PREF, patch.mood); paint(patch.mood); }
+          if ("variant" in patch) { ctx.setPref(VARIANT_PREF, patch.variant); paintVariant(); }
+          const relay = ctx.relay || (window.CthulhuAdmin && window.CthulhuAdmin.relay);
+          if (!relay || !relay.url()) { status.textContent = "Saved here only: no relay configured."; return; }
+          if (!relay.token()) { status.textContent = "Saved here only. Set the admin token (Relay, above) to share it with the other browser."; return; }
+          status.textContent = "Sharing…";
+          try {
+            await relay.put(RELAY_PATH, patch);
+            status.textContent = "Shared. The other browser picks it up within a minute.";
+            shared.resync();
+          } catch (e) {
+            status.textContent = "Saved here, but the relay refused: " + e.message;
+          }
+        }
         for (const m of MOOD_PRESETS) {
           const b = document.createElement("button");
           b.type = "button";
           b.className = "cw-ui-choice-btn";
           b.textContent = m;
-          b.addEventListener("click", (e) => { e.stopPropagation(); commit(m); });
+          b.addEventListener("click", (e) => { e.stopPropagation(); commit({ mood: m }); });
           buttons.push(b);
           chips.appendChild(b);
         }
@@ -252,21 +397,38 @@
         setBtn.type = "button";
         setBtn.className = "cw-cfg-save";
         setBtn.textContent = "Set";
-        setBtn.addEventListener("click", (e) => { e.stopPropagation(); commit(input.value.trim()); });
+        setBtn.addEventListener("click", (e) => { e.stopPropagation(); commit({ mood: input.value.trim() }); });
         const clearBtn = document.createElement("button");
         clearBtn.type = "button";
         clearBtn.className = "cw-cfg-save";
         clearBtn.style.background = "var(--surface)";
         clearBtn.style.color = "var(--fg)";
         clearBtn.textContent = "Clear";
-        clearBtn.addEventListener("click", (e) => { e.stopPropagation(); commit(""); });
+        clearBtn.addEventListener("click", (e) => { e.stopPropagation(); commit({ mood: "" }); });
         actions.appendChild(setBtn);
         actions.appendChild(clearBtn);
         body.appendChild(actions);
 
+        // Rishi <-> Tea. One button that says what it will do next.
+        const teaBtn = document.createElement("button");
+        teaBtn.type = "button";
+        teaBtn.className = "cw-ui-btn cw-pet-teabtn";
+        const paintVariant = () => {
+          const tea = getPref(VARIANT_PREF, "") === "tea";
+          teaBtn.textContent = tea ? "Switch back to Rishi" : "Switch to Tea";
+          teaBtn.dataset.variant = tea ? "tea" : "";
+        };
+        paintVariant();
+        teaBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          commit({ variant: getPref(VARIANT_PREF, "") === "tea" ? "" : "tea" });
+        });
+        body.appendChild(teaBtn);
+        body.appendChild(status);
+
         // Enter commits, so the panel can be driven from the keyboard alone.
         input.addEventListener("keydown", (e) => {
-          if (e.key === "Enter") { e.preventDefault(); commit(input.value.trim()); }
+          if (e.key === "Enter") { e.preventDefault(); commit({ mood: input.value.trim() }); }
         });
       },
     });
@@ -312,6 +474,7 @@
       .cw-pet-name { color:var(--fg-muted); font-size:.85em; text-align:center; font-family:var(--font-pixel);
                      min-height:1.2em; font-variant-ligatures:none; }
       .cw-pet-empty { color:var(--fg-muted); font-size:.85em; text-align:center; padding:8px; }
+      .cw-pet-only { color:var(--fg-muted); font-size:.85em; text-align:center; padding:8px; line-height:1.4; }
 
       /* Picker in the gear panel. A LIST OF BUTTONS, not a <select>.
        *
@@ -328,11 +491,13 @@
         font-family:var(--font-pixel); font-size:.85em; cursor:pointer; }
       .cw-pet-row:hover { border-color:var(--accent); }
       .cw-pet-row.on { border-color:var(--accent); background:color-mix(in srgb, var(--accent) 14%, var(--surface)); }
+      .cw-pet-row.taken { opacity:.55; }
       .cw-pet-row img { flex:none; width:22px; height:22px; object-fit:contain; image-rendering:pixelated; }
       .cw-pet-row .dot { flex:none; width:22px; height:22px; border-radius:5px; background:var(--bg-elevated);
         border:1px solid var(--border); }
       .cw-pet-rowname { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
         font-variant-ligatures:none; }
+      .cw-pet-rowtag { flex:none; color:var(--fg-muted); font-size:.85em; }
       .cw-pet-note { color:var(--fg-muted); font-size:.78em; }
     `,
 
@@ -346,6 +511,7 @@
       const stage = el.querySelector(".cw-pet-stage");
       const nameEl = el.querySelector(".cw-pet-name");
       const moodEl = el.querySelector(".cw-pet-mood");
+      const tile = tileOf(el);
 
       // The manifest fetch and the image load are async, so this render can be
       // torn down (widget removed, or re-rendered by a config change) while
@@ -373,10 +539,37 @@
           return;
         }
 
-        const pet = choose(pets, ctx.config && ctx.config.pet);
+        const base = choose(pets, ctx.config && ctx.config.pet, tile);
+
+        // A unique pet already on another tile of this page: say so, do not
+        // draw a second one. (Random never picks one, so this is the case of
+        // a tile deliberately set to it -- or two such tiles restored from a
+        // layout saved before the rule existed.)
+        if (base.unique) {
+          if (heldElsewhere(base.id, tile)) {
+            const only = document.createElement("div");
+            only.className = "cw-pet-only";
+            only.dataset.pet = base.id;
+            only.textContent = UNIQUE_MSG;
+            stage.appendChild(only);
+            return;
+          }
+          claim(base.id, tile);
+          stops.push(() => release(base.id, tile));
+        }
+
+        const pet = effective(base);
         const name = pet.name || pet.id;
         const glitch = pet.mode === "glitch";
         const urls = pet.frames.map((f) => ctx.assetUrl(f));
+
+        // Follow the variant pref live: Tea <-> Rishi is a full redraw.
+        if (base.variantPref) {
+          let current = getPref(base.variantPref, "");
+          stops.push(watchPref(base.variantPref, (v) => {
+            if (!disposed && v !== current) { current = v; ctx.refresh(); }
+          }));
+        }
 
         // Label. A glitch pet's name never sits still.
         if (ctx.config && ctx.config.showName === false) {
@@ -388,12 +581,15 @@
           nameEl.textContent = name;
         }
 
-        // Mood bubble, for a pet that has one. Follows the pref live, so
-        // setting it in the admin panel updates every open tab at once.
-        if (pet.moodPref) {
+        // Mood bubble, for a pet that has one. Follows the pref live; the
+        // pref itself follows the relay (see the header), so setting it in
+        // either browser's admin panel reaches every open tab of both.
+        if (base.moodPref) {
           const paintMood = (v) => { moodEl.textContent = (v || "").slice(0, MOOD_MAX); };
-          paintMood(getPref(pet.moodPref, ""));
-          stops.push(watchPref(pet.moodPref, paintMood));
+          paintMood(getPref(base.moodPref, ""));
+          stops.push(watchPref(base.moodPref, paintMood));
+          shared.start({ moodPref: base.moodPref, variantPref: base.variantPref || "" });
+          stops.push(() => shared.stop());
         }
 
         // Sprite.
@@ -401,7 +597,8 @@
         img.className = "cw-pet-img " + (glitch ? "glitch" : "idle");
         img.alt = name;
         img.draggable = false;
-        img.dataset.pet = pet.id;
+        img.dataset.pet = base.id;
+        if (pet.variant) img.dataset.variant = pet.variant;
         img.decoding = "async";
 
         let host = img;
@@ -449,6 +646,12 @@
 
     configUI(panel, ctx) {
       const cfg = ctx.config || {};
+      // The tile this panel belongs to, for the uniqueness check: its own
+      // claim must not count against it.
+      const modalTile = (() => {
+        const items = [...document.querySelectorAll("#grid .grid-stack-item")];
+        return items.find((it) => it._cthulhu && it._cthulhu.config === ctx.config) || null;
+      })();
 
       const list = document.createElement("div");
       list.className = "cw-pet-list";
@@ -474,7 +677,12 @@
         const rows = [];
         const paint = () => {
           const cur = (ctx.config && ctx.config.pet) || "random";
-          for (const r of rows) r.el.classList.toggle("on", r.id === cur);
+          for (const r of rows) {
+            r.el.classList.toggle("on", r.id === cur);
+            const taken = !!(r.pet && r.pet.unique && heldElsewhere(r.pet.id, modalTile));
+            r.el.classList.toggle("taken", taken);
+            r.tag.textContent = taken ? "on another tile" : "";
+          }
           const p = pets.find((x) => x.id === cur);
           hint.textContent = p && p.hint ? p.hint : "";
         };
@@ -484,11 +692,12 @@
           row.className = "cw-pet-row";
           row.setAttribute("data-pet", o.id);
 
-          if (o.frames && o.frames.length) {
+          const shown = o.frames ? effective(o) : o;
+          if (shown.frames && shown.frames.length) {
             const img = document.createElement("img");
             img.alt = "";
             img.draggable = false;
-            img.src = ctx.assetUrl(o.frames[0]);
+            img.src = ctx.assetUrl(shown.frames[0]);
             row.appendChild(img);
           } else {
             const dot = document.createElement("span");
@@ -498,8 +707,11 @@
 
           const label = document.createElement("span");
           label.className = "cw-pet-rowname";
-          label.textContent = o.name || o.id;
+          label.textContent = shown.name || o.id;
           row.appendChild(label);
+          const tag = document.createElement("span");
+          tag.className = "cw-pet-rowtag";
+          row.appendChild(tag);
           // KIY's name is restless wherever it appears -- and here it is on
           // screen the whole time the panel is open. The timer stops itself
           // when the panel closes and the node leaves the document.
@@ -507,10 +719,15 @@
 
           row.addEventListener("click", (e) => {
             e.stopPropagation();
+            if (o.unique && heldElsewhere(o.id, modalTile)) {
+              try { ctx.ui.toast(UNIQUE_MSG); } catch (err) {}
+              paint();
+              return;
+            }
             ctx.saveConfig({ ...ctx.config, pet: o.id }, { refresh: true });
             paint();
           });
-          rows.push({ id: o.id, el: row });
+          rows.push({ id: o.id, el: row, tag, pet: o.frames ? o : null });
           list.appendChild(row);
         }
         paint();

@@ -190,6 +190,12 @@
   /* Less inner padding so the icon can render larger. */
   --toolbarbutton-inner-padding: 3px !important;
 }
+/* ART SLOT: assets/light_home.png -- the same house drawn for a light palette.
+   The theme engine flags light presets on :root; the Home TAB's icon (vertical
+   tabs, below) follows the same flag from browser.js. */
+:root[cthulhu-theme-light] #firefox-view-button {
+  list-style-image: url("chrome://cthulhu/content/assets/light_home.png") !important;
+}
 #firefox-view-button > .toolbarbutton-icon {
   width: 48px !important;
   height: 48px !important;
@@ -201,7 +207,15 @@
  * next to a second, identical pinned-tab icon. Underneath it stays a fully
  * real, selectable, session-restored tab -- only its strip rendering goes.
  * (display:none rather than gBrowser.hideTab(): tabbrowser refuses to hide a
- * pinned or selected tab, and this one is both.) */
-tab[cthulhu-home-tab] {
+ * pinned or selected tab, and this one is both.)
+ *
+ * HORIZONTAL STRIP ONLY. With vertical tabs the horizontal strip -- and the
+ * Home button in it -- is collapsed to nothing, so hiding the tab as well left
+ * no way to Home at all. There the tab IS the affordance: it shows in the
+ * vertical strip's pinned area with the house as its icon (set from
+ * FirefoxViewHandler in browser.js, which also makes sure the tab exists in
+ * that layout). The pinned area belongs to #tabbrowser-tabs in both layouts,
+ * so its orient attribute is the switch. */
+#tabbrowser-tabs[orient="horizontal"] tab[cthulhu-home-tab] {
   display: none !important;
 }

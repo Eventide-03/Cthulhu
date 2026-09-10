@@ -433,5 +433,13 @@ window.CthulhuGCal = (function () {
         "/calendars/" + encodeURIComponent(calendarId || "primary") +
         "/events/" + encodeURIComponent(eventId));
     },
+    /** Move an event to another calendar (the editor's calendar chooser on an
+     *  existing item). The id is kept, so nothing else has to be re-keyed. */
+    moveEvent(calendarId, eventId, destination) {
+      return apiRequest("POST",
+        "/calendars/" + encodeURIComponent(calendarId || "primary") +
+        "/events/" + encodeURIComponent(eventId) + "/move",
+        { params: { destination: destination || "primary" } });
+    },
   };
 })();

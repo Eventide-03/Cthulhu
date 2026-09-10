@@ -67,14 +67,36 @@ CthulhuWidgets.register({
   defaultSize: { w: 2, h: 2 },
   defaultConfig: { color: "", glow: true, scale: 3 },
   css: `
-    .cw-orb { display:flex; align-items:center; justify-content:center; height:100%; }
+    .cw-orb { display:flex; align-items:center; justify-content:center; height:100%; overflow:hidden; }
     .cw-orb .cthulhu-sprite { image-rendering:pixelated; }
   `,
   render(el, ctx) {
     const wrap = document.createElement("div"); wrap.className = "cw-orb";
     const sprite = document.createElement("div"); sprite.className = "cw-orb-sprite";
-    sprite.style.transform = "scale(" + (Math.max(1, +ctx.config.scale || 3)) + ")";
     wrap.appendChild(sprite); el.appendChild(wrap);
+    // The sprite is a 32px box blown up with transform. A transform does not
+    // change layout size, but it DOES extend the scrollable overflow, and the
+    // tile body scrolls -- so on a 1x1 tile (a smaller cell on a 125%/150%
+    // Windows display, classic always-visible scrollbars) a scrollbar appeared
+    // along the bottom. Two fixes: the wrapper clips, and the scale is the
+    // configured one OR whatever fits, whichever is smaller, re-fitted on
+    // every resize. "Size" in the panel is therefore a maximum.
+    const want = Math.max(1, +ctx.config.scale || 3);
+    const fit = () => {
+      const fw = sprite.offsetWidth || 32, fh = sprite.offsetHeight || 32;
+      const room = 16; // the glow's drop-shadow needs a few px each side
+      const s = Math.max(1, Math.min(want, Math.floor(Math.min(
+        (wrap.clientWidth - room) / fw, (wrap.clientHeight - room) / fh))));
+      sprite.style.transform = "scale(" + s + ")";
+      sprite.dataset.scale = String(s);
+    };
+    wrap._cthFit = fit;
+    fit();
+    if (typeof ResizeObserver === "function") {
+      const ro = new ResizeObserver(fit);
+      ro.observe(wrap);
+      ctx.onCleanup(() => ro.disconnect());
+    }
   },
   animate(el, ctx) {
     const sprite = el.querySelector(".cw-orb-sprite");
@@ -83,7 +105,12 @@ CthulhuWidgets.register({
     ctx.onCleanup(() => { disposed = true; });
     const jsonUrl = ctx.assetUrl("orb.json");
     ctx.sprite.fromAseprite(sprite, jsonUrl, { mode: "css" })
-      .then((ctrl) => ctx.onCleanup(() => ctrl && ctrl.stop && ctrl.stop()))
+      .then((ctrl) => {
+        ctx.onCleanup(() => ctrl && ctrl.stop && ctrl.stop());
+        // The frame size is only known now; fit again with the real box.
+        const wrap = sprite.parentElement;
+        if (!disposed && wrap && wrap._cthFit) wrap._cthFit();
+      })
       .catch((e) => console.warn("[Cthulhu:orb] sprite:", e.message));
 
     // Colour: measure the sheet the JSON names, then apply / re-apply on theme change.
@@ -108,6 +135,9 @@ CthulhuWidgets.register({
     f.appendChild(ctx.ui.colorRow("Custom", ctx.config.color || ctx.theme.tokens().accent, (hex) => save({ color: hex })));
     panel.appendChild(f);
     panel.appendChild(ctx.ui.checkRow("Glow", ctx.config.glow !== false, (v) => save({ glow: v })));
-    panel.appendChild(ctx.ui.rangeRow("Size", { min: 1, max: 6, step: 1, value: ctx.config.scale || 3, unit: "×" }, (v) => save({ scale: v })));
+    panel.appendChild(ctx.ui.rangeRow("Size (max)", { min: 1, max: 6, step: 1, value: ctx.config.scale || 3, unit: "×" }, (v) => save({ scale: v })));
+    const note = document.createElement("div"); note.className = "cw-ui-note";
+    note.textContent = "The orb shrinks to fit a small tile; this is the largest it will go.";
+    panel.appendChild(note);
   },
 });

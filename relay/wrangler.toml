@@ -2,13 +2,16 @@ name = "cthulhu-relay"
 main = "worker.js"
 compatibility_date = "2026-08-01"
 
-# Free-tier friendly: Workers includes 100k requests/day, which a feature-request
-# relay will never approach. No KV, no Durable Objects, no paid bindings.
+# Free-tier friendly: Workers includes 100k requests/day and KV 100k reads +
+# 1k writes/day. Two browsers polling Rishi's state once a minute is under
+# 3k reads a day; writes are the owner pressing a button.
 
-# Per-IP burst limiter. Requires wrangler >= 4.36.0.
+# Per-IP burst limiters. Requires wrangler >= 4.36.0.
 # NOTE: `period` may only be 10 or 60 (seconds) -- those are the only values the
-# platform accepts. 3 per 60s is generous for a human filling in a form and
-# still caps a script hard.
+# platform accepts. REQUEST_LIMITER guards the feature-request POST and the
+# state PUT (3/min: generous for a human, hard on a script or a token
+# guesser). READ_LIMITER guards the state GET, which every open home page
+# polls, so it is looser.
 [[ratelimits]]
 name = "REQUEST_LIMITER"
 namespace_id = "1001"
@@ -17,6 +20,20 @@ namespace_id = "1001"
   limit = 3
   period = 60
 
-# DISCORD_WEBHOOK_URL is deliberately NOT here. It is a secret, set with
-# `wrangler secret put` -- see README.md. Never put it in this file: this file
-# is committed to a public repository.
+[[ratelimits]]
+name = "READ_LIMITER"
+namespace_id = "1002"
+
+  [ratelimits.simple]
+  limit = 30
+  period = 60
+
+# Rishi's shared state (mood + Rishi/Tea). The namespace id is an identifier,
+# not a secret; created with `wrangler kv namespace create STATE`.
+[[kv_namespaces]]
+binding = "STATE"
+id = "c54cb6197d4847d7a576e2e0e8e596d9"
+
+# DISCORD_WEBHOOK_URL and ADMIN_TOKEN are deliberately NOT here. They are
+# secrets, set with `wrangler secret put` -- see README.md. Never put them in
+# this file: it is committed to a public repository.

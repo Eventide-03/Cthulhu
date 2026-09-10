@@ -37,6 +37,14 @@ BUILD=1
 [ "${1:-}" = "--" ] && shift
 
 if [ "$BUILD" = 1 ]; then
+  # New or removed files under src/theme need their mirror symlinks in
+  # engine/theme and a regenerated FasterMake backend, or `build faster` fails
+  # on the missing file. sync-mirror prints one line per change.
+  echo "==> sync engine/theme mirror"
+  if [ -n "$(./tools/sync-mirror.sh | tee /dev/stderr)" ]; then
+    echo "==> mach build-backend -b FasterMake (files were added or removed)"
+    (cd engine && ./mach build-backend -b FasterMake >/dev/null)
+  fi
   echo "==> mach build faster"
   (cd engine && ./mach build faster)
   echo "==> repackage"

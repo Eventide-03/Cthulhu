@@ -81,6 +81,7 @@ index 30a957f..182f631 100644
            SessionWindowUI.undoCloseWindow(0);
            break;
 diff --git a/browser/base/content/browser.js b/browser/base/content/browser.js
+index c919cf5c91..43fca1ebb8 100644
 --- a/browser/base/content/browser.js
 +++ b/browser/base/content/browser.js
 @@ -95,8 +95,6 @@ ChromeUtils.defineESModuleGetters(this, {
@@ -92,7 +93,7 @@ diff --git a/browser/base/content/browser.js b/browser/base/content/browser.js
    TaskbarTabsChrome:
      "resource:///modules/taskbartabs/TaskbarTabsChrome.sys.mjs",
    TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
-@@ -4823,150 +4821,395 @@ var ConfirmationHint = {
+@@ -4823,150 +4821,488 @@ var ConfirmationHint = {
    },
  };
  
@@ -162,11 +163,20 @@ diff --git a/browser/base/content/browser.js b/browser/base/content/browser.js
    BUTTON_ID: "firefox-view-button",
 +  HOME_URL: "about:cthulhu#home",
 +  HOME_ATTR: "cthulhu-home-tab",
++  // The tab's own icon: the same house as the button, in the theme's variant.
++  // It only shows where the tab itself is visible -- the vertical strip's
++  // pinned area (see theme/content/browser.css).
++  HOME_ICON: "chrome://cthulhu/content/assets/home.png",
++  HOME_ICON_LIGHT: "chrome://cthulhu/content/assets/light_home.png",
 +
    get button() {
      return document.getElementById(this.BUTTON_ID);
    },
-+
+-  init() {
+-    CustomizableUI.addListener(this);
+ 
+-    ChromeUtils.defineESModuleGetters(this, {
+-      SyncedTabs: "resource://services-sync/SyncedTabs.sys.mjs",
 +  // Per-window state. Re-checked live against gBrowser.tabs on every use rather
 +  // than trusted blindly, so closing or unpinning the Home tab (or the tab we
 +  // would return to) outside the button self-heals instead of leaving a
@@ -177,16 +187,12 @@ diff --git a/browser/base/content/browser.js b/browser/base/content/browser.js
 +  _lastCancelled: null,
 +
 +  // ---- lifecycle (init() is called from browser-init.js _delayedStartup) ----
-   init() {
--    CustomizableUI.addListener(this);
++  init() {
 +    if (this._started) {
 +      return;
 +    }
 +    this._started = true;
- 
--    ChromeUtils.defineESModuleGetters(this, {
--      SyncedTabs: "resource://services-sync/SyncedTabs.sys.mjs",
--    });
++
 +    this._ensureButtonPlaced();
 +
 +    // Pinned tabs persist across restarts on their own, so SessionStore may
@@ -202,6 +208,25 @@ diff --git a/browser/base/content/browser.js b/browser/base/content/browser.js
 +    gBrowser.addTabsProgressListener(this._homeGuard);
 +    this._installDropTarget();
 +    this._updateButtonState();
++
++    // Vertical tabs. The Home BUTTON is a tab-strip widget, and with vertical
++    // tabs the horizontal strip is collapsed to nothing, so the button is not
++    // visible at all there (CustomizableUI leaves it in #TabsToolbar; it was
++    // 4x0 px). In that layout the Home TAB is the affordance instead:
++    // browser.css hides it only in the horizontal strip, so in the vertical
++    // strip it sits in the pinned area like any other pinned tab. A tab has to
++    // exist to be seen, so make sure one does -- once session restore has had
++    // its say, and again whenever the orientation flips.
++    this._onOrientation = () => this._ensureHomeTabForVerticalTabs();
++    Services.obs.addObserver(this._onOrientation, "tabstrip-orientation-change");
++    SessionStore.promiseAllWindowsRestored.then(() => {
++      if (this._started) {
++        this._ensureHomeTabForVerticalTabs();
++      }
+     });
++    this._onThemeChange = () => this._applyIcon();
++    document.addEventListener("cthulhu-theme-change", this._onThemeChange);
++    this._applyIcon();
    },
    uninit() {
 -    CustomizableUI.removeListener(this);
@@ -221,6 +246,10 @@ diff --git a/browser/base/content/browser.js b/browser/base/content/browser.js
 +    gBrowser.tabContainer.removeEventListener("TabOpen", this._onTabArrived);
 +    gBrowser.tabContainer.removeEventListener("TabSelect", this._onTabSelect);
 +    gBrowser.removeTabsProgressListener(this._homeGuard);
++    try {
++      Services.obs.removeObserver(this._onOrientation, "tabstrip-orientation-change");
++    } catch (e) {}
++    document.removeEventListener("cthulhu-theme-change", this._onThemeChange);
 +    if (this._areaListener) {
 +      CustomizableUI.removeListener(this._areaListener);
 +      this._areaListener = null;
@@ -318,20 +347,6 @@ diff --git a/browser/base/content/browser.js b/browser/base/content/browser.js
        return;
      }
 -    this.openTab(section);
--  },
--  handleEvent(e) {
--    switch (e.type) {
--      case "TabSelect": {
--        const selected = e.target == this.tab;
--        this.button?.toggleAttribute("open", selected);
--        this.button?.setAttribute("aria-pressed", selected);
--        this._recordViewIfTabSelected();
--        this._onTabForegrounded();
--        // If Fx View is opened, add temporary style to make first available tab focusable
--        // When Fx View is closed, remove temporary -moz-user-focus style from first available tab
--        gBrowser.visibleTabs[0].style.MozUserFocus =
--          e.target == this.tab ? "normal" : "";
--        break;
 +    // Too early: try again once the tab strip's area is registered, which
 +    // happens after its state is restored.
 +    this._areaListener = {
@@ -371,8 +386,39 @@ diff --git a/browser/base/content/browser.js b/browser/base/content/browser.js
 +  },
 +  _findHomeUrlTab() {
 +    for (const tab of gBrowser.tabs) {
-+      if (tab.linkedBrowser?.currentURI?.spec === this.HOME_URL) {
++      if (this._looksLikeHome(tab)) {
 +        return tab;
++      }
++    }
++    return null;
+   },
+-  handleEvent(e) {
+-    switch (e.type) {
+-      case "TabSelect": {
+-        const selected = e.target == this.tab;
+-        this.button?.toggleAttribute("open", selected);
+-        this.button?.setAttribute("aria-pressed", selected);
+-        this._recordViewIfTabSelected();
+-        this._onTabForegrounded();
+-        // If Fx View is opened, add temporary style to make first available tab focusable
+-        // When Fx View is closed, remove temporary -moz-user-focus style from first available tab
+-        gBrowser.visibleTabs[0].style.MozUserFocus =
+-          e.target == this.tab ? "normal" : "";
+-        break;
++  _looksLikeHome(tab) {
++    const b = tab.linkedBrowser;
++    if (b?.currentURI?.spec === this.HOME_URL) {
++      return true;
++    }
++    // A tab SessionStore is still bringing back. Pinned tabs restore eagerly,
++    // but until the document commits currentURI is still about:blank, and
++    // deciding "no Home tab" on that would create a second one beside it.
++    // Ask for the tab's saved state instead.
++    try {
++      if (tab.hasAttribute("pending") || b?.currentURI?.spec === "about:blank") {
++        const st = JSON.parse(SessionStore.getTabState(tab));
++        const entry = st?.entries?.[(st.index || 1) - 1] || st?.entries?.[0];
++        return entry?.url === this.HOME_URL;
        }
 -      case "TabClose":
 -        this.tab = null;
@@ -382,16 +428,33 @@ diff --git a/browser/base/content/browser.js b/browser/base/content/browser.js
 -      case "activate":
 -        this._onTabForegrounded();
 -        break;
-     }
-+    return null;
-   },
--  _closeDeviceConnectedTab() {
--    if (!TabsSetupFlowManager.didFxaTabOpen) {
--      return;
++    } catch (e) {}
++    return false;
++  },
 +  /** Claim a pre-existing Home tab as THE Home tab. Idempotent and cheap. */
 +  _adoptExistingHomeTab() {
 +    if (this._isLive(this._homeTab)) {
 +      return true;
+     }
++    const tab = this._findHomeUrlTab();
++    if (!tab) {
++      return false;
++    }
++    this._homeTab = tab;
++    tab.setAttribute(this.HOME_ATTR, "1");
++    if (!tab.pinned) {
++      gBrowser.pinTab(tab);
++    }
++    this._applyIcon();
++    this._updateButtonState();
++    return true;
+   },
+-  _closeDeviceConnectedTab() {
+-    if (!TabsSetupFlowManager.didFxaTabOpen) {
++  /** With vertical tabs on, the Home tab must exist (see init). Idempotent. */
++  _ensureHomeTabForVerticalTabs() {
++    if (!this._started || !CustomizableUI.verticalTabsEnabled) {
+       return;
      }
 -    // close the tab left behind after a user pairs a device and
 -    // is redirected back to the Firefox View tab
@@ -405,34 +468,49 @@ diff --git a/browser/base/content/browser.js b/browser/base/content/browser.js
 -    );
 -
 -    if (!fxDeviceConnectedTab) {
--      return;
-+    const tab = this._findHomeUrlTab();
-+    if (!tab) {
-+      return false;
++    if (this._adoptExistingHomeTab()) {
+       return;
      }
 -
 -    if (gBrowser.tabs.length <= 2) {
 -      // if its the only tab besides the Firefox View tab,
 -      // open a new tab first so the browser doesn't close
 -      gBrowser.addTrustedTab("about:newtab");
-+    this._homeTab = tab;
-+    tab.setAttribute(this.HOME_ATTR, "1");
-+    if (!tab.pinned) {
-+      gBrowser.pinTab(tab);
++    try {
++      this._homeTab = gBrowser.addTab(this.HOME_URL, {
++        triggeringPrincipal:
++          Services.scriptSecurityManager.getSystemPrincipal(),
++        pinned: true,
++        inBackground: true,
++        skipAnimation: true,
++      });
++      this._homeTab.setAttribute(this.HOME_ATTR, "1");
++      this._applyIcon();
++    } catch (err) {
++      console.error("Cthulhu Home: could not create the Home tab:", err);
      }
 -    gBrowser.removeTab(fxDeviceConnectedTab);
 -    TabsSetupFlowManager.didFxaTabOpen = false;
 +    this._updateButtonState();
-+    return true;
    },
 -  _onTabForegrounded() {
 -    if (this.tab?.selected) {
 -      this.SyncedTabs.syncTabs();
++  /** The tab's icon follows the theme: the light house on a light palette. */
++  _applyIcon() {
++    if (!this._isLive(this._homeTab)) {
++      return;
+     }
++    const light = document.documentElement.hasAttribute("cthulhu-theme-light");
++    try {
++      gBrowser.setIcon(this._homeTab, light ? this.HOME_ICON_LIGHT : this.HOME_ICON);
++    } catch (e) {}
++  },
 +  _updateButtonState() {
 +    const btn = this.button;
 +    if (!btn) {
 +      return;
-     }
++    }
 +    const active =
 +      this._isLive(this._homeTab) && gBrowser.selectedTab === this._homeTab;
 +    // [open] reuses upstream's own "this button's tab is selected" styling in
@@ -490,6 +568,7 @@ diff --git a/browser/base/content/browser.js b/browser/base/content/browser.js
 +          inBackground: false,
 +        });
 +        this._homeTab.setAttribute(this.HOME_ATTR, "1");
++        this._applyIcon();
 +      }
 +    } catch (err) {
 +      console.error("Cthulhu Home: navigation failed:", err);
@@ -505,6 +584,18 @@ diff --git a/browser/base/content/browser.js b/browser/base/content/browser.js
 +  // cancelled at STATE_START, before the old document is torn down, and the
 +  // same URL is opened in a new tab with the original triggering principal.
 +  _homeGuard: {
++    // tabbrowser clears a tab's icon on a location change unless one was set
++    // by then; a reload of Home would lose the house. Put it back afterwards.
++    onLocationChange(browser, webProgress) {
++      const self = FirefoxViewHandler;
++      if (
++        webProgress.isTopLevel &&
++        self._isLive(self._homeTab) &&
++        browser === self._homeTab.linkedBrowser
++      ) {
++        setTimeout(() => self._applyIcon(), 0);
++      }
++    },
 +    onStateChange(browser, webProgress, request, flags) {
 +      const self = FirefoxViewHandler;
 +      const WPL = Ci.nsIWebProgressListener;
@@ -517,16 +608,16 @@ diff --git a/browser/base/content/browser.js b/browser/base/content/browser.js
 +        request === self._lastCancelled
 +      ) {
 +        return;
-+      }
+       }
+-      buttonClicksData.lastCountTime = Math.round(Date.now());
+-      buttonClicksData.count = count;
+-      Services.prefs.setStringPref(PREF_NAME, JSON.stringify(buttonClicksData));
 +      let spec;
 +      try {
 +        spec = request.QueryInterface(Ci.nsIChannel).URI.spec;
 +      } catch (e) {
 +        return;
-       }
--      buttonClicksData.lastCountTime = Math.round(Date.now());
--      buttonClicksData.count = count;
--      Services.prefs.setStringPref(PREF_NAME, JSON.stringify(buttonClicksData));
++      }
 +      if (spec.startsWith("about:cthulhu") || spec == "about:blank") {
 +        return;
 +      }

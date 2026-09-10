@@ -118,16 +118,32 @@ pref("cthulhu.favicons.remote", true);
 // (newtab/admin.js).
 //
 // This is a DISCOVERABILITY gate, not a security boundary: the source is
-// public, so anyone can flip this for their own copy. That is fine while
-// everything in the panel is local to the machine it runs on. A control that
-// changed something for OTHER people could not be gated this way -- it would
-// need a secret the user supplies, since anything shipped in the binary is
-// extractable.
+// public, so anyone can flip this for their own copy. What actually protects
+// the controls that reach OTHER people (Rishi's mood, below) is the admin
+// token: a secret the owner sets on the relay and types into the panel, never
+// one shipped in the binary, where it would be extractable.
 pref("cthulhu.admin.enabled", false);
+// The admin token, as typed into the panel. Empty means "this panel only
+// changes things locally". Never has a shipped value.
+pref("cthulhu.admin.token", "");
 
-// Rishi's mood: free text shown above his sprite in the Pet widget, set from
-// the admin panel. Empty means no bubble. Local to this machine.
+// Rishi's mood and look. These are the LOCAL CACHE of a value held on the
+// relay (relay/worker.js, GET /rishi): the Pet widget polls it and writes it
+// here, and tiles follow the pref live. The admin panel writes both here (so
+// this machine updates at once) and to the relay (so the other browser does).
+// mood: free text shown above the sprite; empty = no bubble.
+// variant: "" for Rishi, "tea" for the Tea sprite (assets/tea.png).
 pref("cthulhu.pet.rishi.mood", "");
+pref("cthulhu.pet.rishi.variant", "");
+// The relay's updatedAt stamp last applied here. A poll that returns the same
+// stamp changes nothing, so a locally set value is not "corrected" back.
+pref("cthulhu.pet.rishi.syncedAt", "");
+
+// -- Compact mode (vertical tabs) --
+// With vertical tabs on, hides the tab strip until the pointer touches the
+// window edge, Zen-style. Toggle with Ctrl/Cmd+Alt+C or the sidebar/toolbar
+// context menu (modules/compact-mode). Inert with horizontal tabs.
+pref("cthulhu.compact.mode", false);
 
 // -- Theme --
 // The browser-wide palette (content/themes.js): a preset id, or "ambient" to
@@ -197,7 +213,7 @@ pref("app.update.checkInstallTime.days", 0);
 // the Discord webhook itself lives only in the Worker's environment, because a
 // webhook baked into the browser would be extractable from the binary.
 //
-// Empty by default. Set it to your deployed Worker URL (see relay/README.md);
-// until then the feature-request button and widget say so instead of failing
-// silently.
+// Set it to your deployed Worker URL (see relay/README.md); empty, and the
+// Rishi pet's feature-request form says so instead of failing silently. The
+// same Worker also holds Rishi's shared mood (GET/PUT /rishi).
 pref("cthulhu.relay.url", "https://cthulhu-relay.cthulhubrowser.workers.dev");

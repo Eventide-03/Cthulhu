@@ -1,0 +1,225 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* ===========================================================================
+ * "Now Playing" toolbar squircle (~135x25px, left of the extensions button).
+ * A2 theme variables only.
+ * ======================================================================== */
+.cthulhu-nowplaying-item {
+  display: flex;
+  align-items: center;
+  padding-inline: 2px;
+}
+.cthulhu-np-squircle {
+  width: 135px;
+  height: 25px;
+  box-sizing: border-box;
+  padding: 3px 8px 4px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px; /* squircle-ish on a 25px-tall bar */
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 0.15s ease;
+}
+.cthulhu-np-squircle:hover {
+  border-color: var(--accent);
+}
+.cthulhu-np-squircle.playing {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+.cthulhu-np-info {
+  min-width: 0; /* let text-overflow ellipsis apply inside a flex column */
+}
+.cthulhu-np-title,
+.cthulhu-np-artist {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-pixel);
+  line-height: 1.1;
+}
+.cthulhu-np-title {
+  font-size: 9px;
+  color: var(--fg);
+}
+.cthulhu-np-artist {
+  font-size: 8px;
+  color: var(--fg-muted);
+}
+.cthulhu-np-track {
+  height: 2px;
+  border-radius: 1px;
+  background: var(--border);
+  overflow: hidden;
+  flex: none;
+}
+.cthulhu-np-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--fg-muted);
+  transition: width 0.2s linear;
+}
+.cthulhu-np-squircle.playing .cthulhu-np-fill {
+  background: var(--accent);
+}
+
+/* ===========================================================================
+ * Dropdown player: a real XUL <panel type="arrow"> opened by clicking the
+ * squircle (now-playing.js createPlayerDropdown()).
+ *
+ *   [ Title                          × ]
+ *   [ Artist                           ]
+ *   [ 0:15 ━━━━━━━━━━━━━━━━━━━━ 3:53   ]
+ *   [      |<    ||    >|    🔊        ]
+ * ======================================================================== */
+.cthulhu-player-card {
+  width: 300px;
+  box-sizing: border-box;
+  padding: 12px 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--bg-elevated);
+  font-family: var(--font-pixel);
+  color: var(--fg);
+}
+.cthulhu-player-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.cthulhu-player-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+}
+.cthulhu-player-info:disabled {
+  cursor: default;
+}
+.cthulhu-player-info:not(:disabled):hover .cthulhu-player-title {
+  color: var(--accent);
+}
+.cthulhu-player-title {
+  font-size: 13px;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cthulhu-player-artist {
+  font-size: 11px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-height: 1.2em;
+}
+.cthulhu-player-close {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+.cthulhu-player-close:hover {
+  background: var(--surface-hover);
+}
+
+.cthulhu-player-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cthulhu-player-time {
+  flex: none;
+  min-width: 2.6em;
+  font-size: 10px;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+.cthulhu-player-time:last-child {
+  text-align: right;
+}
+.cthulhu-player-progress {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+  cursor: pointer;
+  touch-action: none;
+}
+.cthulhu-player-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  transition: width 0.2s linear;
+}
+
+.cthulhu-player-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+}
+/* ART SLOTS: every icon is a 16x16 PNG in assets/, drawn 1:1 and rendered at
+ * 16 CSS px, pixelated. The play/pause button is a 30px round chip so the
+ * primary action reads as such; the icon inside is still 16x16. */
+.cthulhu-player-icon {
+  width: 16px;
+  height: 16px;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+.cthulhu-player-ctrl {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+}
+.cthulhu-player-ctrl:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+.cthulhu-player-ctrl.play {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.cthulhu-player-ctrl.play:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.cthulhu-player-ctrl:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+.cthulhu-player-ctrl.muted {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}

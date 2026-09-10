@@ -98,6 +98,7 @@ to refresh the other). JS files are symlinks into `engine/` and are always live.
 | --- | --- | --- |
 | `MAR_SIGNING_DB_B64` | GitHub Actions secret | Signs update MARs. **Required for every release.** Original NSS DB: `~/.cthulhu-mar-signing/` (outside the repo; back it up — lose it and installed copies can never update again) |
 | `DISCORD_WEBHOOK_URL` | **Cloudflare Worker** secret (`wrangler secret put`) | Feature-request relay → Discord. Never in the repo or the browser |
+| `ADMIN_TOKEN` | **Cloudflare Worker** secret (`wrangler secret put`) | Lets the home page's admin panel write Rishi's shared mood/variant (`PUT /rishi`). The owner types the same string into the panel's Relay section; it is kept in the pref `cthulhu.admin.token` in that profile only |
 | `MACOS_CERT_P12` / `MACOS_CERT_PASSWORD` / `MACOS_SIGN_IDENTITY` | GitHub Actions secrets (future) | Developer ID app signing |
 | `APPLE_ID` / `APPLE_TEAM_ID` / `APPLE_APP_PASSWORD` | GitHub Actions secrets (future) | Notarization |
 | `UPDATE_MANIFEST_URL` / `RELAY_URL` / `RELAY_EXPECT_STATUS` | GitHub Actions **variables** (not secret) | endpoint-health watchdog targets |

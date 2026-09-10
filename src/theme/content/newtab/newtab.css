@@ -27,6 +27,15 @@ body {
   font-family: var(--font-pixel);
   overflow: hidden; /* the grid is capped to the viewport (maxRow) — never scroll */
 }
+/* Native controls (checkboxes, colour pickers, scrollbars) follow the palette,
+ * not the OS. index.html declares dark in its <meta>; the theme engine also
+ * writes this inline on :root, this is the stylesheet-side statement of it. */
+:root {
+  color-scheme: dark;
+}
+:root[cthulhu-theme-light] {
+  color-scheme: light;
+}
 
 /* --- the grid field ------------------------------------------------------- */
 /* height is !important because GridStack sets an inline height to fit content;

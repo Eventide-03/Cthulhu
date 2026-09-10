@@ -1,0 +1,7 @@
+{
+  "id": "now-playing",
+  "enabled": true,
+  "mount": "browser-window",
+  "css": "now-playing.css",
+  "js": "now-playing.js"
+}

@@ -32,6 +32,45 @@ window.CthulhuWidgets = (function () {
   }
   const MOON_NAMES = ["New Moon", "Waxing Crescent", "First Quarter", "Waxing Gibbous",
     "Full Moon", "Waning Gibbous", "Last Quarter", "Waning Crescent"];
+  const MOON_URL = "chrome://cthulhu/content/newtab/assets/moon.png";
+  const MOON_FRAMES = 8;
+  /* Per-frame opaque bounds of the moon strip, measured once from the alpha
+   * channel. A crescent's art fills only one side of its frame (the dark of
+   * the moon is transparent), so the frame's centre and the art's centre are
+   * up to ~8px apart at 1x. moonEl() uses this to put the ART in the middle.
+   * Resolves to null if the strip cannot be read; callers then leave the
+   * frame where it is. */
+  let moonBoundsP = null;
+  function moonBounds() {
+    if (moonBoundsP) return moonBoundsP;
+    moonBoundsP = new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const fw = Math.floor(img.width / MOON_FRAMES), fh = img.height;
+          const cv = document.createElement("canvas"); cv.width = img.width; cv.height = img.height;
+          const c2 = cv.getContext("2d", { willReadFrequently: true }); c2.drawImage(img, 0, 0);
+          const d = c2.getImageData(0, 0, img.width, img.height).data;
+          const out = { frameW: fw, frameH: fh };
+          for (let f = 0; f < MOON_FRAMES; f++) {
+            let x0 = fw, y0 = fh, x1 = -1, y1 = -1;
+            for (let y = 0; y < fh; y++) {
+              for (let x = 0; x < fw; x++) {
+                if (d[(y * img.width + f * fw + x) * 4 + 3] > 8) {
+                  if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+                }
+              }
+            }
+            if (x1 >= 0) out[f] = { x0, y0, x1, y1, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 };
+          }
+          resolve(out);
+        } catch (e) { resolve(null); }
+      };
+      img.onerror = () => resolve(null);
+      img.src = MOON_URL;
+    });
+    return moonBoundsP;
+  }
   return {
     register(def) {
       if (!def || !def.id) return console.error("[Cthulhu] widget missing id", def);
@@ -56,20 +95,42 @@ window.CthulhuWidgets = (function () {
       const frame = Math.round(frac * FRAMES) % FRAMES;
       return { frac, frame, name: MOON_NAMES[frame], age };
     },
-    /** A pixel moon element for `date`, sized to `size` px (uses the 8-frame strip). */
+    /** A pixel moon element for `date`, sized to `size` px (uses the 8-frame strip).
+     *
+     *  The VISIBLE pixels are centred, not the frame. A crescent's art only
+     *  fills one side of its 32x32 frame, so centring the frame put the lit
+     *  sliver well off to one side of the tile. Two elements: the outer box
+     *  clips; the inner one carries exactly its own frame and is what gets
+     *  nudged. (Shifting the background alone would drag the NEIGHBOURING
+     *  frame into view -- the full moon's edge next to a crescent.) */
     moonEl(date, size) {
       size = size || 32;
       const p = this.moonPhase(date);
       const el = document.createElement("div");
       el.className = "cthulhu-moon";
-      el.style.width = el.style.height = size + "px";
-      el.style.backgroundImage = 'url("chrome://cthulhu/content/newtab/assets/moon.png")';
-      el.style.backgroundSize = 8 * size + "px " + size + "px";
-      el.style.backgroundPositionX = -(p.frame * size) + "px";
-      el.style.imageRendering = "pixelated";
+      el.style.cssText = "position:relative; overflow:hidden; width:" + size + "px; height:" + size + "px;";
+      const frame = document.createElement("div");
+      frame.className = "cthulhu-moon-frame";
+      frame.style.cssText = "position:absolute; left:0; top:0; width:" + size + "px; height:" + size + "px; image-rendering:pixelated;";
+      frame.style.backgroundImage = 'url("' + MOON_URL + '")';
+      frame.style.backgroundSize = MOON_FRAMES * size + "px " + size + "px";
+      frame.style.backgroundPositionX = -(p.frame * size) + "px";
+      frame.dataset.frame = String(p.frame);
+      el.appendChild(frame);
       el.title = p.name;
+      moonBounds().then((b) => {
+        const fb = b && b[p.frame];
+        if (!fb) return;
+        const s = size / b.frameW;
+        // Whole device pixels, so the nudge never blurs the art.
+        const dpr = window.devicePixelRatio || 1;
+        const snap = (v) => Math.round(v * dpr) / dpr;
+        frame.style.left = snap(((b.frameW - 1) / 2 - fb.cx) * s) + "px";
+        frame.style.top = snap(((b.frameH - 1) / 2 - fb.cy) * s) + "px";
+      });
       return el;
     },
+    moonBounds,
   };
 })();
 

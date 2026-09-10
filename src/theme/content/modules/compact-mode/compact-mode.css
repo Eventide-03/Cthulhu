@@ -1,0 +1,72 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* Compact mode (compact-mode.js): with vertical tabs, the strip leaves the
+ * layout and slides in over the page on hover at the window edge.
+ *
+ * #sidebar-container is upstream's box around <sidebar-main> (the vertical
+ * tabs live inside it). Taking it out of flow with position:absolute is what
+ * hands the page the whole width; `translate` is what hides and shows it.
+ * !important on translate because upstream sets `translate: 0` on this very
+ * element for its own animations (themes/shared/sidebar.css) and animates it
+ * with the Web Animations API, which loses only to an important declaration.
+ *
+ * Both edges are handled: upstream flips the strip to the right with
+ * [sidebar-positionend] on the container. */
+:root[cthulhu-compact] {
+  #browser {
+    position: relative;
+  }
+
+  #sidebar-container {
+    position: absolute !important;
+    inset-block: 0;
+    inset-inline-start: 0;
+    z-index: var(--browser-area-z-index-sidebar-expand-on-hover, 4);
+    max-width: 75vw;
+    translate: -100% 0 !important;
+    transition: translate 160ms ease-out;
+    background-color: var(--bg-elevated);
+    border-inline-end: 1px solid var(--border);
+    box-shadow: 4px 0 16px rgba(0, 0, 0, 0.35);
+
+    &[sidebar-positionend] {
+      inset-inline-start: auto;
+      inset-inline-end: 0;
+      translate: 100% 0 !important;
+      border-inline-end: none;
+      border-inline-start: 1px solid var(--border);
+      box-shadow: -4px 0 16px rgba(0, 0, 0, 0.35);
+    }
+
+    &[cthulhu-compact-open] {
+      translate: 0 0 !important;
+    }
+  }
+
+  /* The resize splitter between strip and page has nothing to sit between. */
+  #sidebar-launcher-splitter {
+    display: none !important;
+  }
+
+  /* The edge the pointer aims for. Sits on top of the page's edge; 6px is
+   * enough to hit by throwing the pointer at the side of the window and thin
+   * enough not to steal clicks from a page's scrollbar or first pixel column. */
+  #cthulhu-compact-hotzone {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    width: 6px;
+    z-index: var(--browser-area-z-index-sidebar-expand-on-hover, 4);
+  }
+  #sidebar-container[sidebar-positionend] ~ #cthulhu-compact-hotzone {
+    inset-inline-start: auto;
+    inset-inline-end: 0;
+  }
+}
+
+/* Not in compact mode: the hot zone must not exist as a hit target at all. */
+:root:not([cthulhu-compact]) #cthulhu-compact-hotzone {
+  display: none;
+}
