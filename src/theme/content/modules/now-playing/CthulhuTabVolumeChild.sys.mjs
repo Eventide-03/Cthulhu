@@ -5,26 +5,27 @@
 /* Child side of the tab-volume actor (runs in each content frame).
  *
  * Gecko exposes no per-tab volume to chrome, so the player's slider works on
- * the page's own <audio> and <video> elements: whatever volume the tab wants
- * is set on every media element that exists, and on each one that starts
- * playing later (the `play` event, captured, catches elements the page creates
- * after the fact). A fresh document (navigation, reload) asks the parent for
- * its tab's level on pageshow. A page that drives its own volume control can
+ * the page. On YouTube it drives the page's own player -- #movie_player
+ * carries the player API (setVolume 0..100 / getVolume / isMuted / unMute) --
+ * so the page's slider moves and the page keeps the level for the next track;
+ * setting the element's volume alone did neither, the page put its own level
+ * straight back. On YouTube Music the bar's slider (a tp-yt-paper-slider) is
+ * the user's level and the app maps it onto the player with a curve of its
+ * own (measured: slider 30 -> player 8, 55 -> 24), so there the slider is
+ * what is moved and read, and the player and element are left to the app --
+ * writing either would fight that curve. Everywhere else the tab's level is
+ * set on the page's <audio> and <video> elements:
+ * every one that exists, and each one that starts playing later (the `play`
+ * event, captured, catches elements the page creates after the fact). A fresh
+ * document (navigation, reload) asks the parent for its tab's level on
+ * pageshow. A page that drives its own volume control and is not YouTube can
  * set the element's volume again afterwards; the slider's next move sets it
  * back. A Web Audio player has no media element and is unaffected.
  *
- * Nothing is done for a tab left at 1 (the default): the page's own volumes
- * are never touched unless the slider has been moved for that tab.
- *
- * The same actor answers the player's other question about the page's media:
- * where the playing element is (CthulhuTabVolume:Position). The chrome-side
- * MediaController only reports a position when the page next calls
- * setPositionState, so a track that was already playing when the player
- * looked at its tab had no position at all until a seek or the next track
- * (the card said "live" until then). The element's own currentTime /
- * duration / playbackRate are what the page derives that state from anyway.
- * And a seek for a page that never sets a position state (so has no seekto
- * handler either) goes to the element too (CthulhuTabVolume:Seek). */
+ * The page's level is also reported back (CthulhuTabVolume:Level) so the
+ * player's speaker and slider follow the page: YouTube Music's slider, else
+ * the player API's getVolume, else the main element's volume.
+ */
 export class CthulhuTabVolumeChild extends JSWindowActorChild {
   #volume = null; // null = no override for this tab
 
@@ -37,6 +38,9 @@ export class CthulhuTabVolumeChild extends JSWindowActorChild {
     }
     if (msg.name === "CthulhuTabVolume:Position") {
       return this.#position();
+    }
+    if (msg.name === "CthulhuTabVolume:Level") {
+      return this.#level();
     }
     if (msg.name === "CthulhuTabVolume:Seek") {
       const t = Number(msg.data && msg.data.time);
@@ -56,7 +60,9 @@ export class CthulhuTabVolumeChild extends JSWindowActorChild {
   async handleEvent(event) {
     if (event.type === "play") {
       if (this.#volume === null) await this.#ask();
-      this.#apply(event.target);
+      // A site player applies its own level to the element on play; ours
+      // goes through that player so the two agree.
+      if (this.#volume !== null && !this.#applySite()) this.#apply(event.target);
       return;
     }
     if (event.type === "pageshow") {
@@ -90,6 +96,71 @@ export class CthulhuTabVolumeChild extends JSWindowActorChild {
     } catch (e) { return null; }
   }
 
+  /* YouTube and YouTube Music: the page's player, reached through the page's
+   * own global (the actor's window is an Xray; the API lives on the page's
+   * element). Null anywhere else, or before the player exists. */
+  #sitePlayer() {
+    let w;
+    try { w = this.contentWindow && this.contentWindow.wrappedJSObject; } catch (e) { return null; }
+    if (!w) return null;
+    let host = "";
+    try { host = String(w.location.hostname || ""); } catch (e) { return null; }
+    if (!/(^|\.)youtube\.com$/.test(host)) return null;
+    try {
+      const p = w.document.getElementById("movie_player");
+      if (p && typeof p.setVolume === "function" && typeof p.getVolume === "function") return p;
+    } catch (e) {}
+    return null;
+  }
+  /* YouTube Music's own slider, or null. */
+  #musicSlider() {
+    let w;
+    try { w = this.contentWindow && this.contentWindow.wrappedJSObject; } catch (e) { return null; }
+    try {
+      if (!/(^|\.)music\.youtube\.com$/.test(String(w.location.hostname || ""))) return null;
+      const s = w.document.querySelector("ytmusic-player-bar #volume-slider");
+      return s && typeof s.value === "number" ? s : null;
+    } catch (e) { return null; }
+  }
+  /* True when a site owns the level and took it; the elements are then its
+   * business, not ours. */
+  #applySite() {
+    const n = Math.round(this.#volume * 100);
+    const s = this.#musicSlider();
+    if (s) {
+      try {
+        if (s.value !== n) {
+          s.value = n;
+          s.dispatchEvent(new this.contentWindow.wrappedJSObject.Event("change", { bubbles: true }));
+        }
+        return true;
+      } catch (e) { /* fall through to the player */ }
+    }
+    const p = this.#sitePlayer();
+    if (!p) return false;
+    try {
+      p.setVolume(n);
+      if (n > 0 && typeof p.isMuted === "function" && p.isMuted()) p.unMute();
+    } catch (e) { return false; }
+    return true;
+  }
+  #level() {
+    const s = this.#musicSlider();
+    if (s) {
+      try { return { volume: Math.max(0, Math.min(1, s.value / 100)), playing: true }; } catch (e) {}
+    }
+    const p = this.#sitePlayer();
+    if (p) {
+      try {
+        const v = p.getVolume();
+        if (typeof v === "number") return { volume: Math.max(0, Math.min(1, v / 100)), playing: true };
+      } catch (e) {}
+    }
+    const el = this.#mainMedia();
+    if (!el) return null;
+    try { return { volume: el.volume, playing: !el.paused && !el.ended }; } catch (e) { return null; }
+  }
+
   async #ask() {
     try {
       const v = await this.sendQuery("CthulhuTabVolume:Get");
@@ -106,6 +177,7 @@ export class CthulhuTabVolumeChild extends JSWindowActorChild {
 
   #applyAll() {
     if (this.#volume === null) return;
+    if (this.#applySite()) return;
     let doc;
     try { doc = this.document; } catch (e) { return; }
     if (!doc) return;

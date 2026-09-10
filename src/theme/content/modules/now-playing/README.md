@@ -64,18 +64,33 @@ and throws in strict mode; that is why it did nothing.)
 
 **Volume** has no chrome API in Gecko: nothing on `MediaController`,
 `BrowsingContext` or `nsIDOMWindowUtils` sets a tab's level. So the slider
-works on the page's `<audio>` / `<video>` elements through a small content
-actor (`CthulhuTabVolumeParent/Child.sys.mjs`, registered from
-`NowPlayingWidget.sys.mjs`): the level is kept in a map the parent module
-exports, keyed by the tab's `browserId` (the one thing an actor can read off
-its browsing context — from inside an actor module the `<browser>`'s
-`ownerGlobal` is not reachable, measured), pushed to every live frame, and
-applied to every media element that exists and to each one that starts
-playing later; a fresh document (reload, navigation) asks for its tab's level
-on `pageshow`, so it survives both. Two limits worth knowing: a page with its
-own volume control can set the element's volume again afterwards (the
-slider's next move sets it back), and a Web Audio player has no media element
-and is unaffected. Sliding up from zero un-mutes.
+works on the page through a small content actor
+(`CthulhuTabVolumeParent/Child.sys.mjs`, registered from
+`NowPlayingWidget.sys.mjs`). **On YouTube Music it moves the page's own
+slider** (the bar's `#volume-slider`; the app maps it onto the player with a
+curve of its own, so the slider is the level the user sees, and the player and
+element are left to the app). **On YouTube it drives the page's player**
+(`#movie_player.setVolume()`), which moves the page's slider and makes the
+page keep the level for the next track — setting the media element's volume
+alone did neither. Anywhere else the level is set on the page's `<audio>` /
+`<video>` elements: every one that exists and each one that starts playing
+later; a fresh document (reload, navigation) asks for its tab's level on
+`pageshow`. The level is kept in a map the parent module exports, keyed by the
+tab's `browserId` (the one thing an actor can read off its browsing context —
+from inside an actor module the `<browser>`'s `ownerGlobal` is not reachable,
+measured). **The page's level is read back every two seconds**, so a change
+made on the page (its slider, or a new track at another level) shows on the
+speaker and the slider here. Two limits worth knowing: a page with its own
+volume control that is neither YouTube can set the element's volume again
+afterwards (the slider's next move sets it back), and a Web Audio player has
+no media element and is unaffected. Sliding up from zero un-mutes.
+
+The slider has leeway: it starts flush against the speaker with a padded,
+button-tall target, waits half a second before folding after the pointer
+leaves, and stays out for as long as the thumb is held — it used to vanish
+while the pointer crossed from the speaker onto it. In the docked bar the four
+controls sit a little left of centre so the slider unfolds to the speaker's
+right, inside the bar, rather than over the other buttons.
 
 On a **local dev bundle** the chrome tree is symlinks into `src/`, and the
 sandboxed content process cannot follow one out of the bundle — the child

@@ -785,6 +785,22 @@ try:
       return { hiddenWidth: before, stored: window.__mediaTab._cthulhuVolume, disabled: s.disabled, icons };
     """)
     check("the volume slider is collapsed until hovered and stores the level on the tab", vol["hiddenWidth"] == "0px" and vol["stored"] == 0.4 and not vol["disabled"], vol)
+    lee = chrome("""
+      const vol = document.querySelector('#cthulhu-player-panel .cthulhu-player-vol'); const s = vol.querySelector('.cthulhu-player-slider'); const btn = vol.querySelector('.cthulhu-player-ctrl.mute');
+      const cs = getComputedStyle(s);
+      const closed = { delay: cs.transitionDelay, height: cs.height, left: cs.left };
+      s.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      const live = vol.classList.contains('live');
+      return new Promise(res => setTimeout(() => { // the unfold is a 0.15 s transition
+        const r = s.getBoundingClientRect(), b = btn.getBoundingClientRect(); const open = getComputedStyle(s);
+        const out = { closed, live, openDelay: open.transitionDelay, openWidth: open.width, pad: open.paddingLeft, flush: Math.abs(r.left - b.right) < 1, tall: r.height >= b.height - 1 };
+        document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+        out.released = !vol.classList.contains('live');
+        res(out); }, 400));
+    """)
+    check("slider leeway: flush against the speaker, padded and button-tall, folds only after a 0.45 s grace, and stays out while the thumb is held",
+          lee["closed"]["delay"].startswith("0.45s") and lee["closed"]["left"] == "26px" and lee["live"] and lee["openDelay"].startswith("0s") and lee["openWidth"] == "60px"
+          and lee["pad"] == "6px" and lee["flush"] and lee["tall"] and lee["released"], lee)
     check("the speaker shows the level: 3 arcs loud, 2 middling, 1 quiet, mute at 0",
           vol["icons"] == {"90": "sound1.png", "40": "sound2.png", "20": "sound3.png", "0": "mute.png"}, vol["icons"])
     time.sleep(0.8)
@@ -802,10 +818,19 @@ try:
                 break
         except Exception:
             continue
-    m.switch_to_window(cur)
     if applied == 0.4:
         check("the page's <audio> volume follows the slider (actor)", True)
+        # and the other way: the page changes its own level, the speaker follows within a couple of seconds
+        m.execute_script("document.querySelector('audio').volume = 0.6;")
+        m.switch_to_window(cur)
+        back = None
+        for _ in range(10):
+            time.sleep(0.5)
+            back = chrome("return { level: window.__mediaTab._cthulhuVolume, icon: document.querySelector('#cthulhu-player-panel .cthulhu-player-ctrl.mute img').src.split('/').pop(), slider: document.querySelector('#cthulhu-player-panel .cthulhu-player-slider').value };")
+            if back["level"] == 0.6: break
+        check("a level set by the page reads back onto the speaker and the slider", back["level"] == 0.6 and back["icon"] == "sound2.png" and back["slider"] == "60", back)
     else:
+        m.switch_to_window(cur)
         print("INFO the page's <audio> volume is", applied, "-- the volume actor did not reach content on this dev bundle (symlinked child module; shipped builds carry it in omni.ja)")
     sz = chrome("""
       const q = (s) => document.querySelector('#cthulhu-player-panel ' + s);
@@ -925,6 +950,18 @@ try:
     check("Zen's rows: window buttons + back/forward/reload/all-tabs on one row (sidebar toggle hidden), address bar on the next, toolbox under 100px; hidden column takes the address bar (popover) off-screen with it",
           zen["sidebarBtn"] == "none" and zen["alltabsTop"] == zen["backTop"] and zen["lightsW"] > 60 and zen["toolboxH"] < 100 and zen["popover"] and zen["closedUrlRight"] <= 0, zen)
     check("the docked player is Zen's bar: controls only until hovered", zen["headHidden"] and zen["controlsShown"], zen)
+    chrome("window.CthulhuCompactMode.open();"); time.sleep(0.5)
+    ds = chrome("""
+      const card = document.querySelector('.cthulhu-player-card.docked'); const vol = card.querySelector('.cthulhu-player-vol'); const s = vol.querySelector('.cthulhu-player-slider');
+      vol.classList.add('live');
+      return new Promise(res => setTimeout(() => {
+        const r = s.getBoundingClientRect(), b = vol.querySelector('.cthulhu-player-ctrl.mute').getBoundingClientRect(), c = card.getBoundingClientRect(), n = card.querySelector('.cthulhu-player-ctrl.next').getBoundingClientRect();
+        vol.classList.remove('live');
+        res({ sliderLeft: r.left, speakerRight: b.right, sliderRight: r.right, cardRight: c.right, nextRight: n.right, width: r.width }); }, 400));
+    """)
+    check("in the docked bar the slider unfolds to the speaker's RIGHT, inside the bar, clear of the other buttons",
+          ds["sliderLeft"] >= ds["speakerRight"] - 1 and ds["sliderLeft"] > ds["nextRight"] and ds["sliderRight"] <= ds["cardRight"] and ds["width"] >= 60, ds)
+    chrome("window.CthulhuCompactMode.close();"); time.sleep(0.5)
     # the address bar's dropdown must open where the bar is, inside the column
     chrome("window.CthulhuCompactMode.open(); gURLBar.focus(); gURLBar.value = 'exa'; gURLBar.startQuery();"); time.sleep(1.2)
     ub = chrome("""const u = document.getElementById('urlbar'); const r = u.getBoundingClientRect(); const c = document.getElementById('urlbar-container').getBoundingClientRect();

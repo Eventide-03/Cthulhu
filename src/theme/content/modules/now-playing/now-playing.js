@@ -30,12 +30,16 @@
  *
  * VOLUME: there is no per-tab volume level anywhere in Gecko's chrome API (no
  * nsIDOMWindowUtils.audioVolume in this tree, nothing on MediaController or
- * BrowsingContext). The slider therefore sets `volume` on the page's <audio>
- * and <video> elements through a content actor (CthulhuTabVolume*, registered
- * from NowPlayingWidget.sys.mjs), including elements the page creates later
- * and every frame of the tab. Honest limits: a page with its own volume
- * control can set the element's volume again afterwards, and a Web Audio
- * player (no media element) is untouched.
+ * BrowsingContext). The slider therefore works through a content actor
+ * (CthulhuTabVolume*, registered from NowPlayingWidget.sys.mjs): on YouTube
+ * and YouTube Music it drives the page's own player (#movie_player.setVolume),
+ * so the page's slider moves and the page keeps the level for the next track;
+ * anywhere else it sets `volume` on the page's <audio> / <video> elements,
+ * including ones the page creates later, in every frame of the tab. The
+ * page's level is also read back every couple of seconds, so the speaker and
+ * the slider follow a change made on the page. Honest limits: a page with its
+ * own volume control that is not YouTube can set the element's volume again
+ * afterwards, and a Web Audio player (no media element) is untouched.
  *
  * POSITION AT ATTACH goes through the same actor. The controller's
  * positionstatechange fires only when the PAGE next calls setPositionState, so
@@ -68,6 +72,8 @@
   const speakerIcon = (level) =>
     level <= 0 ? "mute" : level > 2 / 3 ? "sound1" : level > 1 / 3 ? "sound2" : "sound3";
   const JITTER_S = 2; // a backwards move smaller than this is noise, not a seek
+  const LEVEL_MS = 2000; // the page's own volume is read back this often
+  let lastUserSet = 0; // when the slider last set a level; read-backs in flight then are stale
 
   const win = window;
 
@@ -183,6 +189,40 @@
       }
       notify();
     }
+    /* The page's own volume, read back so the speaker and the slider show
+     * what the page is actually at (its slider moved, or a new track came in
+     * at another level). Kept on the tab element for the UI only -- never in
+     * the actor's registry, which holds levels the user set here. */
+    let levelAt = 0;
+    function askLevel() {
+      const pick = current;
+      const top = pick?.tab.linkedBrowser?.browsingContext;
+      if (!top) return;
+      levelAt = win.performance.now();
+      let contexts = [];
+      try { contexts = top.getAllBrowsingContextsInSubtree(); } catch (e) { contexts = [top]; }
+      const asks = [];
+      for (const bc of contexts) {
+        try {
+          const actor = bc.currentWindowGlobal?.getActor("CthulhuTabVolume");
+          if (actor) asks.push(actor.sendQuery("CthulhuTabVolume:Level"));
+        } catch (e) { /* a frame with no actor (yet) */ }
+      }
+      if (!asks.length) return;
+      Promise.allSettled(asks).then((answers) => {
+        if (current !== pick || win.performance.now() - lastUserSet < 1500) return;
+        const got = answers
+          .map((a) => (a.status === "fulfilled" ? a.value : null))
+          .filter((v) => v && typeof v.volume === "number")
+          .sort((a, b) => Number(b.playing) - Number(a.playing))[0];
+        if (!got) return;
+        const have = typeof pick.tab._cthulhuVolume === "number" ? pick.tab._cthulhuVolume : 1;
+        if (Math.abs(got.volume - have) > 0.005) {
+          pick.tab._cthulhuVolume = got.volume;
+          notify();
+        }
+      });
+    }
     const RESYNC_MS = 5000; // a guessed clock is checked against the element this often
     function tick() {
       const pick = pickMainMedia();
@@ -191,6 +231,7 @@
       // otherwise stay attached to a controller that never speaks again.
       if (pick?.mc !== current?.mc) attachTo(pick);
       else if (current && (!posSnap || ((posSnap.guessed || posSnap.stale) && win.performance.now() - posSnap.at > RESYNC_MS))) askPosition();
+      if (current && win.performance.now() - levelAt > LEVEL_MS) askLevel();
     }
 
     const iv = win.setInterval(tick, 500);
@@ -327,6 +368,7 @@
       if (!tab) return;
       v = Math.max(0, Math.min(1, Number(v) || 0));
       tab._cthulhuVolume = v;
+      lastUserSet = win.performance.now();
       const bid = tab.linkedBrowser?.browserId;
       if (TabVolumes && bid) {
         if (v < 1) TabVolumes.set(bid, v); else TabVolumes.delete(bid);
@@ -509,6 +551,12 @@
     slider.setAttribute("aria-label", "Volume");
     vol.append(muteBtn, slider);
     controls.append(prevBtn, playBtn, nextBtn, vol);
+    // While the thumb is held the slider stays out wherever the pointer goes
+    // (CSS .live); a drag that strays off the track must not fold it away.
+    slider.addEventListener("pointerdown", () => {
+      vol.classList.add("live");
+      doc.addEventListener("pointerup", () => vol.classList.remove("live"), { once: true, capture: true });
+    });
 
     prevBtn.addEventListener("click", () => tracker.current?.mc.prevTrack());
     nextBtn.addEventListener("click", () => tracker.current?.mc.nextTrack());

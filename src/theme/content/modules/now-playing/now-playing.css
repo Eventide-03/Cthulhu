@@ -225,7 +225,15 @@
 /* Speaker + slider. The slider hangs off the speaker's right, collapsed to
  * nothing, and slides out while the pointer is over either of them (or the
  * slider has keyboard focus). Clicking the speaker mutes; the slider sets the
- * tab's volume. */
+ * tab's volume -- the page's own slider, on a site that has one.
+ *
+ * Leeway, because the pointer has to travel from the speaker onto the slider
+ * and it used to vanish on the way: the slider starts flush against the
+ * speaker (no gap), carries 6px of padding on both sides and stands as tall
+ * as the button, so the target is bigger than the track it draws; closing
+ * waits 0.45 s after the pointer leaves, so a wobble across the edge does not
+ * lose it; and while the thumb is held (.live, from now-playing.js) it stays
+ * out wherever the pointer goes. */
 .cthulhu-player-vol {
   position: relative;
   display: flex;
@@ -233,24 +241,25 @@
 }
 .cthulhu-player-slider {
   position: absolute;
-  left: calc(100% + 2px);
+  left: 100%;
   top: 50%;
   transform: translateY(-50%);
+  box-sizing: content-box;
   width: 0;
-  opacity: 0;
-  margin: 0;
+  height: 26px;
   padding: 0;
-  height: 18px;
+  margin: 0;
+  opacity: 0;
   accent-color: var(--accent);
-  transition: width 0.15s ease, opacity 0.15s ease;
-  pointer-events: none;
+  transition: width 0.15s ease 0.45s, padding 0.15s ease 0.45s, opacity 0.15s ease 0.45s;
 }
 .cthulhu-player-vol:hover .cthulhu-player-slider,
-.cthulhu-player-slider:focus-visible,
+.cthulhu-player-vol.live .cthulhu-player-slider,
 .cthulhu-player-vol:focus-within .cthulhu-player-slider {
   width: 60px;
+  padding-inline: 6px;
   opacity: 1;
-  pointer-events: auto;
+  transition-delay: 0s;
 }
 .cthulhu-player-slider:disabled {
   display: none;
@@ -340,13 +349,11 @@
   height: 6px;
   border-radius: 3px;
 }
+/* The four sit a little left of centre so the slider has its room on the
+ * speaker's right, inside the bar, instead of unfolding over the other
+ * buttons. */
 .cthulhu-player-card.docked .cthulhu-player-controls {
-  justify-content: space-evenly;
-  gap: 0;
-}
-/* At the bar's right edge the slider has no room on the speaker's right, so
- * here it slides out on its left, over the bar. */
-.cthulhu-player-card.docked .cthulhu-player-slider {
-  left: auto;
-  right: calc(100% + 2px);
+  justify-content: center;
+  gap: 12px;
+  padding-inline-end: 66px;
 }

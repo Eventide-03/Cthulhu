@@ -18,9 +18,9 @@ OBJ="engine/obj-aarch64-apple-darwin25.5.0"
 for root in "$OBJ/dist/bin/chrome/cthulhu" "$OBJ/dist/Cthulhu.app/Contents/Resources/chrome/cthulhu"; do
   [ -d "$root" ] || continue
   find "$root" -name "*Child.sys.mjs" | while read -r f; do
-    src="$f"
-    # follow the chain to the real file (bundle -> engine/theme -> src/theme)
-    while [ -L "$src" ]; do src="$(readlink "$src")"; done
+    # the bundle's chrome/cthulhu/ tree mirrors src/theme/ path for path
+    src="src/theme/${f#*/chrome/cthulhu/}"
+    [ -f "$src" ] || continue
     if [ -L "$f" ] || ! cmp -s "$src" "$f"; then
       rm -f "$f"
       cp "$src" "$f"
