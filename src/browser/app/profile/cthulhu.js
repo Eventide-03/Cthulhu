@@ -144,6 +144,9 @@ pref("cthulhu.pet.rishi.syncedAt", "");
 // window edge, Zen-style. Toggle with Ctrl/Cmd+Alt+C or the sidebar/toolbar
 // context menu (modules/compact-mode). Inert with horizontal tabs.
 pref("cthulhu.compact.mode", false);
+// The column's width in px: drag its inner edge. Sizes the toolbox, the tabs
+// and the player together (clamped to 200..520 by the module).
+pref("cthulhu.compact.width", 260);
 
 // -- Theme --
 // The browser-wide palette (content/themes.js): a preset id, or "ambient" to

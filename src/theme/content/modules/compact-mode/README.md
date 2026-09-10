@@ -15,6 +15,11 @@ and it slides out again after a moment, address bar included.
 | Menu | right-click the strip or the toolbar → **Compact mode** (only shown while vertical tabs are on) |
 | Pref | `cthulhu.compact.mode` |
 
+**Width:** drag the column's inner edge (a 6px grab strip that lights up under
+the pointer). The toolbox, the tabs and the player are all sized by the one
+variable, so they follow together; the width is kept in `cthulhu.compact.width`
+(200–520px, 260 by default).
+
 Turning it on also sets `sidebar.visibility` to `always-show`: upstream's own
 "expand on hover" and "hide sidebar" modes move the same element with inline
 styles, and the two would fight. Entering customize mode suspends it (the
@@ -66,10 +71,28 @@ the launcher was showing while the tabs were horizontal
 attribute whenever it changes) and, once the tabs are horizontal again and
 upstream has done its showing, puts it back the way it was.
 
-`compact-mode.js` adds the 6px hot zone at the edge, the open/close timing
-(hover, focus inside, menus opened from inside), the key, the menu items and
-the pref observers. The root carries `[cthulhu-vertical-tabs]` and, when
-active, `[cthulhu-compact]`.
+`compact-mode.js` adds the 6px hot zone at the edge, the grab strip for the
+width, the open/close timing, the key, the menu items and the pref observers.
+The root carries `[cthulhu-vertical-tabs]` and, when active,
+`[cthulhu-compact]`.
+
+## When it stays out, and why it no longer does
+
+The column stays out while something wants it: the pointer is over it, a menu
+opened from inside it is up, the address bar (or anything you type into) has
+focus, focus arrived there by keyboard, or its edge is being dragged. Three
+things used to hold it out by mistake:
+
+- **A tooltip.** Tooltips are popups; one over a tab counted as a menu opened
+  from inside, and by the time `popuphidden` fired the popup's `triggerNode`
+  was already null, so the count went up and never came down — the column
+  stayed out until the next restart. Popups are now tracked by node, and
+  tooltips hold nothing.
+- **A click on the current tab** left focus on the tab, and any focus inside
+  counted. Now only text fields and keyboard focus (`:focus-visible`) count.
+- **A `mouseleave` that never came** (the pointer left across a native widget).
+  While the column is out, a 1.5 s watchdog re-checks the conditions above and
+  closes it when none holds.
 
 Follows the standard feature-module convention (see `../README.md`):
 discovered via `../index.json`, gated by `cthulhu.module.compact-mode.enabled`.

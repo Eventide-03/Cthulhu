@@ -24,6 +24,11 @@
  * thing added: now-playing.js mounts a docked copy at the bottom of the column
  * (and the toolbar squircle is hidden while it is there).
  *
+ * WIDTH: drag the column's inner edge (a 6px grab strip, #cthulhu-compact-
+ * resizer). Everything in the column is sized by --cthulhu-compact-w, so the
+ * toolbox, the tabs and the player follow together; the width is kept in
+ * `cthulhu.compact.width`.
+ *
  * TOGGLE: Ctrl/Cmd+Alt+C (Zen's shortcut), or "Compact mode" in the sidebar's
  * and the toolbar's right-click menus, or the pref. Turning it on also sets
  * `sidebar.visibility` to "always-show": upstream's own "expand-on-hover" and
@@ -46,18 +51,24 @@
 (function () {
   "use strict";
   const PREF = "cthulhu.compact.mode";
+  const W_PREF = "cthulhu.compact.width";
   const VT_PREF = "sidebar.verticalTabs";
   const VIS_PREF = "sidebar.visibility";
   const ATTR = "cthulhu-compact";
   const VT_ATTR = "cthulhu-vertical-tabs";
   const OPEN_ATTR = "cthulhu-compact-open";
   const HIDE_DELAY_MS = 350;
-  const COLUMN_W = 260; // px; the toolbox needs at least this to lay out its rows
+  const WATCHDOG_MS = 1500;
+  const COLUMN_W = 260; // px; the default -- the toolbox lays its rows out well at this
+  const MIN_W = 200; // narrower and the address bar is a stub
+  const MAX_W = 520;
 
   const win = window;
   const doc = win.document;
   const root = doc.documentElement;
   const getBool = (n, d) => { try { return Services.prefs.getBoolPref(n, d); } catch (e) { return d; } };
+  const getInt = (n, d) => { try { return Services.prefs.getIntPref(n, d); } catch (e) { return d; } };
+  const columnWidth = () => Math.max(MIN_W, Math.min(MAX_W, getInt(W_PREF, COLUMN_W)));
 
   const container = () => doc.getElementById("sidebar-container");
   const toolbox = () => doc.getElementById("navigator-toolbox");
@@ -65,28 +76,46 @@
 
   /* ------------------------------ open / close ------------------------------ */
   let hideTimer = 0;
-  let popupsOpen = 0; // menus opened from inside the column hold it open
+  let watchdog = 0;
+  let dragging = false; // the width grip is being dragged
+  // Popups opened from inside the column hold it open. Tracked by the popup
+  // NODE: by the time popuphidden fires its triggerNode is already null, so
+  // a count that checked the trigger on both ends went up on show and never
+  // came down -- one tooltip over a tab and the column stayed out for good.
+  const openPopups = new Set();
+
+  const hovered = () => parts().some((el) => el.matches(":hover"));
+  // Focus holds the column open only where it is something you type into
+  // (the address bar: Cmd+L must leave you typing into something you can
+  // see) or arrived by keyboard (:focus-visible). A tab or button that merely
+  // kept focus from a click does not -- that pinned the column open after a
+  // click on the current tab until focus happened to move.
+  const focusedInside = () => {
+    const a = doc.activeElement;
+    if (!a || !parts().some((el) => el.contains(a))) return false;
+    if (a.closest && a.closest("#urlbar, #searchbar, input, textarea, [contenteditable]")) return true;
+    try { return a.matches(":focus-visible"); } catch (e) { return false; }
+  };
+  const wanted = () => dragging || openPopups.size > 0 || hovered() || focusedInside();
 
   function open() {
     if (hideTimer) { win.clearTimeout(hideTimer); hideTimer = 0; }
     for (const el of parts()) if (!el.hasAttribute(OPEN_ATTR)) el.setAttribute(OPEN_ATTR, "");
+    // Belt and braces: while it is out, look every so often whether anything
+    // still wants it out. Covers a mouseleave that never came (the pointer
+    // left across a native widget, say) -- the "sometimes it stays" case.
+    if (!watchdog) watchdog = win.setInterval(() => { if (!wanted()) closeNow(); }, WATCHDOG_MS);
   }
   function closeNow() {
     if (hideTimer) { win.clearTimeout(hideTimer); hideTimer = 0; }
+    if (watchdog) { win.clearInterval(watchdog); watchdog = 0; }
     for (const el of parts()) el.removeAttribute(OPEN_ATTR);
   }
-  const hovered = () => parts().some((el) => el.matches(":hover"));
-  // The address bar keeps the column open while it has focus: Cmd+L must
-  // leave you typing into something you can see.
-  const focusedInside = () => {
-    const a = doc.activeElement;
-    return !!a && parts().some((el) => el.contains(a));
-  };
   function scheduleClose() {
     if (hideTimer) win.clearTimeout(hideTimer);
     hideTimer = win.setTimeout(() => {
       hideTimer = 0;
-      if (popupsOpen > 0 || hovered() || focusedInside()) return;
+      if (wanted()) return;
       closeNow();
     }, HIDE_DELAY_MS);
   }
@@ -108,7 +137,7 @@
     paintMenuItems();
   }
   function activate() {
-    root.style.setProperty("--cthulhu-compact-w", COLUMN_W + "px");
+    root.style.setProperty("--cthulhu-compact-w", columnWidth() + "px");
     // The tabs start under the toolbox: pad by its live height.
     const tb = toolbox();
     if (tb && typeof ResizeObserver === "function") {
@@ -171,19 +200,67 @@
       el.addEventListener("focusin", () => { if (active()) open(); });
       el.addEventListener("focusout", () => { if (active()) scheduleClose(); });
     }
-    // Keep it open while a menu opened from inside it is up.
+    // Keep it open while a menu opened from inside it is up (see openPopups).
+    // A tooltip is a popup too, but it holds nothing.
     const from = (e) => {
       const p = e.target;
       const t = (p && (p.triggerNode || p.anchorNode)) || null;
       return !!(t && parts().some((el) => el.contains(t)));
     };
-    doc.addEventListener("popupshown", (e) => { if (active() && from(e)) { popupsOpen++; open(); } });
+    doc.addEventListener("popupshown", (e) => {
+      if (!active() || e.target.localName === "tooltip" || !from(e)) return;
+      openPopups.add(e.target);
+      open();
+    });
     doc.addEventListener("popuphidden", (e) => {
-      if (from(e) && popupsOpen > 0) { popupsOpen--; if (!popupsOpen) scheduleClose(); }
+      if (openPopups.delete(e.target) && !openPopups.size) scheduleClose();
     });
     // Leaving the window altogether closes it (mouseleave does not always fire
     // when the pointer exits the window over the column).
-    win.addEventListener("blur", () => { if (!popupsOpen) scheduleClose(); });
+    win.addEventListener("blur", () => { if (!openPopups.size) scheduleClose(); });
+  }
+
+  /* -------------------------------- the width ------------------------------- */
+  // A 6px grab strip along the column's inner edge. Dragging it sets
+  // --cthulhu-compact-w, which sizes the toolbox, the tabs and the player
+  // alike, and the width is kept in a pref. Upstream's own splitter is hidden
+  // in compact mode: it sat between strip and page, and there is no between.
+  function installResizer() {
+    const c = container();
+    if (!c || doc.getElementById("cthulhu-compact-resizer")) return;
+    const grip = doc.createElement("div");
+    grip.id = "cthulhu-compact-resizer";
+    grip.title = "Drag to resize";
+    c.appendChild(grip);
+    let startX = 0;
+    let startW = 0;
+    grip.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 || !active()) return;
+      dragging = true;
+      startX = e.clientX;
+      startW = c.getBoundingClientRect().width;
+      try { grip.setPointerCapture(e.pointerId); } catch (err) {}
+      root.setAttribute("cthulhu-compact-resizing", "");
+      open();
+      e.preventDefault();
+    });
+    grip.addEventListener("pointermove", (e) => {
+      if (!dragging) return;
+      const fromEnd = c.hasAttribute("sidebar-positionend"); // the column on the right grows leftwards
+      const w = Math.round(Math.max(MIN_W, Math.min(MAX_W, startW + (fromEnd ? startX - e.clientX : e.clientX - startX))));
+      root.style.setProperty("--cthulhu-compact-w", w + "px");
+    });
+    const end = () => {
+      if (!dragging) return;
+      dragging = false;
+      root.removeAttribute("cthulhu-compact-resizing");
+      const w = Math.round(parseFloat(root.style.getPropertyValue("--cthulhu-compact-w")) || COLUMN_W);
+      try { Services.prefs.setIntPref(W_PREF, w); } catch (err) {}
+      scheduleClose();
+    };
+    grip.addEventListener("pointerup", end);
+    grip.addEventListener("pointercancel", end);
+    grip.addEventListener("lostpointercapture", end);
   }
 
   /* -------------------------------- toggles -------------------------------- */
@@ -235,8 +312,14 @@
   // user's.
   const LAUNCHER_PREF = "cthulhu.sidebar.launcherShownHorizontal";
   let launcherSettleUntil = 0;
+  // Our own view of the orientation, moved only by our own observer below.
+  // Upstream's observer for the same pref runs first (or not -- the order
+  // depends on which lazy getter was touched first) and writes
+  // sidebar.visibility, whose observer would otherwise catch the launcher
+  // mid-change and remember upstream's "shown initially" as the user's.
+  let tabsHorizontal = !getBool(VT_PREF, false);
   function rememberLauncher() {
-    if (getBool(VT_PREF, false) || Date.now() < launcherSettleUntil) return;
+    if (!tabsHorizontal || Date.now() < launcherSettleUntil) return;
     const c = container();
     if (!c) return;
     const shown = !c.hidden;
@@ -260,9 +343,11 @@
     }
   }
   function onTabsHorizontalAgain() {
-    // Upstream's pref observers ran before this one and have already shown
-    // the launcher; its orientation work finishes on a later tick.
+    // Upstream's observers have shown the launcher or are about to; its
+    // orientation work finishes on later ticks. Nothing is remembered until
+    // that has settled and the restore below has had its say.
     launcherSettleUntil = Date.now() + 1500;
+    tabsHorizontal = true;
     win.setTimeout(restoreLauncher, 0);
     win.setTimeout(restoreLauncher, 700);
   }
@@ -279,6 +364,7 @@
   /* --------------------------------- boot ---------------------------------- */
   function install() {
     installHotZone();
+    installResizer();
     installKey();
     installLauncherMemory();
     installMenuItem("sidebar-context-menu", "sidebar-context-menu-enable-vertical-tabs");
@@ -292,15 +378,22 @@
     sync();
   }
   const observer = { observe() { sync(); } };
-  const vtObserver = { observe() { if (!getBool(VT_PREF, false)) onTabsHorizontalAgain(); sync(); } };
+  const vtObserver = { observe() {
+    const vt = getBool(VT_PREF, false);
+    if (vt) tabsHorizontal = false; else onTabsHorizontalAgain();
+    sync();
+  } };
   const visObserver = { observe() { rememberLauncher(); } };
+  const wObserver = { observe() { if (active()) root.style.setProperty("--cthulhu-compact-w", columnWidth() + "px"); } };
   Services.prefs.addObserver(PREF, observer);
   Services.prefs.addObserver(VT_PREF, vtObserver);
   Services.prefs.addObserver(VIS_PREF, visObserver);
+  Services.prefs.addObserver(W_PREF, wObserver);
   win.addEventListener("unload", () => {
     Services.prefs.removeObserver(PREF, observer);
     Services.prefs.removeObserver(VT_PREF, vtObserver);
     Services.prefs.removeObserver(VIS_PREF, visObserver);
+    Services.prefs.removeObserver(W_PREF, wObserver);
   }, { once: true });
 
   if (doc.readyState === "complete") install();
@@ -311,6 +404,7 @@
     setEnabled,
     get enabled() { return getBool(PREF, false); },
     get active() { return active(); },
+    get width() { return columnWidth(); },
     open,
     close: closeNow,
   };

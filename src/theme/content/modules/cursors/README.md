@@ -19,6 +19,7 @@ bundled pixel-art images.
 | **default** (a tabby cat) | `default.png` | `auto` | everything (`*`) |
 | **pointer / hover** | `pointer.png` | `pointer` | `a[href]`, `button`, `[role=button]`, `summary`, `select`, … |
 | **text** | `text.png` | `text` | text `input`s, `textarea`, `[contenteditable]` |
+| resize | — (none yet; the system double arrow) | `ew-resize` | the width grip of the compact column (`#cthulhu-compact-resizer`, modules/compact-mode) |
 
 Rule form: `cursor: url(<img>) <hotspot-x> <hotspot-y>, <fallback>;`
 

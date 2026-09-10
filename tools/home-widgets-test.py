@@ -961,7 +961,49 @@ try:
     """)
     check("in the docked bar the slider unfolds to the speaker's RIGHT, inside the bar, clear of the other buttons",
           ds["sliderLeft"] >= ds["speakerRight"] - 1 and ds["sliderLeft"] > ds["nextRight"] and ds["sliderRight"] <= ds["cardRight"] and ds["width"] >= 60, ds)
+    # the width: drag the grab strip 80px to the right, everything follows, the pref remembers; the pref sets it back
+    rz = chrome("""
+      const g = document.getElementById('cthulhu-compact-resizer'); const r = g.getBoundingClientRect();
+      const ev = (t, x) => g.dispatchEvent(new PointerEvent(t, { bubbles: true, clientX: x, clientY: r.top + 200, button: 0, pointerId: 7 }));
+      ev('pointerdown', r.left + 3); ev('pointermove', r.left + 43); ev('pointermove', r.left + 83); ev('pointerup', r.left + 83);
+      return new Promise(res => setTimeout(() => {
+        const w = (id) => document.getElementById(id).getBoundingClientRect().width;
+        res({ gripW: r.width, gripCursor: getComputedStyle(g).cursor, gripAtEdge: Math.abs(r.right - 260) < 2, /* measured before the drag; inside the column's 1px border */
+              varW: document.documentElement.style.getPropertyValue('--cthulhu-compact-w'), pref: Services.prefs.getIntPref('cthulhu.compact.width'),
+              toolbox: w('navigator-toolbox'), container: w('sidebar-container'), main: document.querySelector('sidebar-main').getBoundingClientRect().width,
+              urlbar: document.getElementById('urlbar').getBoundingClientRect().width, urlContainer: w('urlbar-container'), stillOpen: document.documentElement.hasAttribute('cthulhu-compact-resizing') }); }, 600));
+    """)
+    check("dragging the grab strip 80px widens the column to 340: toolbox, strip, tabs and address bar follow, the pref remembers",
+          rz["gripW"] == 6 and rz["gripCursor"] == "ew-resize" and rz["gripAtEdge"] and rz["varW"] == "340px" and rz["pref"] == 340 and rz["toolbox"] == 340 and rz["container"] == 340
+          and rz["main"] >= 330 and abs(rz["urlbar"] - rz["urlContainer"]) < 4 and rz["urlbar"] > 300 and not rz["stillOpen"], rz)
+    chrome("Services.prefs.setIntPref('cthulhu.compact.width', 260);"); time.sleep(0.3)
+    rw = chrome("return { varW: document.documentElement.style.getPropertyValue('--cthulhu-compact-w'), toolbox: document.getElementById('navigator-toolbox').getBoundingClientRect().width };")
+    check("setting the width pref puts the column back to 260 live", rw["varW"] == "260px" and rw["toolbox"] == 260, rw)
     chrome("window.CthulhuCompactMode.close();"); time.sleep(0.5)
+    # a menu opened from inside holds the column out; when it closes (triggerNode already gone by then) the column goes too
+    pm = chrome("""
+      const set = document.getElementById('mainPopupSet');
+      const mp = document.createXULElement('menupopup'); mp.id = 'cthulhu-test-popup';
+      const it = document.createXULElement('menuitem'); it.setAttribute('label', 'x'); mp.appendChild(it); set.appendChild(mp);
+      mp.openPopup(document.getElementById('back-button'), 'after_start');
+      return new Promise(res => setTimeout(() => {
+        const whileOpen = document.getElementById('navigator-toolbox').hasAttribute('cthulhu-compact-open');
+        mp.hidePopup();
+        setTimeout(() => { res({ whileOpen, after: document.getElementById('navigator-toolbox').hasAttribute('cthulhu-compact-open') }); mp.remove(); }, 900);
+      }, 500));
+    """)
+    check("a menu opened from inside the column holds it out, and the column closes again once the menu is gone", pm["whileOpen"] and not pm["after"], pm)
+    tt = chrome("""
+      const set = document.getElementById('mainPopupSet');
+      const tp = document.createXULElement('tooltip'); tp.id = 'cthulhu-test-tip'; tp.setAttribute('label', 'tip'); set.appendChild(tp);
+      tp.openPopup(document.getElementById('back-button'), 'after_start');
+      return new Promise(res => setTimeout(() => {
+        const whileOpen = document.getElementById('navigator-toolbox').hasAttribute('cthulhu-compact-open');
+        tp.hidePopup();
+        setTimeout(() => { res({ whileOpen, after: document.getElementById('navigator-toolbox').hasAttribute('cthulhu-compact-open') }); tp.remove(); }, 700);
+      }, 500));
+    """)
+    check("a tooltip does not hold the column out", not tt["whileOpen"] and not tt["after"], tt)
     # the address bar's dropdown must open where the bar is, inside the column
     chrome("window.CthulhuCompactMode.open(); gURLBar.focus(); gURLBar.value = 'exa'; gURLBar.startQuery();"); time.sleep(1.2)
     ub = chrome("""const u = document.getElementById('urlbar'); const r = u.getBoundingClientRect(); const c = document.getElementById('urlbar-container').getBoundingClientRect();

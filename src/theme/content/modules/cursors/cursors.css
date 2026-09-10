@@ -60,3 +60,11 @@ textarea:not(:is(:fullscreen, :fullscreen *)),
 [contenteditable="true"]:not(:is(:fullscreen, :fullscreen *)) {
   cursor: url("chrome://cthulhu-cursors/content/text.png") 2 6, text !important;
 }
+
+/* --- resize slot: the width grip of the compact column (modules/compact-mode).
+ * The sheet above sets the tabby on EVERYTHING, an author sheet cannot take it
+ * back (user-!important), so the grip's own cursor has to be granted here.
+ * No art yet: the system's double arrow. Drop a PNG in and point at it. --- */
+#cthulhu-compact-resizer:not(:is(:fullscreen, :fullscreen *)) {
+  cursor: ew-resize !important;
+}
