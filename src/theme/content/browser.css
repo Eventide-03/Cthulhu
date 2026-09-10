@@ -60,10 +60,21 @@
 }
 
 :root {
-  --toolbox-background-color: var(--bg) !important;
+  /* THE WHOLE TOP IS ONE RAISED BAND, and the page below it is not.
+   *
+   * This used to be --bg -- the same colour as the page -- with only the
+   * nav-bar raised, so the tab strip and the content melted into one another
+   * and the strip read as empty space with a single pill floating in it. It
+   * was survivable on the near-black presets and plainly bad on a coloured
+   * one. Now the toolbox is the elevated surface and the SELECTED TAB is the
+   * page colour (below), which is the ordinary tab metaphor: the tab you are
+   * on is a hole in the band showing the page it belongs to. */
+  --toolbox-background-color: var(--bg-elevated) !important;
   --toolbar-background-color: var(--bg-elevated) !important;
+  /* The hairline between the chrome and the page, from the palette. */
+  --chrome-content-separator-color: var(--border) !important;
   --toolbar-text-color: var(--fg) !important;
-  --tab-background-color-selected: var(--surface-hover) !important;
+  --tab-background-color-selected: var(--bg) !important;
   --toolbar-field-background-color: var(--surface) !important;
   --toolbar-field-color: var(--fg) !important;
   --toolbar-field-text-color: var(--fg) !important;
@@ -106,6 +117,16 @@
 .tab-background[multiselected],
 .tabbrowser-tab[selected] > .tab-stack > .tab-background,
 .tabbrowser-tab[multiselected] > .tab-stack > .tab-background {
+  background-color: var(--bg) !important;
+}
+/* An unselected tab is a quiet card on the band rather than nothing at all:
+ * with the strip and the page previously the same colour, a tab you were not
+ * on had no shape whatsoever. Upstream leaves these transparent, which works
+ * against its own two-tone chrome and not against ours. */
+.tabbrowser-tab:not([selected], [multiselected]) > .tab-stack > .tab-background {
+  background-color: var(--surface) !important;
+}
+.tabbrowser-tab:not([selected], [multiselected]):hover > .tab-stack > .tab-background {
   background-color: var(--surface-hover) !important;
 }
 .tabbrowser-tab[selected],
@@ -121,14 +142,14 @@
   opacity: 0.6;
 }
 
-/* The whole toolbar area sits on the app background... */
+/* The whole toolbar area is the raised band (see the token note above)... */
 #navigator-toolbox {
-  background-color: var(--bg) !important;
+  background-color: var(--bg-elevated) !important;
 }
 
-/* ...and the navigation bar is an elevated surface. */
+/* ...and the navigation bar is part of it, not a lighter stripe inside it. */
 #nav-bar {
-  background-color: var(--bg-elevated) !important;
+  background-color: transparent !important;
   background-image: none !important;
 }
 
