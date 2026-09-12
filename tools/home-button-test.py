@@ -2,7 +2,7 @@
 
     cd engine && ./mach python ../tools/home-button-test.py [--check-fxview-gone]
 
-Launches the built app (dist/Firefox Nightly.app, the one `surfer run` uses; or $CTHULHU_BIN) with a throwaway
+Launches the built app (dist/Cthulhu.app, the one tools/dev-run.sh uses; or $CTHULHU_BIN) with a throwaway
 profile, drives it over Marionette, prints PASS/FAIL per check and exits
 non-zero on any failure. Never touches your real profile. Run it after an ESR
 rebase: it is the proof that src/browser/firefox-view-to-home.patch still does
@@ -27,13 +27,10 @@ from marionette_driver.marionette import Marionette  # noqa: E402
 
 OBJ = next((d for d in sorted(os.listdir(".")) if d.startswith("obj-")), "obj-aarch64-apple-darwin25.5.0")
 def _default_bin():
-    # `surfer run` launches dist/Firefox Nightly.app (mach's configured bundle
-    # name); `surfer build` writes dist/nightly.app. Prefer what surfer run uses.
-    for bundle in ("Firefox Nightly.app", "nightly.app"):
-        cand = os.path.join(os.getcwd(), OBJ, "dist", bundle, "Contents", "MacOS", "Cthulhu")
-        if os.path.exists(cand):
-            return cand
-    return os.path.join(os.getcwd(), OBJ, "dist", "Firefox Nightly.app", "Contents", "MacOS", "Cthulhu")
+    # The dev bundle tools/dev-run.sh launches (MOZ_MACBUNDLE_NAME in
+    # engine/mozconfig). The old dist/Firefox Nightly.app and dist/nightly.app
+    # are gone.
+    return os.path.join(os.getcwd(), OBJ, "dist", "Cthulhu.app", "Contents", "MacOS", "Cthulhu")
 
 
 BIN = os.environ.get("CTHULHU_BIN") or _default_bin()
