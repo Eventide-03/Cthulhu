@@ -53,7 +53,8 @@ tag. If they differ, update checks compare the wrong numbers.
 
 ```
 macos job ──► arm64 build+package ─► x86_64 build+package ─► unify (universal)
-          ──► sign+notarize (only if Apple secrets set; else unsigned + warning)
+          ──► sign+notarize (only if Apple secrets set; else AD-HOC signed + warning:
+              unsigned bundles cannot hold a mic/camera grant -- see CONTRIBUTING.md)
           ──► .dmg ─► complete MAR ─► signmar ─► VERIFY signature (fails build if bad)
 windows job ► x64 build ─► NSIS installer (deliberately unsigned) ─► complete MAR ─► sign+verify
 release job ► GitHub Release (assets first!) ─► update manifests ─► whatsnew page ─► commit to Pages

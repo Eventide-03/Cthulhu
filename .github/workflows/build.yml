@@ -550,11 +550,12 @@ jobs:
       # =======================================================================
       # macOS SIGNING + NOTARIZATION
       #
-      # Runs only when the signing secrets are present. Without them the job
-      # still completes and produces an UNSIGNED .dmg, with a loud warning --
-      # useful for testing the pipeline before an Apple Developer account
-      # exists. Notarization REQUIRES a paid Apple Developer Program
-      # membership; there is no free tier.
+      # Developer ID signing + notarization run only when the signing secrets
+      # are present. Without them the app is AD-HOC signed instead (see the
+      # step below): not notarized, Gatekeeper still warns, but the bundle has
+      # a real code identity, which is what macOS needs to remember a
+      # microphone or camera grant. Notarization REQUIRES a paid Apple
+      # Developer Program membership; there is no free tier.
       #
       # Secrets: MACOS_CERT_P12 (base64 .p12), MACOS_CERT_PASSWORD,
       #          MACOS_SIGN_IDENTITY ("Developer ID Application: ..."),
@@ -576,7 +577,35 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${MACOS_CERT_P12:-}" ]; then
-            echo "::warning::No macOS signing secrets set -- producing an UNSIGNED, UN-NOTARIZED .dmg. Gatekeeper will refuse to open it on other machines."
+            echo "::warning::No macOS signing secrets set -- AD-HOC signing instead. Not notarized: Gatekeeper still warns on first open, and the .dmg needs the right-click-Open dance on another Mac."
+            # Ad-hoc is not a substitute for Developer ID, but it is not the
+            # same as unsigned either, and one thing depends on it: the
+            # microphone and camera prompts. macOS records a device grant
+            # against a code identity. The linker ad-hoc signs each binary on
+            # arm64, which is enough to execute, but it leaves the BUNDLE
+            # unsigned -- Info.plist unbound, no sealed resources, so
+            # `codesign --verify` says "code object is not signed at all".
+            # With no identity to record against, the approval never sticks,
+            # the OS state stays "not determined", and WebRTCParent's
+            # checkOSPermission asks again on EVERY getUserMedia call: joining
+            # a Discord call raised the system prompt over and over until the
+            # browser was force quit (1.0.7). Signing the bundle ad-hoc binds
+            # the Info.plist, seals the resources and gives TCC something
+            # stable to key on. Signing happens BEFORE the .dmg and the MAR are
+            # built, so the seal travels to anyone who installs or updates.
+            #
+            # Plain --deep with no entitlements and no hardened runtime, which
+            # is exactly what was verified by hand on 1.0.7. Entitlements are
+            # deliberately left to the Developer ID path above: the sandbox
+            # entitlements the helpers carry there are not meaningful without a
+            # real team identity.
+            #
+            # xattr first -- codesign refuses a bundle carrying a resource fork
+            # or Finder info ("detritus not allowed").
+            xattr -cr "$UNIVERSAL_APP" || true
+            codesign --force --deep --sign - "$UNIVERSAL_APP"
+            codesign --verify --deep --strict --verbose=2 "$UNIVERSAL_APP"
+            codesign -dv "$UNIVERSAL_APP" 2>&1 | grep -E 'Identifier=|Sealed Resources|Info.plist' || true
             echo "SIGNED=0" >> "$GITHUB_ENV"; exit 0
           fi
           KEYCHAIN="$RUNNER_TEMP/build.keychain"

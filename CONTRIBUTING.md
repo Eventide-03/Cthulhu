@@ -56,7 +56,7 @@ Full `ctx` API: `newtab/widgets/README.md`.
 ```
 src/ (patches + chrome layer)
   └─ surfer import → engine/ (Firefox ESR + our changes) → surfer build
-tag vX.Y.Z → CI: build mac(universal)+win → sign/notarize (if secrets) → dmg/exe
+tag vX.Y.Z → CI: build mac(universal)+win → sign/notarize (if secrets, else ad-hoc) → dmg/exe
   → complete MARs → signmar + verify → GitHub Release → update manifests + whatsnew → Pages
 clients: app.update checks Pages manifest → downloads MAR from Releases → verifies
   against the cert baked in src/toolkit/mozapps/update/updater/*.der
@@ -64,6 +64,29 @@ clients: app.update checks Pages manifest → downloads MAR from Releases → ve
 
 Details: RELEASE.md (loop), docs/updates/README.md (update service),
 relay/README.md (feature-request relay).
+
+### The macOS app is signed even without an Apple account
+
+With the Apple secrets set, CI signs with Developer ID and notarizes. Without
+them it still signs the bundle **ad-hoc** (`codesign --force --deep --sign -`)
+rather than shipping it unsigned. That is not Gatekeeper-quieting -- an ad-hoc
+build still needs right-click → Open on someone else's Mac -- but it is what
+makes **microphone and camera permission stick**.
+
+macOS files a device grant against a code identity. On arm64 the linker ad-hoc
+signs each binary, which is enough to *run*, but the bundle itself stays
+unsigned: Info.plist unbound, no sealed resources, `codesign --verify` says
+"code object is not signed at all". With nothing to file the grant against,
+clicking **Allow** changes nothing, the OS keeps reporting *not determined*, and
+`WebRTCParent.checkOSPermission` asks again on every `getUserMedia` call. In
+1.0.7 that meant joining a Discord call raised the system microphone prompt over
+and over until the browser was force quit.
+
+Signing happens before the .dmg and the MAR are built, and `list_files` in
+`tools/update-packaging/common.sh` sweeps up every file, so
+`Contents/_CodeSignature/` rides along and an updated install keeps its seal.
+A bundle carrying a resource fork or Finder info makes codesign refuse
+("detritus not allowed"), hence the `xattr -cr` first.
 
 ### The Home button is a source patch, not a module
 
