@@ -979,6 +979,25 @@ try:
     chrome("Services.prefs.setIntPref('cthulhu.compact.width', 260);"); time.sleep(0.3)
     rw = chrome("return { varW: document.documentElement.style.getPropertyValue('--cthulhu-compact-w'), toolbox: document.getElementById('navigator-toolbox').getBoundingClientRect().width };")
     check("setting the width pref puts the column back to 260 live", rw["varW"] == "260px" and rw["toolbox"] == 260, rw)
+    # the narrowest column: the docked controls keep their size (no oval play chip), stay inside the bar, and the slider still unfolds beside them
+    chrome("Services.prefs.setIntPref('cthulhu.compact.width', 200);"); time.sleep(0.3)
+    nw = chrome("""
+      const card = document.querySelector('.cthulhu-player-card.docked'); const vol = card.querySelector('.cthulhu-player-vol'); const s = vol.querySelector('.cthulhu-player-slider');
+      const row = card.querySelector('.cthulhu-player-controls'); const c = card.getBoundingClientRect();
+      const btns = [...row.querySelectorAll('.cthulhu-player-ctrl')].map(b => { const r = b.getBoundingClientRect(); return { cls: b.className, w: r.width, h: r.height, l: r.left, r: r.right }; });
+      vol.classList.add('live');
+      return new Promise(res => setTimeout(() => {
+        const r = s.getBoundingClientRect(), b = vol.querySelector('.cthulhu-player-ctrl.mute').getBoundingClientRect(), n = card.querySelector('.cthulhu-player-ctrl.next').getBoundingClientRect();
+        vol.classList.remove('live');
+        res({ colW: document.getElementById('sidebar-container').getBoundingClientRect().width, cardL: c.left, cardR: c.right, cardW: c.width, rowOverflow: row.scrollWidth - row.clientWidth, btns,
+              sliderL: r.left, sliderR: r.right, sliderW: r.width, speakerR: b.right, nextR: n.right, gap: getComputedStyle(row).columnGap }); }, 400));
+    """)
+    nb = nw["btns"]
+    check("at the narrowest column (200) the docked buttons keep their size and stay inside the bar, and the slider still unfolds to the speaker's right with room",
+          nw["colW"] == 200 and len(nb) == 4 and all(b["w"] == b["h"] and b["w"] in (26, 31) for b in nb)
+          and all(b["l"] >= nw["cardL"] and b["r"] <= nw["cardR"] for b in nb) and nw["rowOverflow"] <= 0
+          and nw["sliderL"] >= nw["speakerR"] - 1 and nw["sliderL"] > nw["nextR"] and nw["sliderR"] <= nw["cardR"] and nw["sliderW"] >= 50, nw)
+    chrome("Services.prefs.setIntPref('cthulhu.compact.width', 260);"); time.sleep(0.3)
     chrome("window.CthulhuCompactMode.close();"); time.sleep(0.5)
     # a menu opened from inside holds the column out; when it closes (triggerNode already gone by then) the column goes too
     pm = chrome("""

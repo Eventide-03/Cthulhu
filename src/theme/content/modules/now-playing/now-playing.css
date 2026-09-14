@@ -283,6 +283,7 @@
   transform: scaleX(-1);
 }
 .cthulhu-player-ctrl {
+  flex: none; /* a flex item may shrink below its width; a squashed 31px round play chip is an ellipse */
   width: 26px;
   height: 26px;
   padding: 0;
@@ -325,10 +326,11 @@
  * unfold above the controls, and fold away again when it leaves.
  * ======================================================================== */
 .cthulhu-player-card.docked {
+  container: cthulhu-dock / inline-size; /* the controls size themselves off the bar, see below */
   width: auto;
   flex: none;
-  margin: 6px 8px 8px;
-  padding: 6px 8px;
+  margin: 6px 6px 8px;
+  padding: 6px 6px;
   gap: 6px;
   background: var(--bg);
   border: 1px solid var(--border);
@@ -351,9 +353,28 @@
 }
 /* The four sit a little left of centre so the slider has its room on the
  * speaker's right, inside the bar, instead of unfolding over the other
- * buttons. */
+ * buttons.
+ *
+ * The column is resizable (200-520px), so none of that can be a fixed number.
+ * At 12px gaps and a fixed 66px of room the row wanted ~211px, the bar at the
+ * narrowest column has ~173, and flexbox made up the difference by squashing
+ * the buttons: the round play chip went oval and previous slid out of the bar.
+ * Now the buttons never shrink (flex: none above) and what gives is the space
+ * around them, measured off the bar with container units:
+ *
+ *   buttons  26 + 31 + 26 + 26 = 109px, fixed
+ *   gap      12px, falling to 4px as the bar narrows
+ *   room     what is left for the slider: up to 72px (a 60px track + 6px
+ *            padding each side), down to 40px
+ *
+ * If the button sizes above change, change 109 here. */
 .cthulhu-player-card.docked .cthulhu-player-controls {
+  --dock-gap: clamp(4px, calc((100cqi - 181px) / 3), 12px); /* 181 = 109 + a full 72 of room */
+  --dock-room: clamp(40px, calc(100cqi - 109px - 3 * var(--dock-gap)), 72px);
   justify-content: center;
-  gap: 12px;
-  padding-inline-end: 66px;
+  gap: var(--dock-gap);
+  padding-inline-end: var(--dock-room);
+}
+.cthulhu-player-card.docked .cthulhu-player-vol:is(:hover, .live, :focus-within) .cthulhu-player-slider {
+  width: calc(var(--dock-room) - 12px);
 }
