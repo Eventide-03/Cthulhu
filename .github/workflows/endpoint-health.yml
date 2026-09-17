@@ -83,15 +83,17 @@ jobs:
                   -e 's/("(access_token|refresh_token|client_secret|password|token)"[[:space:]]*:[[:space:]]*")[^"]*/\1***REDACTED***/g'
           }
 
-          # fetch <url> -> writes body.tmp, echoes "<http_code> <seconds>".
+          # fetch <url> [curl-arg...] -> writes body.tmp, echoes "<http_code> <seconds>".
           # The trailing \n in -w is REQUIRED: without it `read` hits EOF with no
           # delimiter and returns non-zero *after* correctly reading the values,
           # which would trip the caller's error fallback on every single request.
           fetch() {
+            local url="$1"; shift
             curl -sS -L --no-progress-meter \
               --connect-timeout "$CONNECT_TIMEOUT" --max-time "$MAX_TIME" \
               -A "Cthulhu-endpoint-health/1 (+https://github.com/${GITHUB_REPOSITORY})" \
-              -o body.tmp -w '%{http_code} %{time_total}\n' "$1" 2>curlerr.tmp
+              "$@" \
+              -o body.tmp -w '%{http_code} %{time_total}\n' "$url" 2>curlerr.tmp
           }
 
           fail() { # fail <name> <reason>
@@ -103,9 +105,12 @@ jobs:
           }
 
           # ---- probe one endpoint, with retries -----------------------------
-          # probe <name> <url> <validator-fn>
+          # probe <name> <url> <validator-fn> [curl-arg...]
+          # Trailing args go straight to curl, for endpoints that need a header
+          # before they will answer at all.
           probe() {
             local name="$1" url="$2" validate="$3"
+            shift 3
             local n=1 code secs last=""
 
             if [ -z "$url" ]; then
@@ -114,7 +119,7 @@ jobs:
             fi
 
             while [ "$n" -le "$ATTEMPTS" ]; do
-              read -r code secs < <(fetch "$url") || { code=000; secs=0; }
+              read -r code secs < <(fetch "$url" "$@") || { code=000; secs=0; }
               if [ "$code" = "000" ]; then
                 last="connection failed: $(redact < curlerr.tmp | tr '\n' ' ')"
               elif last="$("$validate" "$code")"; then
@@ -157,7 +162,15 @@ jobs:
           }
 
           probe "Update manifest" "${UPDATE_MANIFEST_URL:-}" validate_manifest
-          probe "Relay endpoint"  "${RELAY_URL:-}"          validate_relay
+          # The relay turns away anything without its client header with a 403,
+          # before it ever looks at the path or the method -- so a bare GET can
+          # never reach the routing this probe exists to exercise. Send the same
+          # header the browser sends (see CLIENT_HEADER in relay/worker.js). GET /
+          # then answers 405 Method not allowed, which is what RELAY_EXPECT_STATUS
+          # is set to, and which proves the origin check, the header gate and the
+          # route table are all still alive without posting anything to Discord.
+          probe "Relay endpoint"  "${RELAY_URL:-}"          validate_relay \
+            -H "x-cthulhu-client: 1"
 
           if [ -s failures.txt ]; then
             echo "ok=false" >> "$GITHUB_OUTPUT"
