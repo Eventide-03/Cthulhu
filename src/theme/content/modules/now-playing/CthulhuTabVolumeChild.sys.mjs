@@ -24,10 +24,14 @@
  *
  * The page's level is also reported back (CthulhuTabVolume:Level) so the
  * player's speaker and slider follow the page: YouTube Music's slider, else
- * the player API's getVolume, else the main element's volume.
+ * the player API's getVolume, else the main element's volume. A read that
+ * finds the page somewhere else ADOPTS that level as this frame's override --
+ * see #adopt, and the note there on why a stale override used to push a
+ * change made on the page's own volume control straight back.
  */
 export class CthulhuTabVolumeChild extends JSWindowActorChild {
   #volume = null; // null = no override for this tab
+  #seen = null;   // the previous page level read, for the two-in-a-row rule in #adopt
 
   receiveMessage(msg) {
     if (msg.name === "CthulhuTabVolume:State") {
@@ -66,6 +70,7 @@ export class CthulhuTabVolumeChild extends JSWindowActorChild {
       return;
     }
     if (event.type === "pageshow") {
+      this.#seen = null; // a new document's level is nobody's move yet
       await this.#ask();
       this.#applyAll();
     }
@@ -144,7 +149,49 @@ export class CthulhuTabVolumeChild extends JSWindowActorChild {
     } catch (e) { return false; }
     return true;
   }
+  /* Read the page's level, and take a move the page made as our own. */
   #level() {
+    const got = this.#pageLevel();
+    if (got) this.#adopt(got.volume);
+    return got;
+  }
+
+  /* A level the page moved to itself becomes this frame's override.
+   *
+   * The override is whatever the player's slider last set, and it is
+   * re-applied on every `play` -- YouTube Music fires one on each track -- and
+   * again on pageshow. Left stale that pushed a change made on the page's own
+   * volume control straight back, which is the bug this exists to stop.
+   * Adopting keeps the two in step: the next apply is a no-op, and the
+   * player's speaker and slider already follow (now-playing.js reads this back
+   * every couple of seconds).
+   *
+   * Only with an override in hand. With none nothing is re-applied, the page
+   * owns its level outright, and taking one now would start overriding a page
+   * that never asked for it.
+   *
+   * And only once the level holds still for two reads running (~2s apart). A
+   * page that RAMPS its element's volume -- a crossfade, an ad ducking under
+   * -- is passing through, not settling, and a value adopted mid-ramp would
+   * pin the tab at it; a fade-out caught near its end would pin it at silence.
+   * A drag of the page's own slider settles the moment it is let go.
+   */
+  #adopt(v) {
+    if (!(v >= 0 && v <= 1)) return;
+    const settled = this.#seen !== null && Math.abs(v - this.#seen) < 0.005;
+    this.#seen = v;
+    if (!settled || this.#volume === null) return;
+    if (Math.abs(v - this.#volume) < 0.005) return;
+    this.#volume = v;
+    // The parent's registry is what a freshly loaded frame's "what does my tab
+    // want?" reads; leaving the old level there would snap the page back on
+    // the next reload.
+    try {
+      this.sendAsyncMessage("CthulhuTabVolume:Adopted", { volume: v });
+    } catch (e) {}
+  }
+
+  #pageLevel() {
     const s = this.#musicSlider();
     if (s) {
       try { return { volume: Math.max(0, Math.min(1, s.value / 100)), playing: true }; } catch (e) {}

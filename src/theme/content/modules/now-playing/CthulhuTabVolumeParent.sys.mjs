@@ -16,6 +16,24 @@ export const TabVolumes = new Map(); // browserId -> 0..1
 
 export class CthulhuTabVolumeParent extends JSWindowActorParent {
   receiveMessage(msg) {
+    // The page moved its own volume control and the child took that level as
+    // its override (see #adopt there). Record it here too, or a reload would
+    // hand the frame back the level the player's slider set long ago and snap
+    // the page off the level the user just chose on it.
+    if (msg.name === "CthulhuTabVolume:Adopted") {
+      const v = Number(msg.data && msg.data.volume);
+      if (!Number.isFinite(v)) return undefined;
+      try {
+        const id = this.browsingContext && this.browsingContext.browserId;
+        // >= 1 is the default, and an absent entry already means that; keeping
+        // one would only make #ask believe there is an override to restore.
+        if (id) {
+          if (v < 1) TabVolumes.set(id, Math.max(0, v));
+          else TabVolumes.delete(id);
+        }
+      } catch (e) {}
+      return undefined;
+    }
     if (msg.name !== "CthulhuTabVolume:Get") return undefined;
     try {
       const id = this.browsingContext && this.browsingContext.browserId;

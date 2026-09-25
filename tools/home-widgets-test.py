@@ -829,6 +829,35 @@ try:
             back = chrome("return { level: window.__mediaTab._cthulhuVolume, icon: document.querySelector('#cthulhu-player-panel .cthulhu-player-ctrl.mute img').src.split('/').pop(), slider: document.querySelector('#cthulhu-player-panel .cthulhu-player-slider').value };")
             if back["level"] == 0.6: break
         check("a level set by the page reads back onto the speaker and the slider", back["level"] == 0.6 and back["icon"] == "sound2.png" and back["slider"] == "60", back)
+        # ...and the page KEEPS it. The slider's level used to be re-applied on the next `play`
+        # -- one of which YouTube Music fires on every track -- so a level set on the page's own
+        # control was pushed straight back. The child adopts a level that holds still for two
+        # reads, and hands it to the parent's registry, which is what a reloaded frame asks.
+        reg = """const { TabVolumes } = ChromeUtils.importESModule('chrome://cthulhu/content/modules/now-playing/CthulhuTabVolumeParent.sys.mjs');
+                 return TabVolumes.get(window.__mediaTab.linkedBrowser.browserId) ?? null;"""
+        adopted = None
+        for _ in range(12):
+            adopted = chrome(reg)
+            if adopted == 0.6:
+                break
+            time.sleep(0.5)
+        check("the tab's stored override follows the page, so a reload does not restore the old level", adopted == 0.6, adopted)
+        # A real `play` (not a synthetic event -- the actor's listeners ignore untrusted ones)
+        # re-applies the override; with the page's level adopted that is now a no-op.
+        m.set_context("content")
+        for h in m.window_handles:
+            m.switch_to_window(h)
+            try:
+                if m.execute_script("return document.title") == "Sine test track":
+                    break
+            except Exception:
+                continue
+        m.execute_script("const a = document.querySelector('audio'); a.pause(); a.play().catch(() => {});")
+        time.sleep(1.0)
+        kept = m.execute_script("return document.querySelector('audio').volume")
+        m.switch_to_window(cur)
+        m.set_context("chrome")
+        check("a play event no longer snaps the page back to the level the slider set", kept == 0.6, kept)
     else:
         m.switch_to_window(cur)
         print("INFO the page's <audio> volume is", applied, "-- the volume actor did not reach content on this dev bundle (symlinked child module; shipped builds carry it in omni.ja)")

@@ -37,9 +37,14 @@
  * anywhere else it sets `volume` on the page's <audio> / <video> elements,
  * including ones the page creates later, in every frame of the tab. The
  * page's level is also read back every couple of seconds, so the speaker and
- * the slider follow a change made on the page. Honest limits: a page with its
- * own volume control that is not YouTube can set the element's volume again
- * afterwards, and a Web Audio player (no media element) is untouched.
+ * the slider follow a change made on the page -- and that read hands the level
+ * to the actor as the tab's new override, so the page keeps it. Without that
+ * the override the slider set was re-applied on the next `play`, one of which
+ * YouTube Music fires on every track, and a level set on the page's own
+ * control was pushed straight back. A level is taken only once it holds still
+ * for two reads, so a crossfade or an ad ducking under is not mistaken for a
+ * move the user made. Honest limit: a Web Audio player (no media element, no
+ * page slider we know) is untouched.
  *
  * POSITION AT ATTACH goes through the same actor. The controller's
  * positionstatechange fires only when the PAGE next calls setPositionState, so
@@ -191,8 +196,12 @@
     }
     /* The page's own volume, read back so the speaker and the slider show
      * what the page is actually at (its slider moved, or a new track came in
-     * at another level). Kept on the tab element for the UI only -- never in
-     * the actor's registry, which holds levels the user set here. */
+     * at another level). Kept on the tab element for the UI; the actor's own
+     * copy and the registry are brought along by the child, which adopts a
+     * settled page level as the tab's override when it answers this (see
+     * #adopt in CthulhuTabVolumeChild). Writing the registry from here instead
+     * would have no way to tell an override apart from a page that simply
+     * starts quiet. */
     let levelAt = 0;
     function askLevel() {
       const pick = current;
