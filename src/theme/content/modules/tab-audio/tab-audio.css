@@ -1,0 +1,108 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* The "share a tab's audio?" picker. Theme tokens only -- no hardcoded colours,
+ * so it follows whatever palette is set (see content/theme.css). */
+
+.cthulhu-tabaudio-panel {
+  --panel-background: var(--bg-elevated, #1b1c26);
+  --panel-border-color: var(--border, #2e3040);
+  --panel-border-radius: 12px;
+}
+
+.cthulhu-tabaudio-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 340px;
+  padding: 14px;
+  box-sizing: border-box;
+  color: var(--fg, #e8e8f0);
+  font: menu;
+}
+
+.cthulhu-tabaudio-title {
+  font-family: var(--font-pixel, inherit);
+  font-size: 1.05em;
+}
+
+.cthulhu-tabaudio-sub {
+  color: var(--fg-muted, #9a9bb0);
+  font-size: 0.85em;
+  line-height: 1.35;
+}
+
+.cthulhu-tabaudio-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* Roughly six rows, then scroll: a window with forty tabs must not grow a
+     panel taller than the screen. */
+  max-height: 228px;
+  overflow-y: auto;
+  margin-top: 4px;
+}
+
+.cthulhu-tabaudio-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+  appearance: none;
+}
+
+.cthulhu-tabaudio-row:hover,
+.cthulhu-tabaudio-row:focus-visible {
+  background: var(--surface, #24263340);
+  border-color: var(--accent, #7f7fd5);
+}
+
+.cthulhu-tabaudio-fav {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  object-fit: contain;
+}
+
+.cthulhu-tabaudio-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9em;
+}
+
+/* Only set on a tab that is actually making noise; empty otherwise, so it
+   takes no room on the rows that are not. */
+.cthulhu-tabaudio-mark {
+  flex: none;
+  font-size: 0.72em;
+  color: var(--accent, #7f7fd5);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cthulhu-tabaudio-decline {
+  margin-top: 6px;
+  padding: 7px 10px;
+  border: 1px solid var(--border, #2e3040);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg-muted, #9a9bb0);
+  cursor: pointer;
+  appearance: none;
+}
+
+.cthulhu-tabaudio-decline:hover {
+  color: var(--fg, #e8e8f0);
+  border-color: var(--accent, #7f7fd5);
+}

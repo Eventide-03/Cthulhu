@@ -156,6 +156,13 @@ cthulhu.jar:
     content/modules/now-playing/assets/mute.png              (content/modules/now-playing/assets/mute.png)
     content/modules/now-playing/assets/close.png             (content/modules/now-playing/assets/close.png)
 # compact-mode module (Zen-style hidden vertical tab strip):
+    content/modules/tab-audio/manifest.json                 (content/modules/tab-audio/manifest.json)
+    content/modules/tab-audio/tab-audio.js                  (content/modules/tab-audio/tab-audio.js)
+    content/modules/tab-audio/tab-audio.css                 (content/modules/tab-audio/tab-audio.css)
+    content/modules/tab-audio/TabAudioShare.sys.mjs         (content/modules/tab-audio/TabAudioShare.sys.mjs)
+    content/modules/tab-audio/CthulhuTabAudioParent.sys.mjs (content/modules/tab-audio/CthulhuTabAudioParent.sys.mjs)
+    content/modules/tab-audio/CthulhuTabAudioChild.sys.mjs  (content/modules/tab-audio/CthulhuTabAudioChild.sys.mjs)
+
     content/modules/compact-mode/manifest.json              (content/modules/compact-mode/manifest.json)
     content/modules/compact-mode/compact-mode.js            (content/modules/compact-mode/compact-mode.js)
     content/modules/compact-mode/compact-mode.css           (content/modules/compact-mode/compact-mode.css)

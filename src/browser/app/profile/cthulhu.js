@@ -122,6 +122,38 @@ pref("cthulhu.ambient.weather.enabled", true);
 // Documented in PRIVACY.md.
 pref("cthulhu.favicons.remote", true);
 
+// -- Share a tab's audio with a screen share --
+// Firefox's getDisplayMedia ignores the audio constraint entirely, so sharing
+// a film in a Firefox tab is always silent. With this on, a screen share from
+// a tab that asks for audio also asks YOU which tab's audio to send, and mixes
+// that tab's whole output into the stream -- what Chromium calls "share tab
+// audio". See content/modules/tab-audio/.
+pref("cthulhu.tabaudio.enabled", true);
+
+// Offer the audio step even when the page did not ask for audio. Off by
+// default: a page that asks for none gets none, and is never prompted. Worth
+// turning on for a site that stopped asking because no Firefox ever answered.
+pref("cthulhu.tabaudio.always_offer", false);
+
+// Required by the above, and OFF in stock Firefox.
+//
+// This is what lets getUserMedia({audio: {mediaSource: "audioCapture"}}) mix
+// everything a tab is playing into one track. Cthulhu only ever calls it from
+// chrome, on a tab you picked by hand.
+//
+// THE COST OF TURNING IT ON: the engine gates this on the pref alone, not on
+// who is asking, so a web page can now ask for it too. A page can only capture
+// its OWN tab -- not another one -- and only after you grant it at a
+// permission prompt (MediaManager: askPermission = !privileged, and a page is
+// not privileged). The leak it opens is narrow but real: a page that talked
+// you into "allow" would also get the audio of any cross-origin iframe in its
+// own tab, which it could not otherwise hear.
+//
+// The right fix is one line in the engine -- let a CallerType::System caller
+// past this check and leave the pref off for content -- so that web pages keep
+// the stock behaviour. Until that patch lands this pref is the whole of it.
+pref("media.getusermedia.audio.capture.enabled", true);
+
 // -- Admin panel (home page) --
 // Off by default. Turn it on and a small "admin" button appears next to the
 // widget-settings gear, opening a panel of developer-side controls

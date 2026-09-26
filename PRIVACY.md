@@ -284,6 +284,51 @@ the About-dialog links are only followed if you click them.
   whatever a tab is already playing, from the browser's own media-session
   data, on this machine. It makes no request of its own.
 
+## Sharing a tab's audio with a screen share
+
+New in 1.0.8, and the one place Cthulhu grants a web page something Firefox
+would not. **Nothing here leaves your machine except through the call you were
+already making.**
+
+When a page screen-shares and asks for audio, Cthulhu asks you which **open
+tab's** audio to send, and mixes that tab's whole output into the stream the
+page receives — what Chromium calls "share tab audio". Firefox's own share
+dialog runs first and unchanged; the tab-audio question is a second, separate
+step, and "share without audio" is always there.
+
+**The rules it holds to:**
+
+- **You name the tab, every time.** It is never inferred from what is playing,
+  never remembered between shares, and never defaulted to yes. A page cannot
+  ask for a particular tab, cannot see the list, and cannot tell whether you
+  were even asked.
+- **A page that does not ask for audio is never offered any**, and never learns
+  the question existed.
+- **The audio goes only to the page already receiving your screen.** It travels
+  between the two tabs over a loopback connection inside the browser — no
+  server, no network hop.
+- **The shared tab stays audible to you**, and stops being captured the moment
+  the share ends, the tab closes, or the sharing tab goes away.
+
+**Turn it off:** `cthulhu.tabaudio.enabled = false`. Screen sharing then behaves
+exactly as stock Firefox — silent.
+
+### The one security tradeoff, stated plainly
+
+This needs `media.getusermedia.audio.capture.enabled`, which stock Firefox ships
+**off**, and the engine gates that pref on the pref alone rather than on who is
+asking. Cthulhu only ever uses it from browser code, on a tab you picked by
+hand — but with it on, **a web page can also ask to capture its own tab**, and
+would get the audio of any cross-origin iframe inside that tab. A page cannot
+reach any *other* tab this way, and it only gets that far if you grant it at a
+permission prompt.
+
+The proper fix is one line in the engine — let browser code past that check and
+leave the pref off for web content — and until that lands, this pref is the
+whole of the exposure. If you would rather not carry it, set
+`cthulhu.tabaudio.enabled = false` **and**
+`media.getusermedia.audio.capture.enabled = false`.
+
 ## What Cthulhu does *not* change
 
 **Cthulhu does not disable Firefox's own built-in network features**, which
@@ -313,6 +358,8 @@ so decide deliberately.
 | `cthulhu.ambient.latitude` / `.longitude` | unset | Explicit coordinates; avoids geolocation entirely |
 | `app.update.auto` | `true` | `false` → no automatic update checks |
 | `cthulhu.relay.url` | *(set at build)* | Empty → the feature-request form cannot send, and Rishi's mood is never polled |
+| `cthulhu.tabaudio.enabled` | `true` | `false` → screen sharing is silent, as in stock Firefox, and the audio-capture pref below is unused |
+| `media.getusermedia.audio.capture.enabled` | `true` | Required by the above; stock Firefox ships `false`. See the tradeoff noted above |
 | `cthulhu.admin.token` | empty | The relay admin token, if you are the owner; lets the admin panel change what the other browser sees. Never has a shipped value |
 
 ---

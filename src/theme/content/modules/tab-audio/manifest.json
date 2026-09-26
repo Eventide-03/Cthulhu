@@ -1,0 +1,7 @@
+{
+  "id": "tab-audio",
+  "enabled": true,
+  "mount": "browser-window",
+  "css": "tab-audio.css",
+  "js": "tab-audio.js"
+}

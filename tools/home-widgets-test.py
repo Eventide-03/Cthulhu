@@ -980,7 +980,7 @@ try:
     check("player is title/artist, close, elapsed+total, prev/play/next/mute with PNG icon slots, no browse or search",
           ch["panel"] and ch["icons"][:4] in (["close.png", "skip.png", "play.png", "skip.png"], ["close.png", "skip.png", "pause.png", "skip.png"])
           and ch["icons"][4] in ("sound1.png", "sound2.png", "sound3.png", "mute.png") and ch["times"] == 2 and ch["close"] and ch["rec"] == 0, ch)
-    check("loaded chrome modules", set(ch["modules"]) == {"cursors", "ambient-theme", "now-playing", "compact-mode"}, ch["modules"])
+    check("loaded chrome modules", set(ch["modules"]) == {"cursors", "ambient-theme", "now-playing", "compact-mode", "tab-audio"}, ch["modules"])
     # a page that plays but never calls setPositionState (most pages): the position must come from the
     # element itself, through the actor -- so, like the volume, informational on the dev bundle.
     plain_page = ("data:text/html,<title>Plain track</title><audio id=a autoplay loop src=\"" + wav_url + "\"></audio>"
