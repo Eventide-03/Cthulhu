@@ -42,41 +42,56 @@ There is no server that belongs to this project collecting anything about you.
 
 **Sent:** the **domain name** of each link — e.g. `github.com`. Not the full URL,
 not the path, and no identifier for you beyond your IP address and the normal
-headers any request carries.
+headers any request carries. Cookies are explicitly **not** sent.
 
-**To whom, in this order:**
+**To whom, in this order** — stopping at the first icon big enough to draw:
 
-1. `https://<host>/favicon.ico` — **the linked site itself, tried first**
-2. `https://icons.duckduckgo.com/ip3/<host>.ico` — only if the site has none
-3. Otherwise the widget keeps its placeholder icon
+1. `https://<host>/apple-touch-icon.png`, then `/apple-touch-icon-precomposed.png`
+2. `https://<host>/favicon.ico`
+3. the `<link rel="icon">` tags in **`https://<host>/`** — the site's own home
+   page, read only far enough to reach `</head>` and cut off at 64 KB. Reached
+   only when steps 1–2 came up short, which is where a site keeps nothing at a
+   guessable path (`youtube.com` is the everyday example). An icon this finds
+   may live on a CDN the site does not own — that host is then contacted too,
+   unless you turn the pref below off
+4. `https://icons.duckduckgo.com/ip3/<host>.ico` — fallback, if the site
+   published nothing usable at all
+5. Otherwise the widget keeps its placeholder icon
 
 **Why the site first:** it is the one party that already knows you are
 interested in it. This is *your* quick link, one click away from a visit, so
-asking it directly means **no third party learns the domain at all**. Sites that
-serve no `/favicon.ico` fall through to DuckDuckGo, which is a favicon proxy that
-does not profile requests.
+asking it directly means **no third party learns the domain at all**. Only a
+site that publishes no usable icon of its own falls through to DuckDuckGo,
+which is a favicon proxy that does not profile requests.
+
+**Why the extra steps (new in 1.0.8):** `/favicon.ico` is 32×32 on a good
+day and 16×16 on an ordinary one, while a quick-link tile draws 96 device
+pixels — so the icons were visibly blocky. The steps above ask the site for the
+bigger icon it already publishes. They cost more requests, so the result is now
+cached **on disk for a month** (a month per host, not per session), which is
+strictly *fewer* requests over time than the old per-session cache.
 
 **Why:** to show a real icon on each tile instead of a placeholder.
 
-**Where:** the **quick-links widget**, the **folder widget**, and the **side
-panels** — three separate call sites, all using the same order.
+**Where:** the **quick-links widget** and the **folder widget** — one shared
+resolver, `CthulhuWidgets.favicon()` in `widgets.js`.
 
 > **Changed in 1.0.5.** Google's `s2/favicons` service used to be **first** in
 > that list, which meant **Google normally received the domain list of your
-> quick links, folders and side panels**. It has been removed outright. If you
-> are reading this against an older build, that is what it did.
+> quick links and folders**. It has been removed outright. If you are reading
+> this against an older build, that is what it did.
 
-Results are cached per session, so it is one request per host per browser
-session, not one per page load. Each attempt is capped at 3 seconds so a slow or
-dead host cannot stall its tile.
+Each request is capped at 3 seconds, and a whole lookup at 8, so a slow or dead
+host cannot stall its tile.
 
 **How to turn it off:** set **`cthulhu.favicons.remote = false`** in
-`about:config`. Step 2 then disappears and nothing but the linked site itself is
-ever contacted. Also still true:
+`about:config`. Step 4 then disappears, and so does any icon step 3 finds on a
+host other than the linked one — nothing but the linked site itself is ever
+contacted. Also still true:
 
 - Set a **custom image** on a quick link (stored as a `data:` URL) — that path
   skips the network fetch entirely.
-- Remove the quick-links / folder widgets and the side panels you don't use.
+- Remove the quick-links / folder widgets you don't use.
 
 ### 2. Weather — `api.open-meteo.com`
 

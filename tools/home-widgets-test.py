@@ -44,6 +44,88 @@ def shot_chrome(name):
 def chrome(js, *args):
     m.set_context("chrome")
     return m.execute_script(js, script_args=args)
+
+def sysjs(js, *args):
+    """Run in Marionette's system-principal sandbox, which shares the page's
+    globals directly: `window.fetch = ...` there lands on the object the widget
+    code actually calls, where the same assignment through page()'s Xray would
+    only make an expando the page never sees. (eval() is out either way -- the
+    page's CSP blocks it -- so the stub below is plain script, not a string.)"""
+    m.set_context("content")
+    return m.execute_script(js, script_args=args, sandbox="system", new_sandbox=False)
+
+# The site-icon stub, run further down. Its own constant only so the flow
+# below stays readable.
+ICON_STUB_JS = r"""(() => {
+  const S = window.__ic = { log: [], progress: [], report: null };
+  /* Noise, not a flat fill: the resolver throws away anything under 80 bytes
+     as an empty/1x1 placeholder, and a solid 16px PNG is about that. */
+  const png = (n) => new Promise((res) => {
+    const c = document.createElement("canvas"); c.width = c.height = n;
+    const x = c.getContext("2d");
+    for (let i = 0; i < n * 4; i++) {
+      x.fillStyle = "hsl(" + ((i * 37) % 360) + ",80%,50%)";
+      x.fillRect((i * 7) % n, (i * 13) % n, 2, 2);
+    }
+    c.toBlob(res, "image/png");
+  });
+  const img = async (n) => new Response(await png(n), { status: 200, headers: { "Content-Type": "image/png" } });
+  const miss = () => new Response("<html>no</html>", { status: 404, headers: { "Content-Type": "text/html" } });
+  const routes = {
+    /* squish.test -- a big icon sitting right next to a small one, the shape
+       reddit.com has: 57px at /apple-touch-icon.png, 128px at -precomposed. */
+    "https://squish.test/apple-touch-icon.png": () => img(57),
+    "https://squish.test/apple-touch-icon-precomposed.png": () => img(128),
+    /* hidden.test -- nothing at any guessable path and a 16px favicon.ico,
+       with the real icon only declared in <head>. youtube.com exactly. */
+    "https://hidden.test/apple-touch-icon.png": miss,
+    "https://hidden.test/apple-touch-icon-precomposed.png": miss,
+    "https://hidden.test/favicon.ico": () => img(16),
+    "https://hidden.test/": () => new Response(
+      '<html><head><link rel="shortcut icon" href="/f.ico" type="image/x-icon">' +
+      '<link rel="mask-icon" href="/mask.svg" color="#000">' +
+      '<link rel="icon" href="/i48.png" sizes="48x48">' +
+      '<link rel="icon" href="/i144.png" sizes="144x144">' +
+      '</head><body>', { status: 200, headers: { "Content-Type": "text/html" } }),
+    "https://hidden.test/i144.png": () => img(144),
+    "https://hidden.test/i48.png": () => img(48),
+  };
+  const real = window.fetch;
+  window.fetch = (url) => {
+    const u = String(url); S.log.push(u);
+    const r = routes[u];
+    return Promise.resolve(r ? r() : miss());
+  };
+  const measure = (d) => new Promise((res) => {
+    const i = document.createElement("img");
+    i.onload = () => res(i.naturalWidth); i.onerror = () => res(0); i.src = d || "";
+  });
+  Promise.all([
+    window.CthulhuWidgets.favicon("squish.test", (d) => S.progress.push(d ? d.length : 0)),
+    window.CthulhuWidgets.favicon("hidden.test"),
+  ]).then(async ([a, b]) => {
+    const cached = await new Promise((res) => {
+      let rq; try { rq = indexedDB.open("cthulhu-home", 1); } catch (e) { return res(null); }
+      rq.onerror = () => res(null);
+      rq.onsuccess = () => {
+        const g = rq.result.transaction("kv", "readonly").objectStore("kv").get("favicon:squish.test");
+        g.onsuccess = () => res(g.result || null);
+        g.onerror = () => res(null);
+      };
+    });
+    S.report = {
+      squish: await measure(a), hidden: await measure(b),
+      squishPage: S.log.indexOf("https://squish.test/") >= 0,
+      hiddenPage: S.log.indexOf("https://hidden.test/") >= 0,
+      mask: S.log.indexOf("https://hidden.test/mask.svg") >= 0,
+      small: S.log.indexOf("https://hidden.test/i48.png") >= 0,
+      steps: S.log.length, progress: S.progress.length,
+      cachedPx: cached ? cached.px : null,
+      cachedData: !!(cached && /^data:image\//.test(cached.url || "")),
+    };
+    window.fetch = real;
+  });
+})();"""
 try:
     m.set_window_rect(width=1560, height=1300)
     m.set_context("content")
@@ -1089,6 +1171,34 @@ try:
     check("back to horizontal: the Home tab hides again and the Home button is back", hz["orient"] == "horizontal" and hz["hidden"] and hz["fvVisible"], hz)
     la = chrome("return { vis: Services.prefs.getCharPref('sidebar.visibility'), hidden: document.getElementById('sidebar-container').hidden, launcherVisible: SidebarController._state.launcherVisible, w: document.querySelector('sidebar-main').getBoundingClientRect().width };")
     check("the launcher that was hidden before vertical tabs is hidden again after them (upstream leaves it open)", la["vis"] == "hide-sidebar" and la["hidden"] and la["launcherVisible"] is False and la["w"] == 0, la)
+
+    # --- site icons: the tile shows the BIGGEST icon a site publishes, not its
+    #     16x16 favicon.ico. Driven against a stubbed fetch rather than the
+    #     real web -- this suite runs offline, and two synthetic hosts pin the
+    #     two shapes that made real tiles blocky (see the site-icons block in
+    #     widgets.js).
+    sysjs(ICON_STUB_JS)
+    rep = None
+    for _ in range(40):
+        raw = sysjs("return (window.__ic && window.__ic.report) ? JSON.stringify(window.__ic.report) : null;")
+        if raw and raw != "null":
+            rep = json.loads(raw); break
+        time.sleep(0.5)
+    check("site icons: the resolver answered", rep is not None, rep)
+    if rep:
+        check("the biggest icon wins, not the first one found (57px next to a 128px)",
+              rep["squish"] == 128, rep["squish"])
+        check("a guessable path that works costs no page fetch", rep["squishPage"] is False, rep)
+        check("a site that hides its icon is found through its <head> (16px favicon -> 144px)",
+              rep["hidden"] == 144 and rep["hiddenPage"] is True, rep)
+        check("the <head> is walked biggest-first, so the 48px one is never fetched",
+              rep["small"] is False, rep)
+        check("rel=mask-icon is skipped (a silhouette, not the logo)", rep["mask"] is False, rep)
+        check("the small icon is shown first and replaced by the sharp one",
+              rep["progress"] == 2, rep["progress"])
+        check("the result is cached on disk, so the extra requests are once per host",
+              rep["cachedPx"] == 128 and rep["cachedData"], rep)
+        print("ICONS", rep)
 
     # --- drawer: icons instead of dots
     page("document.getElementById('cthulhu-settings').click();"); time.sleep(0.8)

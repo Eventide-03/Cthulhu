@@ -95,20 +95,30 @@ pref("extensions.unifiedExtensions.button.always_visible", false);
 pref("cthulhu.ambient.weather.enabled", true);
 
 // -- Favicons --
-// Quick links, folder entries and side-panel toggles show each site's real
-// icon. The icon is fetched and inlined, and the fetch order is deliberately
-// the most private one that still works:
+// Quick links and folder entries show each site's real icon. It is fetched and
+// inlined, and the search order is deliberately the most private one that
+// still works -- the site itself, which already knows you are interested in
+// it, and nobody else unless it comes up short:
 //
-//   1. https://<host>/favicon.ico   -- the site itself, which already knows you
-//                                      are interested in it; no third party
-//   2. icons.duckduckgo.com          -- fallback, for hosts serving no icon
+//   1. https://<host>/apple-touch-icon.png, then -precomposed.png
+//   2. https://<host>/favicon.ico
+//   3. the <link rel="icon"> tags in https://<host>/ -- only if 1-2 found
+//      nothing big enough, and only the first 64 KB of the page is read
+//   4. icons.duckduckgo.com -- fallback, for hosts serving no icon at all
+//
+// Steps 1-3 ask nobody but the linked site. Set this pref to false and step 4
+// goes away, as does any icon step 3 finds on a CDN the site does not own:
+// nothing but the linked host is then ever contacted, and a host with no icon
+// of its own falls back to the placeholder.
+//
+// Why so many steps: /favicon.ico alone is 32x32 on a good day and 16x16 on an
+// ordinary one, and a quick-link tile draws 96 device pixels. The result is
+// cached on disk for a month, so the extra requests are once per host.
 //
 // Until 1.0.5 Google's s2 favicon service was tried FIRST, which meant Google
-// normally received the domain list of every quick link, folder and side panel.
-// It has been removed entirely.
+// normally received the domain list of every quick link and folder. It has
+// been removed entirely.
 //
-// Set this to false and step 2 goes away too: nothing but the site itself is
-// ever contacted, and hosts without an icon fall back to the placeholder.
 // Documented in PRIVACY.md.
 pref("cthulhu.favicons.remote", true);
 

@@ -64,6 +64,7 @@ CthulhuWidgets.register({
 | `ctx.refresh()` | re-render the widget body now |
 | `ctx.onCleanup(fn)` | register teardown (intervals, sprite `.stop()`) — run on remove/re-render |
 | `ctx.sprite` | the A4 helper (`window.CthulhuSprite`) for `animate()` |
+| `ctx.favicon(host, onBetter?)` | a site's logo as a data URL (or `null`), at the best resolution that site publishes — `apple-touch-icon`, `favicon.ico`, or the `<link rel=icon>` tags in its home page, biggest wins. Cached on disk for a month and deduplicated per host. Pass `onBetter` to paint the first icon found and swap in a sharper one when the search turns one up. Privacy doctrine and the `cthulhu.favicons.remote` pref: see the site-icons block in `widgets.js` and PRIVACY.md |
 | `ctx.moon` | moon helpers: `ctx.moon.moonPhase(date)` → `{frac,frame,name}`; `ctx.moon.moonEl(date,size)` → a pixel moon element |
 | `ctx.assetUrl(path)` | resolves `widgets/<id>/assets/<path>` to a chrome URL |
 | `ctx.esc(str)` | HTML-escape a string |

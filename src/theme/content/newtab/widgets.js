@@ -6,7 +6,7 @@
  * Cthulhu home widget system.
  *
  *   window.CthulhuWidgets — registry each widget self-registers into (+ shared
- *     moon-phase helpers). See widgets/README.md.
+ *     moon-phase and site-icon helpers). See widgets/README.md.
  *   window.CthulhuHome — the page app: auto-builds the palette, drag/drop from
  *     palette onto the GridStack grid, remove, per-widget config, and persistence.
  *
@@ -16,6 +16,40 @@
  * Both persist to IndexedDB (localStorage is unavailable on this principal).
  * ============================================================================= */
 "use strict";
+
+/* ------------------------- shared key/value store ---------------------------
+ * IndexedDB, because localStorage is unavailable on this page's principal. One
+ * database for every caller -- the saved layouts, the image picker's recents,
+ * and the site-icon cache below. Nothing here rejects: a home page that cannot
+ * reach its storage should come up empty, not throw.
+ *
+ * NOTE: top-level names in this file share ONE lexical scope with every widget
+ * script (see loadWidgetScripts), so they carry the _cth prefix. */
+const _cthKV = (function () {
+  const DB = "cthulhu-home", STORE = "kv";
+  function withStore(txMode, fn) {
+    return new Promise((resolve) => {
+      let req;
+      try { req = indexedDB.open(DB, 1); } catch (e) { return resolve(null); }
+      req.onupgradeneeded = () => { try { req.result.createObjectStore(STORE); } catch (e) {} };
+      req.onerror = () => resolve(null);
+      req.onsuccess = () => {
+        const db = req.result;
+        let out = null;
+        const tx = db.transaction(STORE, txMode);
+        const r = fn(tx.objectStore(STORE));
+        if (r) r.onsuccess = () => { out = r.result; };
+        tx.oncomplete = () => { db.close(); resolve(out); };
+        tx.onerror = () => { db.close(); resolve(null); };
+      };
+    });
+  }
+  return {
+    get: (k) => withStore("readonly", (s) => s.get(k)),
+    set: (k, v) => withStore("readwrite", (s) => { s.put(v, k); return null; }),
+    del: (k) => withStore("readwrite", (s) => { s.delete(k); return null; }),
+  };
+})();
 
 /* --------------------------------- registry -------------------------------- */
 window.CthulhuWidgets = (function () {
@@ -71,6 +105,247 @@ window.CthulhuWidgets = (function () {
     });
     return moonBoundsP;
   }
+  /* -------------------------------- site icons ------------------------------
+   * One resolver for every tile that shows a site's logo -- quick links and
+   * folder entries, which each used to carry their own copy of it.
+   *
+   * WHY IT IS MORE THAN A /favicon.ico FETCH. That file is 32x32 on a good day
+   * and 16x16 on an ordinary one (youtube.com serves 16; reddit.com 32). A
+   * quick-link tile draws its logo at 48 CSS px, which is 96 device pixels on
+   * a 2x display -- so the everyday case was a 16px image blown up six times,
+   * and the tiles looked it. The fix is to ASK FOR A BIGGER ONE, from places
+   * the site itself publishes:
+   *
+   *   /apple-touch-icon.png, /apple-touch-icon-precomposed.png
+   *       120-180px by convention, and free to guess: no page fetch needed.
+   *   /favicon.ico
+   *       the old source. Still worth asking -- netflix.com's is 64px.
+   *   the <link rel="icon"|"apple-touch-icon"> tags in the site's own <head>
+   *       the general answer, and the only one for a site that serves nothing
+   *       at a guessable path: youtube.com 404s on both apple paths and
+   *       declares a 144 here; discord.com and music.youtube.com likewise.
+   *       This one costs a page fetch, so it is reached only when the guesses
+   *       came up short -- and the body is cut off after 64 KB.
+   *
+   * The first hit does not win, the BIGGEST does. Sizes are measured off the
+   * decoded image, never trusted from the markup: reddit.com serves 57x57 at
+   * /apple-touch-icon.png and 128x128 at the -precomposed one right beside it,
+   * and taking the first would have left the tile nearly as coarse as before.
+   *
+   * Results are cached in _cthKV, i.e. on disk, for a month. The ladder is
+   * several requests where a site hides its good icon, and that must be a cost
+   * paid once per host -- not once per host per new tab.
+   *
+   * PRIVACY -- same doctrine as before, and PRIVACY.md spells it out. The
+   * linked site is asked first and is the only party contacted by default: it
+   * is the one party that already knows you are interested in it. The
+   * DuckDuckGo fallback, and any icon a site declares on a CDN it does not
+   * own, are both gated on cthulhu.favicons.remote, so setting that false
+   * still means nothing but the linked host is ever reached. Only the domain
+   * is ever sent, and credentials are omitted so no cookie rides along. */
+  const ICON_WANT_PX = 96;        // a 48px tile on a 2x display; stop climbing here
+  const ICON_CAP_PX = 256;        // cache no larger; past this it is all bloat
+  const ICON_TIMEOUT_MS = 3000;   // per request, so one dead host cannot stall a tile
+  const ICON_HTML_MAX = 65536;    // of a homepage -- far past any <head>
+  const ICON_BYTES_MAX = 2 * 1024 * 1024;
+  const ICON_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+  const ICON_TTL_MISS_MS = 24 * 60 * 60 * 1000; // a host with no icon, retried sooner
+  const ICON_BUDGET_MS = 8000;    // for a whole ladder, however many rungs are left
+  const iconPending = new Map(); // host -> Promise, so four tiles on one host resolve once
+  const iconWatch = new Map();   // host -> Set<fn>, live only while that ladder runs
+
+  /* Hand each improvement to the tiles waiting on it, rather than making them
+   * wait for the last rung. A host that hides its good icon takes several
+   * requests to get to, and a tile that sits blank through all of them looks
+   * broken -- so the 32px one goes up straight away and is replaced in place
+   * when something better arrives. */
+  function iconBetter(host, dataUrl) {
+    const set = iconWatch.get(host);
+    if (!set) return;
+    for (const fn of set) { try { fn(dataUrl); } catch (e) {} }
+  }
+
+  function iconRemoteOk() {
+    try {
+      if (typeof Services !== "undefined" && Services.prefs) {
+        return Services.prefs.getBoolPref("cthulhu.favicons.remote", true);
+      }
+    } catch (e) {}
+    return true;
+  }
+
+  function iconFetch(url, init) {
+    // credentials:"omit" -- every one of these is cross-origin from this page,
+    // so no cookie would be attached anyway; saying it outright keeps it true
+    // of the homepage fetch, which is the one request a site could tie to an
+    // account if it ever did carry one.
+    return fetch(url, Object.assign({
+      credentials: "omit",
+      signal: AbortSignal.timeout(ICON_TIMEOUT_MS),
+    }, init));
+  }
+
+  /* Natural size of a decoded icon, or 0 if it does not decode at all. SVG
+   * renders at any size, so it outranks every raster instead of reporting
+   * whatever its viewBox happens to say. */
+  function iconSize(dataUrl, type) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve(/^image\/svg\+xml/i.test(type)
+        ? ICON_CAP_PX
+        : Math.max(img.naturalWidth, img.naturalHeight) || 0);
+      img.onerror = () => resolve(0);
+      img.src = dataUrl;
+    });
+  }
+
+  /* x.com's apple-touch-icon is 1024x1024, for a tile that draws 96 device
+   * pixels. Redraw it small before it goes anywhere near the cache. SVG is
+   * left alone -- rasterising it would throw away the one thing it is good
+   * for. */
+  function iconShrink(dataUrl, type, px) {
+    if (px <= ICON_CAP_PX || /^image\/svg\+xml/i.test(type)) return Promise.resolve(dataUrl);
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const k = ICON_CAP_PX / Math.max(img.naturalWidth, img.naturalHeight);
+          const cv = document.createElement("canvas");
+          cv.width = Math.max(1, Math.round(img.naturalWidth * k));
+          cv.height = Math.max(1, Math.round(img.naturalHeight * k));
+          cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+          resolve(cv.toDataURL("image/png"));
+        } catch (e) { resolve(dataUrl); }
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    });
+  }
+
+  /* Fetch one candidate and measure it -> { url: dataURL, px } or null.
+   * Inlined as a data URL because a remote <img src> is blocked on this
+   * privileged page, while a system-principal fetch is not. */
+  async function iconTry(url) {
+    let blob;
+    try {
+      const r = await iconFetch(url);
+      if (!r.ok) return null;
+      blob = await r.blob();
+    } catch (e) { return null; }
+    // A site that answers a missing icon path with an HTML error page AND a
+    // 200 status would otherwise be inlined as a "broken image" data URL.
+    // netflix.com does exactly this for both apple-touch-icon paths.
+    if (/^text\/html/i.test(blob.type)) return null;
+    if (blob.size < 80 || blob.size > ICON_BYTES_MAX) return null; // empty/1x1, or not an icon
+    const dataUrl = await new Promise((res) => {
+      const fr = new FileReader();
+      fr.onload = () => res(fr.result);
+      fr.onerror = () => res(null);
+      fr.readAsDataURL(blob);
+    });
+    if (!dataUrl) return null;
+    const px = await iconSize(dataUrl, blob.type);
+    if (!px) return null;
+    return { url: await iconShrink(dataUrl, blob.type, px), px };
+  }
+
+  /* The icons a site declares in its own <head>, biggest first.
+   *
+   * Read as a stream and cut off at </head> or 64 KB, whichever comes first,
+   * so a heavy homepage costs a header's worth of traffic rather than a
+   * megabyte; the Range header asks for only that much from servers that
+   * honour it. Parsed with a regex over <link> tags rather than DOMParser --
+   * the tags are trivial, and half a document need never become a document on
+   * this privileged page. */
+  async function iconDeclared(host) {
+    let text = "";
+    try {
+      const r = await iconFetch("https://" + host + "/", {
+        headers: { Range: "bytes=0-" + (ICON_HTML_MAX - 1) },
+      });
+      if (!r.ok || !r.body) return [];
+      const reader = r.body.getReader();
+      const dec = new TextDecoder("utf-8", { fatal: false });
+      for (let n = 0; n < ICON_HTML_MAX; ) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        n += chunk.value.length;
+        text += dec.decode(chunk.value, { stream: true });
+        if (/<\/head/i.test(text)) break;
+      }
+      try { reader.cancel(); } catch (e) {}
+    } catch (e) { return []; }
+
+    const seen = new Set(), out = [];
+    for (const tag of text.match(/<link\b[^>]*>/gi) || []) {
+      const rel = (tag.match(/\brel\s*=\s*["']?([^"'>]*)/i) || [])[1] || "";
+      // "icon", "shortcut icon", "apple-touch-icon[-precomposed]". Deliberately
+      // NOT rel="mask-icon", which is a one-colour silhouette, not the logo.
+      if (!/(^|\s)icon(\s|$)/i.test(rel) &&
+          !/(^|\s)apple-touch-icon(-precomposed)?(\s|$)/i.test(rel)) continue;
+      const href = (tag.match(/\bhref\s*=\s*["']([^"']+)["']/i) || [])[1];
+      if (!href) continue;
+      let abs;
+      try { abs = new URL(href, "https://" + host + "/").href; } catch (e) { continue; }
+      if (!/^https?:/i.test(abs) || seen.has(abs)) continue;
+      seen.add(abs);
+      // sizes="144x144", or "any" for an SVG; an apple-touch-icon without one
+      // is 180 by convention. Only an ordering hint -- whatever is fetched
+      // still gets measured.
+      const nums = (((tag.match(/\bsizes\s*=\s*["']?([^"'>]*)/i) || [])[1] || "").match(/\d+/g) || []).map(Number);
+      out.push({
+        url: abs,
+        hint: nums.length ? Math.max.apply(null, nums)
+          : (/apple-touch-icon/i.test(rel) ? 180 : 0),
+      });
+    }
+    out.sort((a, b) => b.hint - a.hint);
+    return out.slice(0, 4); // a long <head> must not become a long fetch queue
+  }
+
+  async function iconResolve(host, origin) {
+    const remote = iconRemoteOk();
+    const deadline = Date.now() + ICON_BUDGET_MS;
+    let best = null;
+    const take = async (url) => {
+      // An icon a site declares on a CDN it does not own is a third party, and
+      // cthulhu.favicons.remote=false means "the linked host, and nobody else".
+      if (!remote) {
+        try { if (new URL(url).hostname !== host) return false; } catch (e) { return false; }
+      }
+      const got = await iconTry(url);
+      if (got && (!best || got.px > best.px)) { best = got; iconBetter(host, best.url); }
+      // Stop once it is good enough -- or once the ladder has taken long
+      // enough. Every rung at the 3s cap would be half a minute of blank
+      // tile, and whatever is already in hand beats a perfect icon nobody
+      // stayed to see.
+      return (!!best && best.px >= ICON_WANT_PX) || Date.now() > deadline;
+    };
+    // Guessable paths first: no page fetch, and this is where the big ones are.
+    if (await take(origin + "/apple-touch-icon.png")) return best;
+    if (await take(origin + "/apple-touch-icon-precomposed.png")) return best;
+    if (await take(origin + "/favicon.ico")) return best;
+    for (const c of await iconDeclared(host)) if (await take(c.url)) return best;
+    if (remote) await take("https://icons.duckduckgo.com/ip3/" + encodeURIComponent(host) + ".ico");
+    return best;
+  }
+
+  async function iconFor(host) {
+    let u;
+    try { u = new URL("https://" + host + "/"); } catch (e) { return null; }
+    if (u.hostname !== host) return null; // a bare hostname, not a URL fragment
+    const k = "favicon:" + host;
+    const hit = await _cthKV.get(k);
+    if (hit && hit.v === 1 && Date.now() - hit.t < (hit.url ? ICON_TTL_MS : ICON_TTL_MISS_MS)) {
+      return hit.url || null;
+    }
+    const best = await iconResolve(host, u.origin);
+    try {
+      await _cthKV.set(k, { v: 1, t: Date.now(), url: best ? best.url : null, px: best ? best.px : 0 });
+    } catch (e) {}
+    return best ? best.url : null;
+  }
+
   return {
     register(def) {
       if (!def || !def.id) return console.error("[Cthulhu] widget missing id", def);
@@ -131,6 +406,25 @@ window.CthulhuWidgets = (function () {
       return el;
     },
     moonBounds,
+    /** A site's logo as a data URL, at the best resolution it publishes, or
+     *  null. `onBetter` (optional) is called with each improvement while the
+     *  search is still running, so a tile can show the first icon found and
+     *  swap in a sharper one when it turns up; the promise settles on the last.
+     *  See the site-icons block above; also reachable as ctx.favicon. */
+    favicon(host, onBetter) {
+      const h = String(host || "").toLowerCase();
+      let p = iconPending.get(h);
+      if (!p) {
+        iconWatch.set(h, new Set()); // before the ladder starts, so nothing is missed
+        p = iconFor(h).catch(() => null).then((r) => { iconWatch.delete(h); return r; });
+        iconPending.set(h, p);
+      }
+      if (typeof onBetter === "function") {
+        const set = iconWatch.get(h); // gone once this host's ladder has finished
+        if (set) set.add(onBetter);
+      }
+      return p;
+    },
   };
 })();
 
@@ -379,40 +673,22 @@ window.CthulhuHome = (function () {
   let suppressSave = false;
   let pendingReload = false;
 
-  /* --- IndexedDB persistence (per-mode key) --- */
-  const DB = "cthulhu-home", STORE = "kv";
+  /* --- persistence (per-mode key, in the shared _cthKV store) --- */
   const key = () => "layout:" + mode;
-  function withStore(txMode, fn) {
-    return new Promise((resolve) => {
-      let req;
-      try { req = indexedDB.open(DB, 1); } catch (e) { return resolve(null); }
-      req.onupgradeneeded = () => { try { req.result.createObjectStore(STORE); } catch (e) {} };
-      req.onerror = () => resolve(null);
-      req.onsuccess = () => {
-        const db = req.result;
-        let out = null;
-        const tx = db.transaction(STORE, txMode);
-        const r = fn(tx.objectStore(STORE));
-        if (r) r.onsuccess = () => { out = r.result; };
-        tx.oncomplete = () => { db.close(); resolve(out); };
-        tx.onerror = () => { db.close(); resolve(null); };
-      };
-    });
-  }
-  const idbGet = () => withStore("readonly", (s) => s.get(key()));
-  const idbSet = (v) => withStore("readwrite", (s) => { s.put(v, key()); return null; });
-  const idbClear = () => withStore("readwrite", (s) => { s.delete(key()); return null; });
+  const idbGet = () => _cthKV.get(key());
+  const idbSet = (v) => _cthKV.set(key(), v);
+  const idbClear = () => _cthKV.del(key());
 
   /* --- image picker (Opera-GX-style: recent files + clipboard paste) --- */
   const REC_KEY = "recentImages";
   async function getRecents() {
-    const r = await withStore("readonly", (s) => s.get(REC_KEY));
+    const r = await _cthKV.get(REC_KEY);
     return Array.isArray(r) ? r : [];
   }
   async function addRecent(dataUrl) {
     const list = await getRecents();
     const next = [dataUrl, ...list.filter((u) => u !== dataUrl)].slice(0, 8);
-    await withStore("readwrite", (s) => { s.put(next, REC_KEY); return null; });
+    await _cthKV.set(REC_KEY, next);
   }
   function fileToDataUrl(file) {
     return new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(file); });
@@ -496,6 +772,7 @@ window.CthulhuHome = (function () {
       refresh() { reRender(instance); },
       sprite: window.CthulhuSprite,
       moon: window.CthulhuWidgets,
+      favicon: (host) => window.CthulhuWidgets.favicon(host),
       onCleanup(fn) { instance.cleanups.push(fn); },
       assetUrl(path) { return BASE + instance.id + "/assets/" + path; },
       esc: cthEsc,
