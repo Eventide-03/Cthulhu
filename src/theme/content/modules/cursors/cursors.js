@@ -26,4 +26,37 @@
   } catch (e) {
     console.error("[Cthulhu:cursors] failed to register cursor sheet:", e);
   }
+
+  /* The pointer's auto-hide over video. It belongs with the cursor theme
+   * because the theme is what broke it: a user-origin !important rule
+   * outranks the `cursor: none` every video site sets for itself. See
+   * CthulhuCursorIdleChild for the whole story.
+   *
+   * Registered here rather than in a module of its own for the same reason
+   * the sheet is: this file already runs once per browser window and the
+   * registration is process-global, so the second call throws "already
+   * registered" and that is the only "have I done this" signal there is.
+   *
+   * allFrames, because a video is as likely to be in an embed as in the page
+   * itself; the attribute lands on that frame's own root, which is exactly
+   * the area the pointer is over. */
+  try {
+    ChromeUtils.registerWindowActor("CthulhuCursorIdle", {
+      child: {
+        esModuleURI: "chrome://cthulhu/content/modules/cursors/CthulhuCursorIdleChild.sys.mjs",
+        events: {
+          play: { capture: true, mozSystemGroup: true },
+          pause: { capture: true, mozSystemGroup: true },
+          ended: { capture: true, mozSystemGroup: true },
+          fullscreenchange: { capture: true, mozSystemGroup: true },
+        },
+      },
+      messageManagerGroups: ["browsers"],
+      allFrames: true,
+    });
+  } catch (e) {
+    if (!/already/i.test(String(e))) {
+      console.error("[Cthulhu:cursors] cursor-idle actor registration failed:", e);
+    }
+  }
 })();

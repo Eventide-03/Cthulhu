@@ -125,6 +125,7 @@ cthulhu.jar:
     content/modules/cursors/manifest.json      (content/modules/cursors/manifest.json)
     content/modules/cursors/cursors.js         (content/modules/cursors/cursors.js)
     content/modules/cursors/cursors.css        (content/modules/cursors/cursors.css)
+    content/modules/cursors/CthulhuCursorIdleChild.sys.mjs (content/modules/cursors/CthulhuCursorIdleChild.sys.mjs)
     content/modules/cursors/assets/default.png (content/modules/cursors/assets/default.png)
     content/modules/cursors/assets/pointer.png (content/modules/cursors/assets/pointer.png)
     content/modules/cursors/assets/text.png    (content/modules/cursors/assets/text.png)

@@ -68,3 +68,29 @@ textarea:not(:is(:fullscreen, :fullscreen *)),
 #cthulhu-compact-resizer:not(:is(:fullscreen, :fullscreen *)) {
   cursor: ew-resize !important;
 }
+
+/* --- auto-hide while watching -------------------------------------------
+ * Sites hide the pointer themselves once a film has been playing and you have
+ * stopped moving -- YouTube, Netflix and Twitch all set `cursor: none`. Every
+ * rule above is user-origin !important, which outranks any author rule, so the
+ * theme was overriding all of them and the pointer sat on the picture for ever.
+ * Firefox's own controls never touch the cursor (videocontrols.css has no
+ * `cursor` declaration at all), so once the sites were overruled there was
+ * nothing left to hide it.
+ *
+ * It cannot be fixed by bowing out the way :fullscreen does: CSS has no way to
+ * say "unless the page asked for none", and a user-origin !important
+ * declaration beats the page whatever it targets. So the behaviour is
+ * reimplemented -- CthulhuCursorIdleChild sets this attribute once the pointer
+ * has been still over a playing video and drops it the moment you move. The
+ * upside of doing it ourselves is that it now also works on a player that
+ * never implemented it.
+ *
+ * The attribute is written TWICE on purpose. This has to outrank the
+ * pointer/text slots above, and those already score (0,2,1) -- an element, an
+ * attribute and a `:not(:is(...))`. Doubling it makes this (0,3,0), which wins
+ * on the middle column before the element column is ever compared. */
+:root[cthulhu-cursor-idle][cthulhu-cursor-idle],
+:root[cthulhu-cursor-idle][cthulhu-cursor-idle] * {
+  cursor: none !important;
+}
