@@ -1,0 +1,7 @@
+{
+  "id": "downloads-clear",
+  "enabled": true,
+  "mount": "browser-window",
+  "css": "downloads-clear.css",
+  "js": "downloads-clear.js"
+}

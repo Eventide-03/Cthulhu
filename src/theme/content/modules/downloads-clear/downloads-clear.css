@@ -1,0 +1,26 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* The Clear Downloads button in the downloads panel footer (downloads-clear.js).
+ * It already carries upstream's footer-button classes, so nearly everything --
+ * height, padding, hover, focus ring -- comes from the panel's own styles and
+ * follows the theme with them. Only the things that mark it as the secondary,
+ * destructive half of the footer are set here. */
+
+#cthulhu-downloads-clear {
+  /* Quieter than "Show All Downloads" above it: this is the one you reach for
+     rarely, and it should not read as the panel's main action. */
+  color: var(--panel-description-color, inherit);
+  opacity: 0.85;
+}
+
+#cthulhu-downloads-clear:hover:not([disabled="true"]) {
+  opacity: 1;
+}
+
+/* Nothing to clear -- greyed rather than hidden, so the footer does not change
+   height as downloads come and go. */
+#cthulhu-downloads-clear[disabled="true"] {
+  opacity: 0.4;
+}
