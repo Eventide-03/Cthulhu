@@ -56,6 +56,20 @@ wins once it comes; a guessed one also lets the bar seek the element directly,
 since a page that sets no position state has no `seekto` handler either. A
 stream (infinite duration) still reads "live".
 
+Some players give a whole queue **one continuous timeline** — each track is
+appended to the same media element, so the position and duration they report
+are measured from the start of the *first* track and grow with every song. Left
+raw, the card read `15:23 / 15:50` for the fourth four-minute track. Wherever
+the metadata changes on a timeline that did **not** restart, that position is
+recorded as a track boundary, and the card is shown the window between the
+boundary below the playhead and the one above it (or the reported end, which is
+as far as the queue is buffered); seeking maps back onto the page's own
+timeline, so the page is still asked for a position it understands. A player
+that restarts its timeline for each track reports ~0 at every metadata change,
+records no boundary, and is shown its own numbers unchanged. Covered by
+`tools/now-playing-time-test.py`, which drives both kinds through a fake
+controller.
+
 ## Mute and volume, honestly
 
 **Mute** is the tab's own `toggleMuteAudio()` — the same thing the speaker on

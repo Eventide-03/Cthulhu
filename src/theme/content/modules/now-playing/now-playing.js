@@ -56,6 +56,17 @@
  * which is what a page derives its position state from anyway. A real event
  * always wins once it comes.
  *
+ * ONE TIMELINE FOR A WHOLE QUEUE is what some players report: each track is
+ * appended to the same media element, so position and duration are measured
+ * from the start of the FIRST track and grow with every song -- by the fourth,
+ * a four-minute track read "15:23 / 15:50". Wherever the metadata changes on a
+ * timeline that did not restart, that position is a track boundary; the card
+ * is shown the window between the boundary below the playhead and the one
+ * above it (or the reported end, which is as far as the queue is buffered),
+ * and a seek is mapped back onto the page's own timeline. A player that gives
+ * each track its own timeline reports ~0 at every metadata change, so no
+ * boundary is ever recorded and its numbers are passed through untouched.
+ *
  * TITLES SCROLL when they do not fit: the text sits in a span the CSS slides
  * by the measured overflow, with long holds at each end (now-playing.css).
  *
@@ -109,6 +120,19 @@
     let current = null; // { tab, mc }
     let posSnap = null; // { position, duration, rate, at } -- last positionstatechange, extrapolated between events
     let shown = { tab: null, pos: 0 }; // last position handed out, for the jitter guard
+    /* Some players give a whole queue ONE continuous timeline -- each track is
+     * appended to the same media element, so position and duration are both
+     * measured from the start of the FIRST track and grow with every song: by
+     * the fourth the card read 15:23 of 15:50 for a four-minute track. Where
+     * the metadata changes on a timeline that did NOT restart, that position
+     * is a track boundary; the card is then shown the window between the
+     * boundary below the playhead and the one above it (or the reported end,
+     * which is where the queue is buffered to). A player that gives each track
+     * its own timeline reports ~0 at every metadata change, so no boundary is
+     * ever recorded, `bounds` stays empty and the window is the page's own
+     * 0..duration -- these players are left exactly as they were. */
+    let bounds = []; // absolute seconds where a track began, ascending
+    let pendingBound = null; // position at the last metadata change, awaiting the next snapshot
     const listeners = new Set();
 
     function notify() {
@@ -122,11 +146,47 @@
       if (current && current.mc.isPlaying) pos += ((win.performance.now() - posSnap.at) / 1000) * (posSnap.rate || 1);
       return Math.max(0, Math.min(pos, posSnap.duration));
     }
+    /* The current track's slice of the timeline, in absolute seconds. With no
+     * boundaries recorded this is the page's whole 0..duration. */
+    function trackWindow() {
+      if (!posSnap || !(posSnap.duration > 0)) return null;
+      const abs = rawPosition();
+      if (abs == null) return null;
+      let start = 0;
+      let end = posSnap.duration;
+      for (const b of bounds) {
+        if (b <= abs + JITTER_S) start = b;
+        else { end = Math.min(end, b); break; }
+      }
+      // A boundary that no longer makes sense against this duration (the page
+      // moved on to another queue, say) must not collapse the bar to nothing.
+      if (!(end - start > 0)) return { start: 0, end: posSnap.duration };
+      return { start, end };
+    }
+
+    /* Place the boundary that the last metadata change asked about, now that a
+     * snapshot for the new track has arrived. */
+    function settleBound() {
+      if (pendingBound == null) return;
+      const at = pendingBound;
+      pendingBound = null;
+      const abs = rawPosition();
+      if (abs == null) return;
+      if (abs <= JITTER_S) { bounds = []; return; } // the timeline restarted: a per-track player
+      if (abs + JITTER_S < at) return; // it moved backwards -- a seek, not a track boundary
+      const b = Math.min(at, abs);
+      if (b > JITTER_S && !bounds.some((x) => Math.abs(x - b) < JITTER_S)) {
+        bounds.push(b);
+        bounds.sort((x, y) => x - y);
+      }
+    }
+
     function onPositionState(e) {
       const before = rawPosition();
       posSnap = { position: e.position, duration: e.duration, rate: e.playbackRate, at: win.performance.now() };
       // A real seek (or a new track) must be allowed to move the bar back.
       if (before == null || Math.abs(e.position - before) > JITTER_S) shown = { tab: current && current.tab, pos: 0 };
+      settleBound();
       notify();
     }
     /* No position event yet (or the last one is from before a metadata
@@ -161,12 +221,16 @@
         const before = rawPosition();
         posSnap = { position: got.position, duration: got.duration, rate: got.rate || 1, at: win.performance.now(), guessed: true };
         if (before == null || Math.abs(got.position - before) > JITTER_S) shown = { tab: pick.tab, pos: 0 };
+        settleBound();
         notify();
       });
     }
     function onMetadata() {
       // A new track: a page that sets position state will send one; one that
-      // does not must be asked, or the old track's clock would run on.
+      // does not must be asked, or the old track's clock would run on. Where
+      // the new snapshot lands relative to this one says whether the page
+      // restarted its timeline or carried on through the track boundary.
+      pendingBound = rawPosition();
       if (posSnap) posSnap.stale = true;
       askPosition();
       notify();
@@ -186,6 +250,8 @@
       current = pick;
       posSnap = null;
       shown = { tab: pick && pick.tab, pos: 0 };
+      bounds = [];
+      pendingBound = null;
       if (current) {
         current.mc.addEventListener("metadatachange", onMetadata);
         current.mc.addEventListener("playbackstatechange", onPlayback);
@@ -253,15 +319,20 @@
         return () => listeners.delete(fn);
       },
       get current() { return current; },
-      get duration() { return posSnap ? posSnap.duration : 0; },
+      get duration() {
+        const w = trackWindow();
+        return w ? w.end - w.start : 0;
+      },
       get isPlaying() { return !!(current && current.mc.isPlaying); },
       extrapolatedPosition() {
         if (!posSnap || !(posSnap.duration > 0)) return null;
+        const w = trackWindow();
+        if (!w) return null;
         let pos = posSnap.position;
         if (current && current.mc.isPlaying) {
           pos += ((win.performance.now() - posSnap.at) / 1000) * (posSnap.rate || 1);
         }
-        pos = Math.max(0, Math.min(pos, posSnap.duration));
+        pos = Math.max(w.start, Math.min(pos, w.end)) - w.start;
         // Jitter guard: an extrapolated value that a late position event pulls
         // back by a fraction of a second must not make the bar twitch.
         if (current && shown.tab === current.tab && pos < shown.pos && shown.pos - pos < JITTER_S) pos = shown.pos;
@@ -269,9 +340,10 @@
         return pos;
       },
       seek(fraction) {
-        if (current && posSnap && posSnap.duration > 0) {
+        const w = trackWindow();
+        if (current && w) {
           shown = { tab: current.tab, pos: 0 };
-          const t = fraction * posSnap.duration;
+          const t = w.start + fraction * (w.end - w.start);
           current.mc.seekTo(t);
           if (posSnap.guessed) {
             // No position state from the page means no seekto handler either;
