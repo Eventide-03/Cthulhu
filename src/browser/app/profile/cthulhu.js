@@ -135,24 +135,20 @@ pref("cthulhu.tabaudio.enabled", true);
 // turning on for a site that stopped asking because no Firefox ever answered.
 pref("cthulhu.tabaudio.always_offer", false);
 
-// Required by the above, and OFF in stock Firefox.
+// Left OFF, as in stock Firefox -- and tab audio works anyway.
 //
-// This is what lets getUserMedia({audio: {mediaSource: "audioCapture"}}) mix
-// everything a tab is playing into one track. Cthulhu only ever calls it from
-// chrome, on a tab you picked by hand.
+// This pref is what lets getUserMedia({audio: {mediaSource: "audioCapture"}})
+// mix everything a tab is playing into one track. Upstream gates that on the
+// pref alone, not on who is asking, so turning it on would let a WEB PAGE ask
+// too: only for its own tab and only behind a permission prompt, but a page
+// that talked you into "allow" would also hear any cross-origin iframe in that
+// tab, which it otherwise could not.
 //
-// THE COST OF TURNING IT ON: the engine gates this on the pref alone, not on
-// who is asking, so a web page can now ask for it too. A page can only capture
-// its OWN tab -- not another one -- and only after you grant it at a
-// permission prompt (MediaManager: askPermission = !privileged, and a page is
-// not privileged). The leak it opens is narrow but real: a page that talked
-// you into "allow" would also get the audio of any cross-origin iframe in its
-// own tab, which it could not otherwise hear.
-//
-// The right fix is one line in the engine -- let a CallerType::System caller
-// past this check and leave the pref off for content -- so that web pages keep
-// the stock behaviour. Until that patch lands this pref is the whole of it.
-pref("media.getusermedia.audio.capture.enabled", true);
+// Cthulhu patches the check instead (src/dom/media/MediaManager-cpp.patch): a
+// CallerType::System caller -- Cthulhu's own tab-audio code, which
+// only ever captures a tab you picked by hand -- is let past it, and web pages
+// keep the stock behaviour. Turning this on restores upstream's wider rule.
+pref("media.getusermedia.audio.capture.enabled", false);
 
 // -- Admin panel (home page) --
 // Off by default. Turn it on and a small "admin" button appears next to the

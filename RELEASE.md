@@ -133,6 +133,7 @@ Mechanical state: `tools/rebase-esr.sh audit`. Judgment, per patch:
 | `browser/moz-build.patch` (prefs file) | build glue | low | No — default prefs need a build entry |
 | root `moz-build.patch` (`DIRS += theme`) | build glue | low | No |
 | `distribution/*.patch` (2) | build glue | low | No |
-| `application.ini.in` (vendored full copy) | build config | was **high** (silent drift) | Neutralised: auto-regenerated from fresh upstream on every rebase |
+| `application.ini.in` (vendored full copy) | build config | was **high** (silent drift) | Neutralised: auto-regenerated from fresh upstream on every rebase, keeping our header and the committed update URL verbatim (the 153.5 rebase caught the old template re-adding a stale URL) |
+| `dom/media/MediaManager-cpp.patch` (one condition) | engine C++ | low | No — it is the gate itself. Lets `CallerType::System` past the `audioCapture` pref so tab audio works with the pref at stock **off**. If it stops applying, re-make it by hand; **never** "fix" it by turning the pref on, which opens the capture to web pages |
 | `updater/*.der` (MAR certs) | data | none | n/a — never re-sync |
 | **`PopupNotifications-sys-mjs.patch`** | **toolkit/modules — deepest we have** | **high** | **Yes.** It adds one recognition branch to `_isActiveBrowser()` for side-panel browsers. The same result is achievable by wrapping `window.PopupNotifications._isActiveBrowser` at runtime from `side-panels.js` — zero rebase surface. Convert on whichever rebase it first conflicts, if not before. |

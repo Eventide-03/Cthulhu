@@ -74,8 +74,8 @@ try:
     prefs = chrome("return [Services.prefs.getBoolPref('cthulhu.tabaudio.enabled'),"
                    " Services.prefs.getBoolPref('media.getusermedia.audio.capture.enabled'),"
                    " Services.prefs.getBoolPref('media.navigator.permission.disabled', false)];")
-    check("shipped prefs are on, and the permission prompt is NOT disabled for this run",
-          prefs == [True, True, False], prefs)
+    check("tab audio is on, the engine's capture pref stays at stock OFF, and the permission prompt is NOT disabled for this run",
+          prefs == [True, False, False], prefs)
 
     # --- the source tab: something playing, on a secure origin (getUserMedia
     #     rejects an insecure one before it ever looks at the media source)
@@ -91,6 +91,26 @@ try:
     """, script_args=[WAV])
     time.sleep(2)
     check("the source tab is playing", m.execute_script("return !document.getElementById('a').paused;"))
+
+    # --- web pages get nothing new: the page's OWN script asks to capture its
+    #     own tab and must be refused outright (no prompt), exactly as in stock
+    #     Firefox. Run as a real <script> so the caller is the page, not
+    #     Marionette. Only Cthulhu's chrome code is let past the check
+    #     (src/dom/media/MediaManager-cpp.patch).
+    m.execute_script("""
+      const s = document.createElement('script');
+      s.textContent = "navigator.mediaDevices.getUserMedia({audio: {mediaSource: 'audioCapture'}})" +
+        ".then(st => { st.getTracks().forEach(t => t.stop()); document.documentElement.dataset.cap = 'granted'; }," +
+        " e => { document.documentElement.dataset.cap = e.name; });";
+      document.documentElement.appendChild(s);
+    """)
+    cap = None
+    for _ in range(20):
+        time.sleep(0.25)
+        cap = m.execute_script("return document.documentElement.dataset.cap || null;")
+        if cap: break
+    check("a web page asking to capture its own tab's audio is refused outright, as in stock Firefox",
+          cap == "NotAllowedError", cap)
 
     # --- the sink tab: a DIFFERENT site, so Fission gives it its own process
     m.execute_script("window.open('https://example.org/', '_blank');")

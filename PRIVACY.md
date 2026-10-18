@@ -313,21 +313,18 @@ step, and "share without audio" is always there.
 **Turn it off:** `cthulhu.tabaudio.enabled = false`. Screen sharing then behaves
 exactly as stock Firefox — silent.
 
-### The one security tradeoff, stated plainly
+### Web pages get nothing new
 
-This needs `media.getusermedia.audio.capture.enabled`, which stock Firefox ships
-**off**, and the engine gates that pref on the pref alone rather than on who is
-asking. Cthulhu only ever uses it from browser code, on a tab you picked by
-hand — but with it on, **a web page can also ask to capture its own tab**, and
-would get the audio of any cross-origin iframe inside that tab. A page cannot
-reach any *other* tab this way, and it only gets that far if you grant it at a
-permission prompt.
+Capturing everything a tab plays rests on
+`media.getusermedia.audio.capture.enabled`. Stock Firefox ships it **off** and
+gates the capture on that pref alone, not on who is asking — so simply turning
+it on would also let a web page ask to capture its own tab, including the audio
+of any cross-origin iframe inside it.
 
-The proper fix is one line in the engine — let browser code past that check and
-leave the pref off for web content — and until that lands, this pref is the
-whole of the exposure. If you would rather not carry it, set
-`cthulhu.tabaudio.enabled = false` **and**
-`media.getusermedia.audio.capture.enabled = false`.
+Cthulhu leaves that pref **off** and patches the check instead
+(`src/dom/media/MediaManager-cpp.patch`): only the browser's own code is let
+past it, and that code only ever captures a tab you picked by hand. For a web
+page, audio capture stays exactly as unavailable as in stock Firefox.
 
 ## What Cthulhu does *not* change
 
@@ -358,8 +355,8 @@ so decide deliberately.
 | `cthulhu.ambient.latitude` / `.longitude` | unset | Explicit coordinates; avoids geolocation entirely |
 | `app.update.auto` | `true` | `false` → no automatic update checks |
 | `cthulhu.relay.url` | *(set at build)* | Empty → the feature-request form cannot send, and Rishi's mood is never polled |
-| `cthulhu.tabaudio.enabled` | `true` | `false` → screen sharing is silent, as in stock Firefox, and the audio-capture pref below is unused |
-| `media.getusermedia.audio.capture.enabled` | `true` | Required by the above; stock Firefox ships `false`. See the tradeoff noted above |
+| `cthulhu.tabaudio.enabled` | `true` | `false` → screen sharing is silent, as in stock Firefox |
+| `media.getusermedia.audio.capture.enabled` | `false` | Stock default. Tab audio works without it (see above); `true` would also let web pages capture their own tab |
 | `cthulhu.admin.token` | empty | The relay admin token, if you are the owner; lets the admin panel change what the other browser sees. Never has a shipped value |
 
 ---

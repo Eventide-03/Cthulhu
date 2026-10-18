@@ -1,0 +1,17 @@
+diff --git a/dom/media/MediaManager.cpp b/dom/media/MediaManager.cpp
+index 82508f935b1f690222b7532e7cba650c0cd1603b..d6c2eaa1f3da33bae424e2c328c8879b5675b820 100644
+--- a/dom/media/MediaManager.cpp
++++ b/dom/media/MediaManager.cpp
+@@ -3105,8 +3105,10 @@ RefPtr<MediaManager::StreamPromise> MediaManager::GetUserMedia(
+ 
+       case MediaSourceEnum::AudioCapture:
+         // Only enable AudioCapture if the pref is enabled. If it's not, we can
+-        // deny right away.
+-        if (!Preferences::GetBool("media.getusermedia.audio.capture.enabled")) {
++        // deny right away. Chrome callers are exempt, so the browser can capture
++        // a tab the user picked without opening this to web content.
++        if (!isChrome &&
++            !Preferences::GetBool("media.getusermedia.audio.capture.enabled")) {
+           return StreamPromise::CreateAndReject(
+               MakeRefPtr<MediaMgrError>(MediaMgrError::Name::NotAllowedError),
+               __func__);

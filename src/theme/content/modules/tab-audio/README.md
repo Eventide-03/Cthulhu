@@ -3,7 +3,8 @@
 Firefox's `getDisplayMedia` **ignores the audio constraint outright**
 ([`MediaDevices.cpp`][gdm] never reads `constraints.audio`), so sharing a film
 in a Firefox tab has always been silent. This module fills that in, in chrome
-JS, without an engine patch — what Chromium calls *share tab audio*.
+JS — what Chromium calls *share tab audio* — plus one small engine patch so the
+capture it relies on stays closed to web pages.
 
 When a page screen-shares and asks for audio, a picker asks **which open tab's**
 audio to send; that tab's whole output is mixed into the stream the page gets.
@@ -68,13 +69,20 @@ Capturing the source tab raises no prompt on it, because the caller is chrome
 (`askPermission = !privileged`, and chrome is `CallerType::System`) — a
 doorhanger on someone else's tab would be noise, not consent.
 
+Upstream gates `audioCapture` on `media.getusermedia.audio.capture.enabled`
+alone, whoever is asking, so turning that pref on would have opened the capture
+to web pages too (their own tab only, behind a prompt — but with any
+cross-origin iframe's audio in it). `src/dom/media/MediaManager-cpp.patch`
+lets a `CallerType::System` caller past the check instead, and the pref stays
+off: web pages keep exactly the stock behaviour.
+
 ## Prefs
 
 | pref | default | effect |
 | --- | --- | --- |
 | `cthulhu.tabaudio.enabled` | `true` | off → screen sharing is silent, as in stock Firefox |
 | `cthulhu.tabaudio.always_offer` | `false` | on → offer the audio step even when the page did not ask |
-| `media.getusermedia.audio.capture.enabled` | `true` | **required**; stock Firefox ships `false` — see the tradeoff in `PRIVACY.md` |
+| `media.getusermedia.audio.capture.enabled` | `false` | stock default, and **not** needed — see below. `true` would also let web pages capture their own tab |
 
 ## Known limits, and what to do about them
 
@@ -83,9 +91,6 @@ doorhanger on someone else's tab would be noise, not consent.
   and would let the audio ride Firefox's own sharing indicators. Weeks of work
   and a patch to rebase on every ESR uplift — worth it only if the hop is
   audible in practice.
-- **The audio-capture pref is a blunt instrument.** One line in the engine would
-  let it through for `CallerType::System` and leave it off for web content.
-  That is the right next patch, and it is small.
 - **Video is still a window or a screen.** Sharing a *tab's* video needs
   `MediaSourceEnum::Browser`, which `MediaManager.cpp` downgrades away for any
   non-privileged caller. Audio is per-tab; video is not, yet.
