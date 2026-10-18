@@ -149,6 +149,17 @@ jobs:
         with:
           node-version: "20"
 
+      # PIN PYTHON. mach runs on whatever `python3` the runner has, and the
+      # macOS image moved from 3.14 to 3.15 between v1.0.7 and v1.0.8. Under
+      # 3.15 none of mach's bootstrap packages install (no wheels yet), so
+      # --enable-bootstrap silently fetches no toolchain, configure falls back
+      # to Apple's clang, and the build dies with "Failed to find an adequate
+      # linker" -- both macOS legs of v1.0.8's first run. 3.14 is what v1.0.7
+      # built with. The Windows job pins its own for a different reason.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
       - name: Install Surfer
         run: npm install -g "@zen-browser/surfer@${SURFER_VERSION}"
 
@@ -431,6 +442,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+
+      # PIN PYTHON. mach runs on whatever `python3` the runner has, and the
+      # macOS image moved from 3.14 to 3.15 between v1.0.7 and v1.0.8. Under
+      # 3.15 none of mach's bootstrap packages install (no wheels yet), so
+      # --enable-bootstrap silently fetches no toolchain, configure falls back
+      # to Apple's clang, and the build dies with "Failed to find an adequate
+      # linker" -- both macOS legs of v1.0.8's first run. 3.14 is what v1.0.7
+      # built with. The Windows job pins its own for a different reason.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
 
       - name: Install Surfer
         run: npm install -g "@zen-browser/surfer@${SURFER_VERSION}"
