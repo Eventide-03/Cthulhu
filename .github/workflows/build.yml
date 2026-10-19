@@ -73,6 +73,14 @@ jobs:
     timeout-minutes: 360
     # Always runs for a tag; skippable only on a manual dispatch.
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.macos }}
+    # A full macOS build's objects do not fit in the global 2G: v1.0.8's
+    # x86_64 cache came out at 1.93 GiB, i.e. at the cap and evicting. A capped
+    # cache keeps only the LAST objects compiled, so a re-run still recompiled
+    # the evicted first part from scratch -- not enough to get a cold arm64
+    # build under the 6-hour limit. 4G per arch, two arches, plus Windows'
+    # 2G and the source tarball, sits inside GitHub's 10 GB per-repo budget.
+    env:
+      SCCACHE_CACHE_SIZE: "4G"
     strategy:
       # Keep going if one arch fails -- a broken x86_64 should not throw away a
       # good 5-hour arm64 build, and vice versa.
@@ -188,8 +196,16 @@ jobs:
       # The key is per-ARCH: the two matrix legs compile different object code
       # and would otherwise evict each other on every run.
       # -----------------------------------------------------------------------
-      - name: Cache sccache objects
-        uses: actions/cache@v4
+      #
+      # Restore and save are SEPARATE steps so the save can run when the build
+      # does not finish. actions/cache saves only after a successful job, so a
+      # cold build that ran out of time threw away hours of compiled objects
+      # and every re-run started from zero: v1.0.8's arm64 leg compiled for
+      # 5h41m after the 153.5 rebase, hit the 6-hour cap, and saved nothing.
+      # The run attempt is in the save key because cache entries are immutable
+      # -- a re-run could never replace the first attempt's partial cache.
+      - name: Restore sccache objects
+        uses: actions/cache/restore@v4
         with:
           path: ~/Library/Caches/Mozilla.sccache
           key: sccache-macos-${{ matrix.arch }}-${{ github.sha }}
@@ -248,7 +264,12 @@ jobs:
       # active -- mach reads target and objdir from that file. `mach package` is
       # required because unify.py expects packaged (omni.ja) apps; that is how
       # Mozilla drives it.
+      # The STEP has its own timeout, under the job's 360: GitHub-hosted runners
+      # are killed outright at 6 hours, and a job killed at its cap may not get
+      # as far as the cache save below. Timing out here instead fails the step
+      # cleanly with ~20 minutes left for the save to run.
       - name: Build + package ${{ matrix.arch }}
+        timeout-minutes: 320
         run: |
           cat > mozconfig <<EOF
           ac_add_options --target=${{ matrix.target }}
@@ -257,6 +278,14 @@ jobs:
           cat mozconfig
           surfer build --skip-patch-check
           (cd engine && ./mach package)
+
+      # Runs whether the build passed, failed or timed out -- see CACHE BUDGET.
+      - name: Save sccache objects
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ~/Library/Caches/Mozilla.sccache
+          key: sccache-macos-${{ matrix.arch }}-${{ github.sha }}-${{ github.run_attempt }}
 
       # The .app that `mach package` leaves in dist/ is NOT a self-contained
       # bundle -- it is mostly a farm of symlinks pointing at ABSOLUTE paths
