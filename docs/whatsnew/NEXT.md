@@ -6,6 +6,7 @@ below as the "Changes" section of the GitHub release and the post-update page
 the previous tag, so a stale file after a release is ignored and the commit
 list is used instead. Rewrite the heading and the bullets for each release.
 
+- **macOS: Apple Silicon only from this release.** Intel Macs are no longer built; they stay on 1.0.7 and will not be offered this update.
 - **Security: built on Firefox ESR 153.5** (was 153.0), bringing in every security fix Mozilla has shipped for that line since.
 - **Share a tab's audio on a call**: when a site screen-shares and asks for audio, Cthulhu now asks which open tab's sound to send and mixes it into the stream — so a film or a track actually reaches the other end, which no Firefox has managed. You still hear the tab yourself, and you pick the tab by hand every time. Web pages gain nothing from this: only Cthulhu's own code can capture a tab's audio. Turn it off with `cthulhu.tabaudio.enabled`.
 - **A Clear Downloads button** in the downloads panel, next to "Show All Downloads". Firefox could only do this from the panel's right-click menu, where it is called "Clear Preview Panel" — so the list just kept growing.

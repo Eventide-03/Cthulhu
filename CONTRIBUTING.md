@@ -56,7 +56,7 @@ Full `ctx` API: `newtab/widgets/README.md`.
 ```
 src/ (patches + chrome layer)
   └─ surfer import → engine/ (Firefox ESR + our changes) → surfer build
-tag vX.Y.Z → CI: build mac(universal)+win → sign/notarize (if secrets, else ad-hoc) → dmg/exe
+tag vX.Y.Z → CI: build mac(Apple Silicon)+win → sign/notarize (if secrets, else ad-hoc) → dmg/exe
   → complete MARs → signmar + verify → GitHub Release → update manifests + whatsnew → Pages
 clients: app.update checks Pages manifest → downloads MAR from Releases → verifies
   against the cert baked in src/toolkit/mozapps/update/updater/*.der

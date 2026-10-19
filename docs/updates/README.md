@@ -35,9 +35,10 @@ docs/updates/
 reports the architecture the build is *running on*, not the one it was built
 for** (`UpdateUtils.sys.mjs`). So:
 
-- The **one universal** macOS `.app` reports `Darwin_aarch64-gcc3` on Apple
-  Silicon and `Darwin_x86_64-gcc3` on Intel. Both point at the *same* universal
-  MAR.
+- macOS is **Apple Silicon only** from 1.0.8, so the Mac MAR is advertised
+  under `Darwin_aarch64-gcc3` alone. `Darwin_x86_64-gcc3` (Intel) is left as
+  1.0.7 published it, deliberately: an Intel Mac must never be offered an
+  arm64-only build. (Up to 1.0.7 one universal MAR went to both.)
 - On Windows the ABI gets the running CPU appended, so the x64 build reports
   `-x64` on an x64 machine and `-aarch64` on an ARM64 machine running it under
   emulation. Both point at the same x64 MAR.
@@ -55,8 +56,8 @@ versions and does not update, so there is no need for per-version manifests.
 python3 tools/update-manifests/generate.py \
   --out docs/updates --channel release \
   --version 1.2.0 --build-id 20260825120000 --platform-version 153.0 \
-  --macos-mar   dist/Cthulhu-1.2.0-macos-universal.complete.mar \
-  --macos-url   https://github.com/Eventide-03/Cthulhu/releases/download/v1.2.0/Cthulhu-1.2.0-macos-universal.complete.mar \
+  --macos-mar   dist/Cthulhu-1.2.0-macos-arm64.complete.mar \
+  --macos-url   https://github.com/Eventide-03/Cthulhu/releases/download/v1.2.0/Cthulhu-1.2.0-macos-arm64.complete.mar \
   --windows-mar dist/Cthulhu-1.2.0-windows-x64.complete.mar \
   --windows-url https://github.com/Eventide-03/Cthulhu/releases/download/v1.2.0/Cthulhu-1.2.0-windows-x64.complete.mar
 ```

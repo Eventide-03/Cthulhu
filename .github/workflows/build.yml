@@ -1,9 +1,18 @@
-# Builds Cthulhu for macOS (universal: arm64 + x86_64) and Windows x64, then
-# publishes a GitHub Release on a version tag.
+# Builds Cthulhu for macOS (Apple Silicon) and Windows x64, then publishes a
+# GitHub Release on a version tag.
+#
+# INTEL MACS ARE NOT BUILT, from v1.0.8. The x86_64 leg roughly doubled the
+# macOS cost of every release for a platform the project does not need, and a
+# cold x86_64 compile after an ESR rebase ran past GitHub's 6-hour cap. Intel
+# Macs stay on the last universal release (1.0.7): their update manifest
+# (Darwin_x86_64-gcc3) is no longer written, so they are never offered an
+# arm64-only build they could not run. To bring Intel back, restore the matrix
+# entry, macos-merge's unify step and generate.py's Darwin_x86_64 target --
+# the commit that removed them is the map.
 #
 # Artifacts are named predictably so the download page and update manifests can
 # hardcode them:
-#   Cthulhu-<version>-macos-universal.dmg
+#   Cthulhu-<version>-macos-arm64.dmg
 #   Cthulhu-<version>-windows-x64.exe
 #
 # STATUS: Windows is a first-class release target. `continue-on-error` was
@@ -101,9 +110,7 @@ jobs:
           - arch: arm64
             target: aarch64-apple-darwin
             objdir: obj
-          - arch: x86_64
-            target: x86_64-apple-darwin
-            objdir: obj
+          # x86_64 dropped from v1.0.8 -- see the note at the top of this file.
     steps:
       - uses: actions/checkout@v4
 
@@ -420,11 +427,11 @@ jobs:
           retention-days: 3
 
       # The merge job needs `mar` and `signmar`, and those only exist as build
-      # outputs. Ship them from the x86_64 leg (arbitrary -- either would do)
+      # outputs. Ship them from the arm64 leg (the only one since v1.0.8)
       # rather than making the merge job compile anything. signmar is linked
       # against the NSS/NSPR dylibs next to it, so they travel too.
       - name: Archive the MAR tooling
-        if: matrix.arch == 'x86_64'
+        if: matrix.arch == 'arm64'
         run: |
           set -euo pipefail
           cd "engine/${{ matrix.objdir }}"
@@ -435,7 +442,7 @@ jobs:
           ls -lh "$GITHUB_WORKSPACE/macos-martools.tar.gz"
 
       - uses: actions/upload-artifact@v4
-        if: matrix.arch == 'x86_64'
+        if: matrix.arch == 'arm64'
         with:
           name: macos-martools
           path: macos-martools.tar.gz
@@ -451,7 +458,7 @@ jobs:
   # dragging a 4 GB tree through the artifact store.
   # ===========================================================================
   macos-merge:
-    name: macOS (universal)
+    name: macOS (Apple Silicon)
     needs: macos-build
     runs-on: macos-latest
     timeout-minutes: 90
@@ -544,20 +551,14 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: macos-app-x86_64
-          path: incoming
-
-      - uses: actions/download-artifact@v4
-        with:
           name: macos-martools
           path: incoming
 
       - name: Unpack the build outputs
         run: |
           set -euo pipefail
-          mkdir -p stage/arm64 stage/x86_64 martools
+          mkdir -p stage/arm64 martools
           tar -xzf incoming/macos-arm64-app.tar.gz  -C stage/arm64
-          tar -xzf incoming/macos-x86_64-app.tar.gz -C stage/x86_64
           tar -xzf incoming/macos-martools.tar.gz   -C martools
           # Locate each bundle explicitly rather than taking the first directory
           # entry. `ls | head -1` silently returned the packaging STAGING dir
@@ -568,35 +569,25 @@ jobs:
             find "$1" -maxdepth 2 -type d -name '*.app' | sort | head -1
           }
           ARM="$(find_app stage/arm64)"
-          X64="$(find_app stage/x86_64)"
-          for v in ARM X64; do
+          for v in ARM; do
             eval "p=\$$v"
             [ -n "$p" ] || { echo "::error::no .app found in stage for $v"; find stage -maxdepth 3 || true; exit 1; }
             [ -x "$p/Contents/MacOS/$APP_NAME" ] || { echo "::error::$p is not an app bundle -- no Contents/MacOS/$APP_NAME"; ls -R "$p" | head -40; exit 1; }
           done
-          ARM="$PWD/$ARM"; X64="$PWD/$X64"
-          echo "ARM_APP=$ARM" >> "$GITHUB_ENV"
-          echo "X64_APP=$X64" >> "$GITHUB_ENV"
+          ARM="$PWD/$ARM"
+          echo "MAC_APP=$ARM" >> "$GITHUB_ENV"
           chmod +x martools/dist/bin/signmar martools/dist/host/bin/mar
           echo "arm64 : $ARM"
-          echo "x86_64: $X64"
 
-      # unify.py merges app2 INTO app1 in place, so the x86_64 tree becomes the
-      # universal one.
-      - name: Unify into a universal app
+      # Apple Silicon only (see the top of this file): nothing to unify. Assert
+      # the binary really is arm64, so an Intel slice can never ship under an
+      # arm64 name -- or an arm64 build under the old universal one.
+      - name: Verify the arm64 binary
         run: |
-          set -euo pipefail
-          cd engine
-          LIPO=lipo ./mach python toolkit/mozapps/installer/unify.py "$X64_APP" "$ARM_APP"
-          echo "UNIVERSAL_APP=$X64_APP" >> "$GITHUB_ENV"
-
-      - name: Verify universal binary
-        run: |
-          BIN="$UNIVERSAL_APP/Contents/MacOS/$APP_NAME"
-          [ -f "$BIN" ] || BIN=$(find "$UNIVERSAL_APP/Contents/MacOS" -maxdepth 1 -type f -perm +111 | head -1)
+          BIN="$MAC_APP/Contents/MacOS/$APP_NAME"
+          [ -f "$BIN" ] || BIN=$(find "$MAC_APP/Contents/MacOS" -maxdepth 1 -type f -perm +111 | head -1)
           lipo -archs "$BIN"
-          lipo -archs "$BIN" | grep -q arm64  || { echo "::error::arm64 slice missing";  exit 1; }
-          lipo -archs "$BIN" | grep -q x86_64 || { echo "::error::x86_64 slice missing"; exit 1; }
+          [ "$(lipo -archs "$BIN")" = "arm64" ] || { echo "::error::expected an arm64-only binary, got: $(lipo -archs "$BIN")"; exit 1; }
 
       # =======================================================================
       # macOS SIGNING + NOTARIZATION
@@ -653,10 +644,10 @@ jobs:
             #
             # xattr first -- codesign refuses a bundle carrying a resource fork
             # or Finder info ("detritus not allowed").
-            xattr -cr "$UNIVERSAL_APP" || true
-            codesign --force --deep --sign - "$UNIVERSAL_APP"
-            codesign --verify --deep --strict --verbose=2 "$UNIVERSAL_APP"
-            codesign -dv "$UNIVERSAL_APP" 2>&1 | grep -E 'Identifier=|Sealed Resources|Info.plist' || true
+            xattr -cr "$MAC_APP" || true
+            codesign --force --deep --sign - "$MAC_APP"
+            codesign --verify --deep --strict --verbose=2 "$MAC_APP"
+            codesign -dv "$MAC_APP" 2>&1 | grep -E 'Identifier=|Sealed Resources|Info.plist' || true
             echo "SIGNED=0" >> "$GITHUB_ENV"; exit 0
           fi
           KEYCHAIN="$RUNNER_TEMP/build.keychain"
@@ -676,15 +667,15 @@ jobs:
 
           # Inside-out: nested helpers first, each with its own entitlements,
           # then everything else, then the outer bundle last.
-          find "$UNIVERSAL_APP/Contents/MacOS" -name 'plugin-container.app' -maxdepth 2 -print0 |
+          find "$MAC_APP/Contents/MacOS" -name 'plugin-container.app' -maxdepth 2 -print0 |
             while IFS= read -r -d '' p; do sign --entitlements "$ENT/plugin-container.xml" "$p"; done
-          find "$UNIVERSAL_APP" \( -name '*.dylib' -o -name '*.so' \) -print0 |
+          find "$MAC_APP" \( -name '*.dylib' -o -name '*.so' \) -print0 |
             while IFS= read -r -d '' f; do sign "$f"; done
-          find "$UNIVERSAL_APP/Contents/MacOS" -maxdepth 1 -type f -perm +111 -print0 |
+          find "$MAC_APP/Contents/MacOS" -maxdepth 1 -type f -perm +111 -print0 |
             while IFS= read -r -d '' f; do sign "$f"; done
-          sign --entitlements "$ENT/firefox.browser.xml" "$UNIVERSAL_APP"
+          sign --entitlements "$ENT/firefox.browser.xml" "$MAC_APP"
 
-          codesign --verify --deep --strict --verbose=2 "$UNIVERSAL_APP"
+          codesign --verify --deep --strict --verbose=2 "$MAC_APP"
           echo "SIGNED=1" >> "$GITHUB_ENV"
 
       - name: Build the .dmg
@@ -692,8 +683,8 @@ jobs:
           set -euo pipefail
           STAGE="$RUNNER_TEMP/dmg-stage"
           rm -rf "$STAGE" && mkdir -p "$STAGE"
-          cp -R "$UNIVERSAL_APP" "$STAGE/"
-          DMG="$PWD/${APP_NAME}-${VERSION}-macos-universal.dmg"
+          cp -R "$MAC_APP" "$STAGE/"
+          DMG="$PWD/${APP_NAME}-${VERSION}-macos-arm64.dmg"
           # create_dmg() adds the /Applications drag target itself (a symlink
           # named " " so it needs no localisation) -- see mozpack/dmg.py.
           # On macOS it drives hdiutil natively; the dmg/hfsplus toolchains are
@@ -736,7 +727,7 @@ jobs:
         run: |
           set -euo pipefail
           # Nothing was compiled in this job -- mar/signmar come from the
-          # x86_64 build job's `macos-martools` artifact. signmar dlopens the
+          # arm64 build job's `macos-martools` artifact. signmar dlopens the
           # NSS/NSPR dylibs that shipped alongside it.
           TOOLS="$GITHUB_WORKSPACE/martools"
           export DYLD_LIBRARY_PATH="$TOOLS/dist/bin"
@@ -744,7 +735,7 @@ jobs:
           MAR_BIN="$TOOLS/dist/host/bin/mar"
           DER="$GITHUB_WORKSPACE/src/toolkit/mozapps/update/updater/release_primary.der"
 
-          BUILDID=$(sed -n 's/^BuildID=//p' "$UNIVERSAL_APP/Contents/Resources/application.ini" | head -1)
+          BUILDID=$(sed -n 's/^BuildID=//p' "$MAC_APP/Contents/Resources/application.ini" | head -1)
           [ -n "$BUILDID" ] || { echo "::error::could not read BuildID"; exit 1; }
           echo "MAC_BUILDID=$BUILDID" >> "$GITHUB_ENV"
 
@@ -760,16 +751,16 @@ jobs:
           # development is blind to it -- it can only be caught here, on the
           # packaged artifact. Also re-checks the AppUpdate host.
           WS=$(printf '%s' "$GITHUB_WORKSPACE" | tr '\\' '/')
-          python3 "$WS/tools/verify-package.py" "$UNIVERSAL_APP/Contents/Resources" --surfer "$WS/surfer.json"
+          python3 "$WS/tools/verify-package.py" "$MAC_APP/Contents/Resources" --surfer "$WS/surfer.json"
 
 
 
-          OUT="$GITHUB_WORKSPACE/${APP_NAME}-${VERSION}-macos-universal.complete.mar"
+          OUT="$GITHUB_WORKSPACE/${APP_NAME}-${VERSION}-macos-arm64.complete.mar"
           (cd "$GITHUB_WORKSPACE/engine" && \
             MAR="$MAR_BIN" \
             MOZ_PRODUCT_VERSION="$VERSION" \
             MAR_CHANNEL_ID="release" \
-            tools/update-packaging/make_full_update.sh "$OUT.unsigned" "$UNIVERSAL_APP")
+            tools/update-packaging/make_full_update.sh "$OUT.unsigned" "$MAC_APP")
 
           if [ -z "${MAR_SIGNING_DB_B64:-}" ]; then
             echo "::error::MAR_SIGNING_DB_B64 is not set. Refusing to publish an unsigned MAR -- the browser would reject it, so shipping one would silently break updates."
@@ -1365,7 +1356,7 @@ jobs:
             echo "## Downloads"
             echo
             if ls assets/*.dmg >/dev/null 2>&1; then
-              echo "- **macOS** (universal — Apple Silicon + Intel): \`$(basename assets/*.dmg)\`"
+              echo "- **macOS** (Apple Silicon): \`$(basename assets/*.dmg)\` — Intel Macs are no longer built; they stay on 1.0.7"
             fi
             if ls assets/*.exe >/dev/null 2>&1; then
               echo "- **Windows x64**: \`$(basename assets/*.exe)\`"
@@ -1424,7 +1415,7 @@ jobs:
                 --version "$VERSION" --build-id "$MAC_BUILDID"
                 --platform-version "$(node -p "require('./surfer.json').version.version.replace('esr','')")")
 
-          MAC_MAR=$(ls assets/*macos-universal.complete.mar 2>/dev/null | head -1 || true)
+          MAC_MAR=$(ls assets/*macos-arm64.complete.mar 2>/dev/null | head -1 || true)
           if [ -n "$MAC_MAR" ]; then
             ARGS+=(--macos-mar "$MAC_MAR" --macos-url "$BASE/$(basename "$MAC_MAR")"
                    --macos-buildid "$MAC_BUILDID")

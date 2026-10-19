@@ -52,7 +52,7 @@ tag. If they differ, update checks compare the wrong numbers.
 ## 4. What CI does on the tag (nothing for you to do)
 
 ```
-macos job ──► arm64 build+package ─► x86_64 build+package ─► unify (universal)
+macos job ──► arm64 build+package (Apple Silicon only since 1.0.8; Intel stays on 1.0.7)
           ──► sign+notarize (only if Apple secrets set; else AD-HOC signed + warning:
               unsigned bundles cannot hold a mic/camera grant -- see CONTRIBUTING.md)
           ──► .dmg ─► complete MAR ─► signmar ─► VERIFY signature (fails build if bad)

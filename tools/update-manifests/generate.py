@@ -22,11 +22,17 @@ import sys
 from xml.sax.saxutils import quoteattr
 
 # BUILD_TARGET is Services.appinfo.OS + "_" + UpdateUtils.ABI, and ABI reports
-# the architecture the build is RUNNING ON, not what it was built for. So one
-# universal macOS artifact must be advertised under BOTH Mac targets, and the
-# x64 Windows build is also what an ARM64 Windows machine runs (emulated).
+# the architecture the build is RUNNING ON, not what it was built for. The x64
+# Windows build is also what an ARM64 Windows machine runs (emulated), so it is
+# advertised under both Windows targets.
+#
+# macOS is APPLE SILICON ONLY from v1.0.8 (see the top of build.yml), so the
+# Mac MAR goes to Darwin_aarch64-gcc3 alone. Darwin_x86_64-gcc3 is deliberately
+# NOT written: Intel Macs keep the 1.0.7 manifest already published there, and
+# are never offered an arm64 build they could not run. (Up to 1.0.7 one
+# universal MAR was advertised under both Mac targets.)
 TARGETS = {
-    "macos": ["Darwin_aarch64-gcc3", "Darwin_x86_64-gcc3"],
+    "macos": ["Darwin_aarch64-gcc3"],
     "windows": ["WINNT_x86_64-msvc-x64", "WINNT_x86_64-msvc-aarch64"],
 }
 
