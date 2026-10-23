@@ -78,7 +78,22 @@ jobs:
   # ===========================================================================
   macos-build:
     name: macOS ${{ matrix.arch }}
-    runs-on: macos-latest
+    # SELF-HOSTED, from v1.0.8: the maintainer's own Apple Silicon Mac. GitHub's
+    # free macos-latest runners could not fit a release build inside their hard
+    # 6-hour cap -- three v1.0.8 runs were cut off in gkrust, whose release
+    # profile (-Clto, codegen-units=1) takes ~3.5h single-threaded there and
+    # cannot be cached. The same build takes under 2h on the maintainer's Mac.
+    #
+    # Only this COMPILE job runs there. macos-merge -- which holds the MAR
+    # signing key -- stays on a GitHub-hosted runner, so the key never reaches
+    # a personal machine. Every step below that would alter the host
+    # (sudo, brew, global npm, the sccache cache) is GitHub-hosted-only, and the
+    # job removes its multi-GB workspace when it ends.
+    #
+    # `cthulhu-release` is a label the runner must be registered with, so this
+    # job can only land on a runner set up for it. The job waits in the queue
+    # until that runner is online -- start it to release, stop it after.
+    runs-on: [self-hosted, macOS, ARM64, cthulhu-release]
     timeout-minutes: 360
     # Always runs for a tag; skippable only on a manual dispatch.
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.macos }}
@@ -154,6 +169,7 @@ jobs:
           echo "Shared build ID: $BD"
 
       - name: Free disk space
+        if: runner.environment == 'github-hosted'
         run: |
           set -x
           sudo rm -rf /Library/Developer/CoreSimulator/Profiles/Runtimes || true
@@ -175,10 +191,18 @@ jobs:
         with:
           python-version: "3.14"
 
+      # Into the job's own temp dir, not `npm -g`: on the self-hosted runner a
+      # global install would land in the maintainer's own npm prefix.
       - name: Install Surfer
-        run: npm install -g "@zen-browser/surfer@${SURFER_VERSION}"
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/surfer" "@zen-browser/surfer@${SURFER_VERSION}"
+          echo "$RUNNER_TEMP/surfer/node_modules/.bin" >> "$GITHUB_PATH"
 
+      # GitHub-hosted only. configs/macos/mozconfig enables sccache only when
+      # it is installed, so the self-hosted build simply runs without it.
       - name: Install sccache
+        if: runner.environment == 'github-hosted'
         run: brew install sccache
 
       # The runners ship a rustup toolchain with ONLY the host target installed
@@ -212,6 +236,7 @@ jobs:
       # The run attempt is in the save key because cache entries are immutable
       # -- a re-run could never replace the first attempt's partial cache.
       - name: Restore sccache objects
+        if: runner.environment == 'github-hosted'
         uses: actions/cache/restore@v4
         with:
           path: ~/Library/Caches/Mozilla.sccache
@@ -290,7 +315,7 @@ jobs:
 
       # Runs whether the build passed, failed or timed out -- see CACHE BUDGET.
       - name: Save sccache objects
-        if: always()
+        if: always() && runner.environment == 'github-hosted'
         uses: actions/cache/save@v4
         with:
           path: ~/Library/Caches/Mozilla.sccache
@@ -459,6 +484,17 @@ jobs:
   # make_dmg, so it re-runs surfer download + import (~15 min) rather than
   # dragging a 4 GB tree through the artifact store.
   # ===========================================================================
+
+      # A self-hosted runner keeps its workspace between jobs. The Firefox tree
+      # and objdir are ~20 GB on the maintainer's disk, so remove them however
+      # the job ended. (The artifacts are uploaded by then.)
+      - name: Clean up the workspace
+        if: always() && runner.environment == 'self-hosted'
+        run: |
+          rm -rf engine .surfer/engine mozconfig macos-*.tar.gz || true
+          df -h "$GITHUB_WORKSPACE" | tail -1
+
+
   macos-merge:
     name: macOS (Apple Silicon)
     needs: macos-build

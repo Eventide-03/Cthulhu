@@ -49,10 +49,44 @@ The tag/displayVersion match matters: the app's internal version comes from
 `displayVersion` at build time, while manifests and artifact names come from the
 tag. If they differ, update checks compare the wrong numbers.
 
+## 3½. Start the Mac build runner
+
+The macOS compile runs on **your own Apple Silicon Mac** (a self-hosted runner),
+because GitHub's free Mac runners cannot finish a release build inside their
+6-hour cap. Everything else — Windows, the Mac merge/signing job, the release —
+stays on GitHub's runners, and the MAR signing key never reaches your Mac.
+
+Start the runner before you push the tag, and stop it afterwards:
+
+```bash
+cd ~/actions-runner && ./run.sh      # Ctrl-C once the "macOS arm64" job is done
+```
+
+The job waits in the queue until the runner is online (GitHub drops a job that
+has waited 24 hours). A build takes ~2h; the job deletes its ~20 GB workspace
+when it ends.
+
+**One-time setup**
+
+1. GitHub → Settings → Actions → Runners → *New self-hosted runner* → macOS,
+   ARM64. Run the commands it shows in `~/actions-runner` (not inside this
+   repo). When `config.sh` asks for additional labels, enter
+   `cthulhu-release` — the workflow only targets a runner carrying it. Do not
+   install it as a service; start it by hand when releasing.
+2. GitHub → Settings → Actions → General → *Approval for running fork pull
+   request workflows from contributors* → **Require approval for all external
+   contributors**. This is what stops a pull request from running its own
+   workflow on your Mac. The default (first-time contributors only) is not
+   enough once a self-hosted runner exists.
+
+Jobs run as your macOS user. For stronger isolation, register the runner under
+a separate standard account instead (it then needs its own rustup and Xcode
+command-line tools).
+
 ## 4. What CI does on the tag (nothing for you to do)
 
 ```
-macos job ──► arm64 build+package (Apple Silicon only since 1.0.8; Intel stays on 1.0.7)
+macos job ──► arm64 build+package on YOUR Mac (self-hosted; Apple Silicon only since 1.0.8)
           ──► sign+notarize (only if Apple secrets set; else AD-HOC signed + warning:
               unsigned bundles cannot hold a mic/camera grant -- see CONTRIBUTING.md)
           ──► .dmg ─► complete MAR ─► signmar ─► VERIFY signature (fails build if bad)
