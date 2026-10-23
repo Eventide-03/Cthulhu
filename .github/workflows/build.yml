@@ -271,12 +271,14 @@ jobs:
       # active -- mach reads target and objdir from that file. `mach package` is
       # required because unify.py expects packaged (omni.ja) apps; that is how
       # Mozilla drives it.
-      # The STEP has its own timeout, under the job's 360: GitHub-hosted runners
-      # are killed outright at 6 hours, and a job killed at its cap may not get
-      # as far as the cache save below. Timing out here instead fails the step
-      # cleanly with ~20 minutes left for the save to run.
+      # NO step timeout -- the job's 360 is the only limit. A 320-minute step cap
+      # (there to leave time for the cache save) killed v1.0.8's arm64 build 22
+      # minutes short of the job limit, still inside gkrust. The cache it
+      # protected cannot speed that step up anyway: release builds compile Rust
+      # with codegen-units=1 and link gkrust with -Clto (config/makefiles/
+      # rust.mk), ~3h20m on this runner and uncacheable by sccache. Build time
+      # matters more than the save.
       - name: Build + package ${{ matrix.arch }}
-        timeout-minutes: 320
         run: |
           cat > mozconfig <<EOF
           ac_add_options --target=${{ matrix.target }}
