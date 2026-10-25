@@ -89,8 +89,11 @@ to already have local access to your machine or profile.
 
 - **Windows builds are deliberately unsigned.** This project does not pay for a
   code-signing certificate, so SmartScreen shows "Windows protected your PC";
-  continuing requires **More info → Run anyway**. Only install builds you
-  obtained from a source you trust.
+  continuing requires **More info → Run anyway**. On a PC with **Smart App
+  Control** on (the default on a clean Windows 11 install) the installer is
+  blocked outright instead, with no override; turning Smart App Control off is
+  permanent short of reinstalling Windows. Only install builds you obtained
+  from a source you trust, and check them against the release's SHA256.
 - **macOS builds are signed and notarized**, and the .dmg is stapled, so
   Gatekeeper opens them without a warning. A build produced without the signing
   secrets is neither, and says so in its job log.

@@ -1430,6 +1430,8 @@ jobs:
               echo
               echo "> Windows builds are **unsigned** — this is deliberate; Cthulhu does not pay for a code-signing certificate."
               echo "> SmartScreen will show \"Windows protected your PC\". Click **More info** → **Run anyway** to continue."
+              echo ">"
+              echo "> If **Smart App Control** blocks it instead (\"Smart App Control blocked an app that may be unsafe\"), there is no *Run anyway*: Windows offers no override for one app. Turning Smart App Control off (Windows Security → App & browser control → Smart App Control settings) lets it run, but **it cannot be turned back on without reinstalling or resetting Windows**. Check the installer against the SHA256 below first."
             else
               echo "- **Windows x64**: _not produced for this release — the Windows build did not succeed._"
             fi

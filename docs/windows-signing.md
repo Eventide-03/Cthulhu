@@ -23,6 +23,18 @@ Windows SmartScreen shows **"Windows protected your PC"** when an unsigned
 executable is downloaded and run. Users must click **More info** → **Run
 anyway**. The download page explains this, and must keep doing so.
 
+**Smart App Control is harder.** On Windows 11 with Smart App Control on — the
+default on a clean install, after its evaluation period — an unsigned installer
+is not warned about but **blocked**: "Smart App Control blocked an app that may
+be unsafe", with no *Run anyway* and no per-app exception. The only way through
+is turning Smart App Control off (Windows Security → App & browser control →
+Smart App Control settings), and that is one-way: it cannot be turned back on
+without resetting or reinstalling Windows. The release notes say so, and point
+at the SHA256 list so the installer can be checked before someone makes that
+trade. (Windows Sandbox runs without Smart App Control, which is enough to try
+a build.) Unlike SmartScreen, Smart App Control lets **validly signed** apps
+through, so this is the one place signing would change the outcome at once.
+
 Two things worth being clear-eyed about:
 
 - **Signing would not make that warning disappear immediately.** SmartScreen
