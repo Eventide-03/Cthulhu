@@ -217,6 +217,24 @@ pref("app.releaseNotesURL", "https://github.com/Eventide-03/Cthulhu/releases");
 pref("app.releaseNotesURL.aboutDialog", "https://github.com/Eventide-03/Cthulhu/releases");
 pref("app.releaseNotesURL.prompt", "https://github.com/Eventide-03/Cthulhu/releases");
 
+// -- Media plugins (Widevine DRM, OpenH264) --
+// Upstream's URL, with ONE change: %VERSION% -> %PLATFORM_VERSION%.
+//
+// %VERSION% is Services.appinfo.version, which in Cthulhu is OUR version
+// (1.0.x), not Firefox's. Mozilla's update server picks the plugins by Firefox
+// version, so it answered Cthulhu with an empty list: Widevine never installed,
+// every DRM site (Netflix, Disney+, Spotify's web player...) sat on "installing
+// components needed to play the audio or video on this page" forever and then
+// called the browser unsupported, and OpenH264 (H.264 in WebRTC calls) never
+// arrived either. %PLATFORM_VERSION% is the Gecko version (153.x) -- what a
+// stock Firefox sends here. Measured against aus5.mozilla.org: version 1.0.7
+// -> no add-ons; 153.5.0 -> gmp-widevinecdm 4.10 + gmp-gmpopenh264 2.6.
+//
+// extensions.systemAddon.update.url has the same %VERSION% and is deliberately
+// NOT changed: with a real Firefox version it would start installing
+// Mozilla's system add-on updates (today an IP Protection/VPN activator).
+pref("media.gmp-manager.url", "https://aus5.mozilla.org/update/3/GMP/%PLATFORM_VERSION%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/update.xml");
+
 // -- Automatic updates (on by default) --
 // app.update.auto is a real pref on macOS/Linux; on Windows the value lives in
 // a per-installation config file and this pref supplies the initial default.

@@ -340,6 +340,11 @@ still requests your browser makes, and an honest privacy document should say so:
 - **Captive-portal detection** and **connectivity checks** (`detectportal.firefox.com`)
 - **Certificate revocation** (OCSP / CRLite)
 - **Region lookup** (`browser.region.*`)
+- **Media plugins** — Widevine (DRM, for Netflix and the like) and OpenH264
+  (H.264 for video calls). Firefox asks `aus5.mozilla.org` which versions to
+  install and downloads them from Google and Cisco. Cthulhu makes one change
+  here, so that it works at all: it sends the Firefox version instead of
+  Cthulhu's (`media.gmp-manager.url`). Turn DRM off with `media.eme.enabled`.
 
 If you want these off too, they are all `about:config` preferences —
 [arkenfox](https://github.com/arkenfox/user.js) documents them thoroughly.
