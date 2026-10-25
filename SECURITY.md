@@ -94,9 +94,14 @@ to already have local access to your machine or profile.
   blocked outright instead, with no override; turning Smart App Control off is
   permanent short of reinstalling Windows. Only install builds you obtained
   from a source you trust, and check them against the release's SHA256.
-- **macOS builds are signed and notarized**, and the .dmg is stapled, so
-  Gatekeeper opens them without a warning. A build produced without the signing
-  secrets is neither, and says so in its job log.
+- **macOS builds are not notarized.** The project has no Apple Developer
+  account, so releases are signed **ad-hoc** only: the bundle has a real code
+  identity (which is what lets microphone and camera permission stick) but no
+  Developer ID, and Gatekeeper warns on first launch. On macOS 15 and later,
+  open it once, then allow it under **System Settings → Privacy & Security →
+  Open Anyway**. As with Windows, only install builds from a source you trust,
+  and check the .dmg against the release's SHA256. (The workflow can sign with
+  Developer ID and notarize if the Apple secrets are ever added.)
 - **Auto-update works.** Releases are published as signed MAR archives whose
   signature is verified against a certificate compiled into the updater, and the
   browser checks for one at every startup. See [PRIVACY.md](PRIVACY.md) §4 for
