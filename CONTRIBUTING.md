@@ -69,8 +69,10 @@ relay/README.md (feature-request relay).
 
 With the Apple secrets set, CI signs with Developer ID and notarizes. Without
 them it still signs the bundle **ad-hoc** (`codesign --force --deep --sign -`)
-rather than shipping it unsigned. That is not Gatekeeper-quieting -- an ad-hoc
-build still needs right-click → Open on someone else's Mac -- but it is what
+rather than shipping it unsigned. That is not Gatekeeper-quieting -- on someone
+else's Mac an ad-hoc build is still blocked on first launch, and on macOS 15 and
+later right-click → Open no longer gets past that: they open it once, then allow
+it under System Settings → Privacy & Security → Open Anyway -- but it is what
 makes **microphone and camera permission stick**.
 
 macOS files a device grant against a code identity. On arm64 the linker ad-hoc
