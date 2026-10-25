@@ -292,6 +292,10 @@ jobs:
           # Home button, no tab-drag pinning, updates aimed at Mozilla, and the
           # chrome package dropped from the installer.
           git -C engine init -q
+          # No detached auto-gc: it can still be writing into .git when the
+          # rm below runs -- "rm: engine/.git: Directory not empty" killed the
+          # first self-hosted v1.0.8 build.
+          git -C engine config gc.auto 0
           surfer import
           # Backstop, deliberately CONTENT-based: `git apply --check` would
           # itself be skipped in the broken configuration and report success.
@@ -304,7 +308,8 @@ jobs:
           # artifacts instead of 23, so the build then died with
           # "Cannot find cbindgen". Removing it restores byte-for-byte the
           # environment every earlier build had, with the patches now applied.
-          rm -rf engine/.git
+          for i in 1 2 3 4 5 6; do rm -rf engine/.git 2>/dev/null && break; sleep 10; done
+          [ ! -e engine/.git ] || { echo "::error::could not remove engine/.git"; exit 1; }
 
       # Packaged in the SAME step that builds it, while its own ./mozconfig is
       # active -- mach reads target and objdir from that file. `mach package` is
@@ -582,6 +587,10 @@ jobs:
           # Home button, no tab-drag pinning, updates aimed at Mozilla, and the
           # chrome package dropped from the installer.
           git -C engine init -q
+          # No detached auto-gc: it can still be writing into .git when the
+          # rm below runs -- "rm: engine/.git: Directory not empty" killed the
+          # first self-hosted v1.0.8 build.
+          git -C engine config gc.auto 0
           surfer import
           # Backstop, deliberately CONTENT-based: `git apply --check` would
           # itself be skipped in the broken configuration and report success.
@@ -594,7 +603,8 @@ jobs:
           # artifacts instead of 23, so the build then died with
           # "Cannot find cbindgen". Removing it restores byte-for-byte the
           # environment every earlier build had, with the patches now applied.
-          rm -rf engine/.git
+          for i in 1 2 3 4 5 6; do rm -rf engine/.git 2>/dev/null && break; sleep 10; done
+          [ ! -e engine/.git ] || { echo "::error::could not remove engine/.git"; exit 1; }
 
       - uses: actions/download-artifact@v4
         with:
@@ -1036,6 +1046,10 @@ jobs:
           # Home button, no tab-drag pinning, updates aimed at Mozilla, and the
           # chrome package dropped from the installer.
           git -C engine init -q
+          # No detached auto-gc: it can still be writing into .git when the
+          # rm below runs -- "rm: engine/.git: Directory not empty" killed the
+          # first self-hosted v1.0.8 build.
+          git -C engine config gc.auto 0
           ./node_modules/.bin/surfer import
           # Backstop, deliberately CONTENT-based: `git apply --check` would
           # itself be skipped in the broken configuration and report success.
@@ -1048,7 +1062,8 @@ jobs:
           # artifacts instead of 23, so the build then died with
           # "Cannot find cbindgen". Removing it restores byte-for-byte the
           # environment every earlier build had, with the patches now applied.
-          rm -rf engine/.git
+          for i in 1 2 3 4 5 6; do rm -rf engine/.git 2>/dev/null && break; sleep 10; done
+          [ ! -e engine/.git ] || { echo "::error::could not remove engine/.git"; exit 1; }
 
       # MozillaBuild is a HARD PREREQUISITE on Windows, not something bootstrap
       # can provide. build/mach_initialize.py runs
