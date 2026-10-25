@@ -5,8 +5,8 @@
   "binaryName": "Cthulhu",
   "version": {
     "product": "firefox-esr",
-    "version": "153.5.0esr",
-    "candidate": "153.5.0esr"
+    "version": "153.5.1esr",
+    "candidate": "153.5.1esr"
   },
   "buildOptions": {
     "windowsUseSymbolicLinks": false
@@ -18,7 +18,7 @@
       "brandShortName": "Cthulhu",
       "brandFullName": "Cthulhu",
       "release": {
-        "displayVersion": "1.0.8"
+        "displayVersion": "1.0.9"
       }
     },
     "release": {
@@ -27,7 +27,7 @@
       "brandFullName": "Cthulhu",
       "backgroundColor": "#1a1025",
       "release": {
-        "displayVersion": "1.0.8"
+        "displayVersion": "1.0.9"
       }
     }
   },
