@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <updates>
-  <update type="minor" displayVersion="1.0.8" appVersion="1.0.8" platformVersion="153.5.0" buildID="20261025001930">
-    <patch type="complete" URL="https://github.com/Eventide-03/Cthulhu/releases/download/v1.0.8/Cthulhu-1.0.8-macos-arm64.complete.mar" hashFunction="sha512" hashValue="9d155143aa1ee2d574638bed1142bb1cbecb12bc71ca29282f5f783434f74d834901393031b947145dda3c072f496f796039d0f5165fedc0f1217a2852f9a0c7" size="71646881"/>
+  <update type="minor" displayVersion="1.0.9" appVersion="1.0.9" platformVersion="153.5.1" buildID="20261025061430">
+    <patch type="complete" URL="https://github.com/Eventide-03/Cthulhu/releases/download/v1.0.9/Cthulhu-1.0.9-macos-arm64.complete.mar" hashFunction="sha512" hashValue="03fd73aa5d3972bf2ded744b4b8c7234e6de30c6f8b5671f1aa214f2231aa7f2e8601560dd6f705b408147777a3f7cee901bcbcec931cb3f97e7035f821264a9" size="71694653"/>
   </update>
 </updates>
